@@ -1,2294 +1,1462 @@
-// Content script for meeting platforms - AI Interview Assistant
-// This version implements intelligent answer persistence and proper stealth mode
+// AI Interview Assistant - Minimal Clean Version
+// Focus: Microphone access and basic functionality
 
-console.log('🤖 AI Mentor Content Script Loading...');
+console.log('🤖 AI Interview Assistant Loading...');
 
-// Prevent multiple initializations
-if (window.AIMentorInitialized) {
-    console.log('🔄 AI Mentor already initialized, skipping...');
-} else {
-    window.AIMentorInitialized = true;
-    
-    class MeetingAIAssistant {
-        constructor() {
-            console.log('🚀 AI Mentor Assistant - Starting initialization');
-            this.isActive = false;
-            this.meetingPlatform = this.detectPlatform();
-            this.aiSocket = null;
-            this.overlay = null;
-            this.bridge = null;
-            this.answerPersistenceTimer = null;
-            this.answerFadeTimer = null;
-            this.lastQuestion = null;
-            this.meetingData = {
-                participants: [],
-                chatHistory: [],
-                jiraTickets: [],
-                screenShareActive: false
-            };
-            console.log('🎯 Platform detected:', this.meetingPlatform);
-            this.init();
-        }
+// Add immediate test div to verify script loading
+const testDiv = document.createElement('div');
+testDiv.style.cssText = `
+    position: fixed !important;
+    top: 10px !important;
+    left: 10px !important;
+    background: red !important;
+    color: white !important;
+    padding: 10px !important;
+    z-index: 999999 !important;
+    font-size: 12px !important;
+`;
+testDiv.textContent = 'AI Extension Loading...';
+document.body.appendChild(testDiv);
 
-        detectPlatform() {
-            const hostname = window.location.hostname;
-            console.log('🔍 Detecting platform for:', hostname);
-            if (hostname.includes('zoom.us')) return 'zoom';
-            if (hostname.includes('teams.microsoft.com')) return 'teams';
-            if (hostname.includes('meet.google.com')) return 'google-meet';
-            if (hostname.includes('webex.com')) return 'webex';
-            return 'unknown';
-        }
+setTimeout(() => {
+    if (testDiv && testDiv.parentNode) {
+        testDiv.parentNode.removeChild(testDiv);
+    }
+}, 3000);
 
-        async init() {
-            try {
-                console.log('🎯 Creating stealth interview overlay...');
-                this.createStealthInterviewOverlay();
-                
-                console.log('🔗 Connecting to AI service...');
-                await this.connectToAI();
-                
-                console.log('🎤 Starting meeting monitoring...');
-                this.startMeetingMonitoring();
-                
-                console.log('✅ AI Mentor Assistant initialized successfully');
-            } catch (error) {
-                console.error('❌ Failed to initialize AI Mentor:', error);
+class AIInterviewAssistant {
+    constructor() {
+        this.isListening = false;
+        this.recognition = null;
+        this.overlay = null;
+        this.offscreenWindow = null;
+        this.stealthIndicator = null;
+        this.isStealthMode = false;
+        
+        console.log('🤖 AI Interview Assistant initialized');
+    }
+
+    initialize() {
+        console.log('🔧 Initializing AI Interview Assistant...');
+        
+        // Add a simple test indicator first
+        this.addTestIndicator();
+        
+        // Initialize speech recognition
+        this.initializeSpeechRecognition();
+        
+        // Create main overlay
+        this.createOverlay();
+        
+        // Check backend connection
+        this.checkBackend();
+        
+        // Set up hotkeys for stealth mode
+        this.setupHotkeys();
+        
+        // Set up message listener for offscreen communication
+        window.addEventListener('message', (event) => {
+            this.handleOffscreenMessage(event);
+        });
+        
+        console.log('✅ AI Interview Assistant fully initialized');
+    }
+
+    setupHotkeys() {
+        // Set up Ctrl+Shift+H for emergency stealth toggle
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'H') {
+                e.preventDefault();
+                this.toggleStealth();
+                console.log('🔍 Manual stealth mode toggled via hotkey');
             }
-        }
+        });
+    }
 
-        createStealthInterviewOverlay() {
-            console.log('🕵️ Creating stealth interview overlay...');
-            
-            if (this.overlay) {
-                this.overlay.remove();
+    toggleStealth() {
+        if (this.isStealthMode) {
+            this.deactivateFullStealth();
+        } else {
+            this.activateFullStealth();
+        }
+        this.isStealthMode = !this.isStealthMode;
+    }
+
+    initializeSpeechRecognition() {
+        // Initialize speech recognition (existing method)
+        this.setupSpeechRecognition();
+    }
+
+    async checkBackend() {
+        // Check if backend is running
+        try {
+            const response = await fetch('http://localhost:8084/api/health');
+            if (response.ok) {
+                this.updateStatus('✅ AI Connected and Ready');
+                this.loadSavedResume();
+            } else {
+                this.updateStatus('❌ AI Backend Offline');
             }
+        } catch (error) {
+            this.updateStatus('❌ Start the mentor app backend');
+        }
+    }
+
+    async loadSavedResume() {
+        try {
+            const response = await fetch('http://localhost:8084/api/resume/status');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.has_resume) {
+                    this.updateResumeStatus(`✅ Resume loaded: ${data.word_count} words`);
+                }
+            }
+        } catch (error) {
+            console.log('ℹ️ No saved resume found');
+        }
+    }
+
+    addTestIndicator() {
+        // Add a very visible test indicator to confirm the extension is working
+        const testDiv = document.createElement('div');
+        testDiv.id = 'ai-test-indicator';
+        testDiv.style.cssText = `
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            background: red !important;
+            color: white !important;
+            padding: 20px !important;
+            z-index: 2147483647 !important;
+            font-family: Arial, sans-serif !important;
+            font-size: 16px !important;
+            border-radius: 10px !important;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.8) !important;
+            text-align: center !important;
+            border: 3px solid white !important;
+        `;
+        testDiv.innerHTML = `
+            <div style="font-weight: bold; margin-bottom: 10px;">🤖 AI ASSISTANT ACTIVE!</div>
+            <div style="font-size: 12px;">Extension loaded successfully</div>
+            <div style="font-size: 10px; margin-top: 8px; color: #ffcccc;">This will disappear in 3 seconds</div>
+        `;
+        
+        document.body.appendChild(testDiv);
+        
+        // Remove after 3 seconds
+        setTimeout(() => {
+            if (testDiv.parentNode) {
+                testDiv.remove();
+            }
+        }, 3000);
+        
+        console.log('🚨 Test indicator added - you should see a red popup in the center of the screen');
+    }
+
+    async init() {
+        try {
+            // Create overlay first
+            this.createOverlay();
             
-            this.overlay = document.createElement('div');
-            this.overlay.id = 'ai-interview-stealth-overlay';
+            // Check AI connection
+            await this.checkAIConnection();
             
-            // Ultra-stealth CSS - Always visible to you, hidden from screen sharing
-            this.overlay.style.cssText = `
-                position: fixed !important;
-                top: 10px !important;
-                right: 10px !important;
-                width: 600px !important;
-                height: 800px !important;
-                background: rgba(0, 0, 0, 0.98) !important;
-                color: #00ff00 !important;
-                font-family: 'Courier New', monospace !important;
-                font-size: 12px !important;
-                z-index: 2147483647 !important;
-                border-radius: 15px !important;
-                border: 2px solid rgba(0, 255, 0, 0.8) !important;
-                backdrop-filter: blur(20px) !important;
-                box-shadow: 0 0 50px rgba(0, 255, 0, 0.3) !important;
-                user-select: none !important;
-                pointer-events: auto !important;
-                opacity: 0.95 !important;
-                visibility: visible !important;
-                display: block !important;
-                transform: scale(1) !important;
-                transition: all 0.3s ease !important;
-                overflow: hidden !important;
-            `;
+            // Check resume status
+            await this.checkResumeStatus();
             
-            this.overlay.innerHTML = `
-                <div class="stealth-content">
-                    <div class="stealth-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(0, 255, 0, 0.3); padding-bottom: 8px;">
-                        <div style="display: flex; align-items: center;">
-                            <span style="font-size: 14px; margin-right: 8px;">🤖</span>
-                            <span style="font-weight: 600; color: #00ff00; text-shadow: 0 0 8px rgba(0, 255, 0, 0.4);">Interview Assistant</span>
-                        </div>
-                        <button id="stealth-minimize" style="background: transparent; border: 1px solid #00ff00; color: #00ff00; border-radius: 3px; padding: 2px 6px; cursor: pointer; font-weight: bold; font-size: 10px;">─</button>
-                    </div>
-                    
-                    <div id="ai-status" style="font-size: 10px; color: #888; margin-bottom: 10px; text-align: center;">
-                        🔄 Initializing...
-                    </div>
-                    
-                    <div id="stealth-indicator" style="display: none; font-size: 9px; color: #00ff00; margin-bottom: 8px; text-align: center; border: 1px solid #ff6b6b; padding: 4px; border-radius: 3px; background: rgba(255, 107, 107, 0.1);">
-                        🕵️ STEALTH: Hidden from viewers, VISIBLE TO YOU
-                    </div>
-                    
-                    <div id="interview-content" style="height: calc(100% - 60px); overflow: hidden;">
-                        <div style="text-align: center; padding: 30px; color: #888;">
-                            <div style="font-size: 20px; margin-bottom: 15px;">👂</div>
-                            <div style="margin-bottom: 10px;">AI Interview Assistant Ready</div>
-                            <div style="font-size: 10px;">
-                                • Listens to interviewer questions<br>
-                                • Provides instant answers for your reference<br>
-                                • ALWAYS visible to YOU (the user)<br>
-                                • Hidden from screen sharing/recording<br>
-                                • Emergency hide: Ctrl+Shift+A<br>
-                                <br>
-                                <strong>Test:</strong> Say "Hi how are you" or "Tell me about yourself"<br>
-                                <strong>Or type a question below:</strong>
-                            </div>
-                            
-                            <!-- Manual input for testing -->
-                            <div style="margin-top: 15px; border-top: 1px solid rgba(0, 255, 0, 0.3); padding-top: 15px;">
-                                <div style="margin-bottom: 8px; font-size: 10px; color: #888;">Interview Level Configuration:</div>
-                                <select id="interview-level-select" 
-                                        style="width: 100%; padding: 8px; background: rgba(0, 0, 0, 0.7); border: 1px solid #00ff00; color: #00ff00; border-radius: 5px; font-size: 11px; margin-bottom: 8px;">
-                                    <option value="IC5">IC5 - Software Engineer</option>
-                                    <option value="IC6" selected>IC6 - Senior Software Engineer</option>
-                                    <option value="IC7">IC7 - Staff Software Engineer</option>
-                                    <option value="E5">E5 - Senior Engineer (Meta)</option>
-                                    <option value="E6">E6 - Staff Engineer (Meta)</option>
-                                    <option value="E7">E7 - Senior Staff Engineer (Meta)</option>
-                                </select>
-                                <select id="target-company-select" 
-                                        style="width: 100%; padding: 8px; background: rgba(0, 0, 0, 0.7); border: 1px solid #00ff00; color: #00ff00; border-radius: 5px; font-size: 11px; margin-bottom: 8px;">
-                                    <option value="">Select Target Company (Optional)</option>
-                                    <option value="Meta">Meta</option>
-                                    <option value="Google">Google</option>
-                                    <option value="Amazon">Amazon</option>
-                                    <option value="Microsoft">Microsoft</option>
-                                    <option value="Apple">Apple</option>
-                                    <option value="Netflix">Netflix</option>
-                                    <option value="Other">Other</option>
-                                </select>
-                                
-                                <div style="margin-bottom: 8px; font-size: 10px; color: #888;">Manual Input (for testing without voice):</div>
-                                <input type="text" id="manual-question-input" placeholder="Type interview question here..." 
-                                       style="width: 95%; padding: 10px; background: rgba(0, 0, 0, 0.7); border: 1px solid #00ff00; color: #00ff00; border-radius: 5px; font-size: 12px; margin-bottom: 8px;" />
-                                <button id="manual-submit-btn" 
-                                        style="width: 100%; padding: 8px 10px; background: #00ff00; color: black; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; font-weight: bold;">
-                                    🧪 Test Question
-                                </button>
-                                <button id="stealth-test-btn" 
-                                        style="width: 100%; padding: 6px 10px; background: #ff6b6b; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: bold; margin-top: 5px;">
-                                    🕵️ Test Stealth Mode
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div id="current-question" style="display: none; margin-bottom: 10px; padding: 8px; background: rgba(0, 100, 255, 0.1); border-left: 3px solid #0066ff; font-size: 11px; max-height: 60px; overflow-y: auto;"></div>
-                        <div id="ai-answer" style="height: 600px; overflow-y: auto; padding: 20px; background: rgba(0, 0, 0, 0.3); border-radius: 8px; font-size: 13px; line-height: 1.7; display: none; word-wrap: break-word; white-space: pre-wrap;"></div>
-                        <div style="display: flex; align-items: center; margin-top: 10px; font-size: 10px; color: #666;">
-                            <span>🎯 Reading Progress:</span>
-                            <div style="flex: 1; height: 3px; background: rgba(0, 255, 0, 0.2); border-radius: 2px; overflow: hidden; position: relative;">
-                                <div id="confidence-bar" style="height: 100%; background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57); width: 0%; transition: width 0.3s ease; animation: confidencePulse 2s infinite;"></div>
-                            </div>
-                            <span id="confidence-text" style="margin-left: 8px; min-width: 40px;">Ready</span>
-                        </div>
+            // Request microphone permission and start listening
+            await this.startListening();
+            
+        } catch (error) {
+            console.error('❌ Initialization failed:', error);
+            this.updateStatus('❌ Initialization failed');
+        }
+    }
+
+    createOverlay() {
+        // Remove existing overlay
+        const existing = document.getElementById('ai-assistant-overlay');
+        if (existing) existing.remove();
+
+        // Create overlay with maximum visibility
+        this.overlay = document.createElement('div');
+        this.overlay.id = 'ai-assistant-overlay';
+        
+        // Apply styles directly to ensure visibility
+        this.overlay.style.position = 'fixed';
+        this.overlay.style.top = '20px';
+        this.overlay.style.right = '20px';
+        this.overlay.style.width = '380px';
+        this.overlay.style.maxHeight = '90vh';
+        this.overlay.style.background = 'rgba(0, 0, 0, 0.95)';
+        this.overlay.style.color = '#00ff00';
+        this.overlay.style.fontFamily = 'monospace';
+        this.overlay.style.fontSize = '11px';
+        this.overlay.style.border = '2px solid #00ff00';
+        this.overlay.style.borderRadius = '10px';
+        this.overlay.style.zIndex = '2147483647';
+        this.overlay.style.padding = '12px';
+        this.overlay.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.5)';
+        this.overlay.style.overflowY = 'auto';
+        this.overlay.style.display = 'block';
+        this.overlay.style.visibility = 'visible';
+        this.overlay.style.opacity = '1';
+        this.overlay.style.pointerEvents = 'auto';
+        
+        this.overlay.innerHTML = `
+            <div style="text-align: center; margin-bottom: 12px; color: #00ff00; font-weight: bold; font-size: 14px;">
+                🤖 AI Interview Assistant (Private)
+            </div>
+            
+            <div style="text-align: center; margin-bottom: 8px; font-size: 10px; color: #ff8c00; border: 1px solid #ff8c00; padding: 4px; border-radius: 3px; background: rgba(255, 140, 0, 0.1);">
+                🔒 Private View - Not shared with participants
+            </div>
+            
+            <div id="status" style="
+                text-align: center;
+                padding: 8px;
+                background: rgba(0, 255, 0, 0.1);
+                border: 1px solid #00ff00;
+                border-radius: 5px;
+                margin-bottom: 12px;
+                font-size: 10px;
+            ">
+                🔧 Initializing...
+            </div>
+            
+            <div id="resume-section" style="
+                background: rgba(255, 165, 0, 0.1);
+                border: 1px solid #ff8c00;
+                border-radius: 5px;
+                padding: 8px;
+                margin-bottom: 12px;
+            ">
+                <div style="margin-bottom: 8px; font-weight: bold; text-align: center; color: #ff8c00; font-size: 11px;">
+                    📄 Smart Resume Upload
+                </div>
+                <div id="resume-status" style="text-align: center; margin-bottom: 8px; font-size: 9px;">
+                    No resume uploaded
+                </div>
+                
+                <!-- File Upload Option -->
+                <div style="margin-bottom: 8px;">
+                    <input type="file" id="resume-file" accept=".txt,.pdf,.doc,.docx" style="
+                        width: 100%;
+                        background: rgba(0, 0, 0, 0.5);
+                        color: #00ff00;
+                        border: 1px solid #00ff00;
+                        border-radius: 3px;
+                        padding: 4px;
+                        font-family: monospace;
+                        font-size: 9px;
+                        margin-bottom: 4px;
+                        box-sizing: border-box;
+                    ">
+                    <div style="text-align: center; font-size: 8px; color: #666; margin-bottom: 6px;">
+                        Best: TXT files | PDF/DOC: Copy text and use Text Input option
                     </div>
                 </div>
-            `;
-            
-            // Add enhanced stealth styles
-            const style = document.createElement('style');
-            style.innerHTML = `
-                @keyframes confidencePulse {
-                    0%, 100% { opacity: 0.6; }
-                    50% { opacity: 1; }
-                }
                 
-                /* Normal state - ALWAYS visible to user */
-                #ai-interview-stealth-overlay {
-                    visibility: visible !important;
-                    display: block !important;
-                    opacity: 0.95 !important;
-                }
+                <!-- OR Divider -->
+                <div style="text-align: center; margin: 6px 0; color: #666; font-size: 8px;">
+                    — OR —
+                </div>
                 
-                /* ZOOM-STYLE STEALTH MODE - Hidden from screen capture but VISIBLE to you */
-                #ai-interview-stealth-overlay.screen-sharing {
-                    /* Key principle: Use CSS that confuses screen capture but not local display */
-                    
-                    /* Method 1: Screen capture confusion via invalid blend modes */
-                    mix-blend-mode: normal !important;
-                    
-                    /* Method 2: Use CSS that screen capture software ignores */
-                    -webkit-app-region: no-drag !important;
-                    
-                    /* Method 3: Layer composition that bypasses screen capture */
-                    will-change: auto !important;
-                    contain: none !important;
-                    
-                    /* Method 4: Minimal filter that doesn't affect local visibility */
-                    filter: none !important;
-                    
-                    /* CRITICAL: Force visibility to YOU (local user) */
-                    visibility: visible !important;
-                    display: block !important;
-                    opacity: 0.95 !important;
-                    position: fixed !important;
-                    z-index: 2147483647 !important;
-                    
-                    /* Ensure all colors remain bright and visible to YOU */
-                    color: #00ff00 !important;
-                    background: rgba(0, 0, 0, 0.98) !important;
-                    border: 2px solid rgba(0, 255, 0, 0.8) !important;
-                    
-                    /* Add subtle indicator that stealth is active without hiding content */
-                    box-shadow: 0 0 20px rgba(255, 107, 107, 0.5) !important;
-                    
-                    /* Screen capture bypass technique - minimal transform */
-                    transform: translate3d(0.1px, 0.1px, 0) !important;
-                }
-                
-                /* Double-layer stealth protection - Even more aggressive hiding */
-                #ai-interview-stealth-overlay.screen-sharing::before {
-                    content: '' !important;
-                    position: absolute !important;
-                    top: 0 !important;
-                    left: 0 !important;
-                    right: 0 !important;
-                    bottom: 0 !important;
-                    background: transparent !important;
-                    mix-blend-mode: normal !important;
-                    z-index: -1 !important;
-                    pointer-events: none !important;
-                }
-                
-                /* Screen capture specific media queries */
-                @media print {
-                    #ai-interview-stealth-overlay {
-                        display: none !important;
-                        visibility: hidden !important;
-                        opacity: 0 !important;
-                    }
-                }
-                
-                @media screen and (forced-colors: active) {
-                    #ai-interview-stealth-overlay.screen-sharing {
-                        display: none !important;
-                        visibility: hidden !important;
-                    }
-                }
-                
-                /* Prevent screenshot tools from capturing */
-                @media (prefers-reduced-motion: reduce) {
-                    #ai-interview-stealth-overlay.screen-sharing {
-                        animation: none !important;
-                        transition: none !important;
-                    }
-                }
-                
-                /* Emergency manual hide state (Ctrl+Shift+A) */
-                #ai-interview-stealth-overlay.manually-hidden {
-                    opacity: 0 !important;
-                    pointer-events: none !important;
-                    visibility: hidden !important;
-                    display: none !important;
-                }
-                
-                .question-display.active {
-                    display: block !important;
-                    animation: questionSlideIn 0.4s ease-out;
-                }
-                
-                @keyframes questionSlideIn {
-                    from { 
-                        opacity: 0;
-                        transform: translateY(-8px);
-                    }
-                    to { 
-                        opacity: 1;
-                        transform: translateY(0);
-                    }
-                }
-                
-                .typing-cursor::after {
-                    content: '▋';
-                    color: #00ff00;
-                    animation: blink 1s infinite;
-                }
-                
-                @keyframes blink {
-                    0%, 50% { opacity: 1; }
-                    51%, 100% { opacity: 0; }
-                }
-                
-                #ai-answer::-webkit-scrollbar {
-                    width: 8px;
-                }
-                
-                #ai-answer::-webkit-scrollbar-track {
-                    background: rgba(0, 255, 0, 0.1);
-                    border-radius: 4px;
-                }
-                
-                #ai-answer::-webkit-scrollbar-thumb {
-                    background: rgba(0, 255, 0, 0.6);
-                    border-radius: 4px;
-                    border: 1px solid rgba(0, 255, 0, 0.3);
-                }
-                
-                #ai-answer::-webkit-scrollbar-thumb:hover {
-                    background: rgba(0, 255, 0, 0.8);
-                }
-                
-                @keyframes fadeInOut {
-                    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-                    50% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-                    100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-                }
-                
-                /* Zoom-style local display override - CRITICAL for visibility to user */
-                @media screen and (-webkit-min-device-pixel-ratio: 0) {
-                    #ai-interview-stealth-overlay:not(.manually-hidden) {
-                        visibility: visible !important;
-                        display: block !important;
-                        opacity: 0.95 !important;
-                    }
-                }
-            `;
-            
-            document.head.appendChild(style);
-            document.body.appendChild(this.overlay);
-            this.initializeStealthFeatures();
-            
-            console.log('🕵️ Stealth interview overlay created - Always visible to you, hidden from screen sharing');
-        }
-
-        initializeStealthFeatures() {
-            // Setup minimize functionality
-            const minimizeBtn = document.getElementById('stealth-minimize');
-            if (minimizeBtn) {
-                minimizeBtn.addEventListener('click', () => {
-                    this.overlay.classList.toggle('minimized');
-                });
-            }
-            
-            // Setup manual input handlers
-            const manualInput = document.getElementById('manual-question-input');
-            const manualSubmitBtn = document.getElementById('manual-submit-btn');
-            const stealthTestBtn = document.getElementById('stealth-test-btn');
-            const interviewLevelSelect = document.getElementById('interview-level-select');
-            const targetCompanySelect = document.getElementById('target-company-select');
-            
-            if (manualInput && manualSubmitBtn) {
-                // Handle Enter key in input
-                manualInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        this.handleManualQuestion();
-                    }
-                });
-                
-                // Handle button click
-                manualSubmitBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    this.handleManualQuestion();
-                });
-                
-                console.log('✅ Manual input handlers initialized');
-            }
-            
-            // Setup interview level configuration
-            if (interviewLevelSelect) {
-                interviewLevelSelect.addEventListener('change', (e) => {
-                    this.updateInterviewLevel(e.target.value, targetCompanySelect?.value);
-                });
-                console.log('✅ Interview level selector initialized');
-            }
-            
-            if (targetCompanySelect) {
-                targetCompanySelect.addEventListener('change', (e) => {
-                    this.updateInterviewLevel(interviewLevelSelect?.value, e.target.value);
-                });
-                console.log('✅ Target company selector initialized');
-            }
-            
-            if (stealthTestBtn) {
-                stealthTestBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    this.testStealthMode();
-                });
-                
-                console.log('✅ Stealth test button initialized');
-            }
-            
-            // Initialize stealth state - ALWAYS VISIBLE TO YOU
-            this.stealthState = {
-                alwaysVisibleToUser: true,
-                hiddenFromScreenShare: false,
-                manuallyHidden: false
-            };
-            
-            // Initialize interview mode settings with intelligent persistence
-            this.interviewMode = {
-                isActive: false,
-                currentQuestion: '',
-                isTyping: false,
-                typingSpeed: 80,
-                blockNewQuestions: false, // Prevent new questions while reading
-                speakerDetection: {
-                    userSpeaking: false,
-                    interviewerSpeaking: false,
-                    lastSpeechTime: 0
-                },
-                answerState: {
-                    isDisplayed: false,
-                    userIsReading: false,
-                    readingStartTime: null,
-                    readingCompleted: false,
-                    lastActivity: Date.now(),
-                    persistUntilNextQuestion: true // Keep visible until next question
-                }
-            };
-            
-            // Setup keyboard controls for stealth toggle
-            this.setupKeyboardControls();
-            
-            // Setup stealth protection
-            this.setupStealthProtection();
-            
-            console.log('🔒 Stealth features initialized:');
-            console.log('   ✅ ALWAYS visible to YOU (the user)');
-            console.log('   🕵️ Hidden from screen sharing automatically'); 
-            console.log('   ⌨️ Ctrl+Shift+A = Emergency manual toggle');
-            console.log('   🧠 Intelligent answer persistence enabled');
-        }
-
-        setupKeyboardControls() {
-            console.log('⌨️ Setting up keyboard controls...');
-            
-            document.addEventListener('keydown', (event) => {
-                if (event.ctrlKey && event.shiftKey && event.code === 'KeyA') {
-                    event.preventDefault();
-                    this.toggleManualStealth();
-                }
-            });
-            
-            console.log('✅ Keyboard controls ready: Ctrl+Shift+A = Emergency toggle');
-        }
-
-        toggleManualStealth() {
-            this.stealthState.manuallyHidden = !this.stealthState.manuallyHidden;
-            
-            if (this.stealthState.manuallyHidden) {
-                console.log('🫥 EMERGENCY: Manually hiding overlay from YOU (Ctrl+Shift+A to show again)');
-                this.overlay.classList.add('manually-hidden');
-                this.showTemporaryNotification('🫥 AI Assistant hidden (Ctrl+Shift+A to show)', 2000);
-            } else {
-                console.log('👁️ RESTORED: Overlay visible to YOU again');
-                this.overlay.classList.remove('manually-hidden');
-                this.showTemporaryNotification('👁️ AI Assistant visible', 2000);
-            }
-        }
-
-        showTemporaryNotification(message, duration = 3000) {
-            const notification = document.createElement('div');
-            notification.style.cssText = `
-                position: fixed !important;
-                top: 50% !important;
-                left: 50% !important;
-                transform: translate(-50%, -50%) !important;
-                background: rgba(0, 0, 0, 0.9) !important;
-                color: #00ff00 !important;
-                padding: 15px 25px !important;
-                border-radius: 10px !important;
-                border: 2px solid #00ff00 !important;
-                font-family: 'Courier New', monospace !important;
-                font-size: 14px !important;
-                font-weight: bold !important;
-                z-index: 2147483648 !important;
-                text-align: center !important;
-                box-shadow: 0 0 20px rgba(0, 255, 0, 0.5) !important;
-                animation: fadeInOut 0.3s ease !important;
-            `;
-            notification.textContent = message;
-            
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.remove();
-                }
-            }, duration);
-        }
-
-        setupStealthProtection() {
-            const overlay = this.overlay;
-            
-            // Advanced stealth detection - Monitor for screen sharing across all platforms
-            this.setupScreenShareDetection();
-            
-            // Zoom-style stealth protection - Hidden from screen capture but visible to user
-            this.applyZoomStyleStealth();
-            
-            // Monitor for platform-specific screen sharing indicators
-            this.monitorPlatformScreenShare();
-            
-            overlay.style.userSelect = 'none';
-            overlay.style.webkitUserSelect = 'none';
-            overlay.setAttribute('data-stealth', 'interview-assistant');
-            overlay.setAttribute('data-user-visible', 'always');
-            overlay.setAttribute('data-screen-capture', 'hidden');
-            
-            console.log('✅ Advanced Zoom-style stealth protection active');
-        }
-
-        setupScreenShareDetection() {
-            const overlay = this.overlay;
-            
-            // Method 1: Intercept getDisplayMedia API calls
-            if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-                const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
-                navigator.mediaDevices.getDisplayMedia = function(constraints) {
-                    console.log('🖥️ SCREEN SHARING DETECTED via getDisplayMedia');
-                    this.activateStealthMode('getDisplayMedia API');
-                    
-                    return originalGetDisplayMedia(constraints).then(stream => {
-                        stream.getTracks().forEach(track => {
-                            track.onended = () => {
-                                console.log('✅ SCREEN SHARING ENDED via getDisplayMedia');
-                                this.deactivateStealthMode('getDisplayMedia ended');
-                            };
-                        });
-                        return stream;
-                    });
-                }.bind(this);
-            }
-
-            // Method 2: Monitor for screen sharing via WebRTC
-            this.monitorWebRTCScreenShare();
-            
-            // Method 3: Detect screen sharing via performance monitoring
-            this.monitorScreenSharePerformance();
-        }
-
-        monitorWebRTCScreenShare() {
-            // Monitor WebRTC peer connections for screen sharing
-            const originalRTCPeerConnection = window.RTCPeerConnection;
-            if (originalRTCPeerConnection) {
-                window.RTCPeerConnection = function(...args) {
-                    const pc = new originalRTCPeerConnection(...args);
-                    
-                    const originalAddTrack = pc.addTrack.bind(pc);
-                    pc.addTrack = function(track, ...streams) {
-                        if (track.kind === 'video' && track.label && 
-                            (track.label.includes('screen') || track.label.includes('window') || track.label.includes('tab'))) {
-                            console.log('�️ SCREEN SHARING DETECTED via WebRTC addTrack');
-                            this.activateStealthMode('WebRTC screen track');
-                        }
-                        return originalAddTrack(track, ...streams);
-                    }.bind(this);
-                    
-                    return pc;
-                }.bind(this);
-            }
-        }
-
-        monitorScreenSharePerformance() {
-            // Monitor for performance changes that indicate screen sharing
-            let performanceBaseline = null;
-            
-            setInterval(() => {
-                const now = performance.now();
-                if (!performanceBaseline) {
-                    performanceBaseline = now;
-                    return;
-                }
-                
-                // Check for performance degradation typical of screen sharing
-                const timeDiff = now - performanceBaseline;
-                if (timeDiff > 100 && document.hidden === false) {
-                    // Additional heuristics for screen sharing detection
-                    this.checkForScreenShareHeuristics();
-                }
-                performanceBaseline = now;
-            }, 1000);
-        }
-
-        monitorPlatformScreenShare() {
-            // Zoom-specific detection
-            this.monitorZoomScreenShare();
-            
-            // Teams-specific detection
-            this.monitorTeamsScreenShare();
-            
-            // Google Meet-specific detection
-            this.monitorGoogleMeetScreenShare();
-            
-            // Generic platform detection
-            this.monitorGenericScreenShare();
-        }
-
-        monitorZoomScreenShare() {
-            // Monitor for Zoom's screen sharing indicators
-            const checkZoomScreenShare = () => {
-                const zoomIndicators = [
-                    '[data-tooltip="Stop Share"]',
-                    '[aria-label*="sharing"]',
-                    '.sharing-instruction',
-                    '.screen-share-toolbar'
-                ];
-                
-                const isSharing = zoomIndicators.some(selector => document.querySelector(selector));
-                if (isSharing && !this.stealthState.hiddenFromScreenShare) {
-                    console.log('🖥️ ZOOM SCREEN SHARING DETECTED');
-                    this.activateStealthMode('Zoom screen share UI');
-                }
-            };
-            
-            setInterval(checkZoomScreenShare, 500);
-        }
-
-        monitorTeamsScreenShare() {
-            // Monitor for Teams screen sharing indicators
-            const checkTeamsScreenShare = () => {
-                const teamsIndicators = [
-                    '[data-tid="call-share-screen-button"]',
-                    '.ts-calling-screen-share-local-video',
-                    '[aria-label*="sharing your screen"]'
-                ];
-                
-                const isSharing = teamsIndicators.some(selector => document.querySelector(selector));
-                if (isSharing && !this.stealthState.hiddenFromScreenShare) {
-                    console.log('�️ TEAMS SCREEN SHARING DETECTED');
-                    this.activateStealthMode('Teams screen share UI');
-                }
-            };
-            
-            setInterval(checkTeamsScreenShare, 500);
-        }
-
-        monitorGoogleMeetScreenShare() {
-            // Monitor for Google Meet screen sharing indicators
-            const checkMeetScreenShare = () => {
-                const meetIndicators = [
-                    '[data-tooltip*="sharing"]',
-                    '[aria-label*="sharing"]',
-                    '.present-to-all',
-                    '[jsname="BOHaEe"]' // Google Meet screen share button
-                ];
-                
-                const isSharing = meetIndicators.some(selector => document.querySelector(selector));
-                if (isSharing && !this.stealthState.hiddenFromScreenShare) {
-                    console.log('🖥️ GOOGLE MEET SCREEN SHARING DETECTED');
-                    this.activateStealthMode('Google Meet screen share UI');
-                }
-            };
-            
-            setInterval(checkMeetScreenShare, 500);
-        }
-
-        monitorGenericScreenShare() {
-            // Generic screen sharing detection using DOM mutations
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    if (mutation.type === 'childList') {
-                        mutation.addedNodes.forEach((node) => {
-                            if (node.nodeType === Node.ELEMENT_NODE) {
-                                const element = node;
-                                const text = element.textContent?.toLowerCase() || '';
-                                const classes = element.className?.toLowerCase() || '';
-                                const id = element.id?.toLowerCase() || '';
-                                
-                                if (text.includes('sharing') || text.includes('screen') ||
-                                    classes.includes('sharing') || classes.includes('screen') ||
-                                    id.includes('sharing') || id.includes('screen')) {
-                                    console.log('🖥️ GENERIC SCREEN SHARING DETECTED via DOM');
-                                    this.activateStealthMode('Generic DOM screen share');
-                                }
-                            }
-                        });
-                    }
-                });
-            });
-            
-            observer.observe(document.body, { childList: true, subtree: true });
-        }
-
-        checkForScreenShareHeuristics() {
-            // Check for visual indicators of screen sharing
-            const indicators = [
-                'sharing', 'screen', 'present', 'broadcast', 'stream',
-                'recording', 'capture', 'display'
-            ];
-            
-            const allText = document.body.textContent.toLowerCase();
-            const hasScreenShareText = indicators.some(indicator => allText.includes(indicator));
-            
-            if (hasScreenShareText && !this.stealthState.hiddenFromScreenShare) {
-                // Additional validation to avoid false positives
-                const confidence = this.calculateScreenShareConfidence();
-                if (confidence > 0.7) {
-                    console.log('🖥️ SCREEN SHARING DETECTED via heuristics (confidence:', confidence, ')');
-                    this.activateStealthMode('Heuristic detection');
-                }
-            }
-        }
-
-        calculateScreenShareConfidence() {
-            let confidence = 0;
-            
-            // Check for screen sharing related elements
-            const screenShareSelectors = [
-                '[class*="share"]', '[class*="screen"]', '[class*="present"]',
-                '[id*="share"]', '[id*="screen"]', '[id*="present"]',
-                '[aria-label*="shar"]', '[aria-label*="screen"]'
-            ];
-            
-            screenShareSelectors.forEach(selector => {
-                if (document.querySelector(selector)) confidence += 0.1;
-            });
-            
-            // Check for specific meeting platform URLs
-            const url = window.location.href;
-            if (url.includes('zoom.us') || url.includes('teams.microsoft.com') || 
-                url.includes('meet.google.com') || url.includes('webex.com')) {
-                confidence += 0.3;
-            }
-            
-            return Math.min(confidence, 1);
-        }
-
-        activateStealthMode(trigger) {
-            if (this.stealthState.hiddenFromScreenShare) return;
-            
-            console.log('🕵️ ACTIVATING STEALTH MODE - Trigger:', trigger);
-            console.log('   👁️ Overlay remains VISIBLE to YOU');
-            console.log('   🫥 Overlay becomes HIDDEN from screen capture');
-            
-            this.overlay.classList.add('screen-sharing');
-            this.stealthState.hiddenFromScreenShare = true;
-            
-            // Show stealth indicator
-            const stealthIndicator = document.getElementById('stealth-indicator');
-            if (stealthIndicator) {
-                stealthIndicator.style.display = 'block';
-                stealthIndicator.style.animation = 'confidencePulse 2s infinite';
-            }
-            
-            // Update header to show stealth mode clearly
-            const headerTitle = this.overlay.querySelector('.stealth-header span:nth-child(2)');
-            if (headerTitle) {
-                headerTitle.textContent = '🕵️ STEALTH MODE - Visible to YOU only';
-                headerTitle.style.color = '#ff6b6b';
-            }
-            
-            // Apply Zoom-style stealth immediately
-            this.applyZoomStyleStealth();
-            
-            this.showTemporaryNotification('�️ STEALTH MODE ACTIVE - Hidden from viewers', 3000);
-        }
-
-        deactivateStealthMode(trigger) {
-            if (!this.stealthState.hiddenFromScreenShare) return;
-            
-            console.log('👁️ DEACTIVATING STEALTH MODE - Trigger:', trigger);
-            
-            this.overlay.classList.remove('screen-sharing');
-            this.stealthState.hiddenFromScreenShare = false;
-            
-            // Hide stealth indicator
-            const stealthIndicator = document.getElementById('stealth-indicator');
-            if (stealthIndicator) {
-                stealthIndicator.style.display = 'none';
-                stealthIndicator.style.animation = 'none';
-            }
-            
-            // Reset header to normal
-            const headerTitle = this.overlay.querySelector('.stealth-header span:nth-child(2)');
-            if (headerTitle) {
-                headerTitle.textContent = 'Interview Assistant';
-                headerTitle.style.color = '#00ff00';
-            }
-            
-            // Reset stealth styles
-            this.applyZoomStyleStealth();
-            
-            this.showTemporaryNotification('🔍 Normal mode - Stealth off', 2000);
-        }
-
-        applyZoomStyleStealth() {
-            if (this.stealthState.hiddenFromScreenShare) {
-                console.log('🕵️ Applying TRUE STEALTH - Opening separate window');
-                
-                // Hide the original overlay completely
-                this.overlay.style.display = 'none';
-                this.overlay.style.visibility = 'hidden';
-                
-                // Open a separate popup window that screen sharing cannot capture
-                this.openStealthWindow();
-                
-                console.log('✅ TRUE stealth applied - Using separate window invisible to screen capture');
-                
-            } else {
-                console.log('👁️ Normal mode - Closing stealth window');
-                
-                // Close stealth window if open
-                this.closeStealthWindow();
-                
-                // Restore original overlay
-                this.overlay.style.display = 'block';
-                this.overlay.style.visibility = 'visible';
-                this.overlay.style.position = 'fixed';
-                this.overlay.style.top = '10px';
-                this.overlay.style.right = '10px';
-                this.overlay.style.opacity = '0.95';
-                this.overlay.style.color = '#00ff00';
-                this.overlay.style.background = 'rgba(0, 0, 0, 0.98)';
-                this.overlay.style.border = '2px solid rgba(0, 255, 0, 0.8)';
-                this.overlay.style.boxShadow = '0 0 50px rgba(0, 255, 0, 0.3)';
-            }
-        }
-
-        openStealthWindow() {
-            if (this.stealthWindow && !this.stealthWindow.closed) {
-                this.stealthWindow.focus();
-                return;
-            }
-
-            // Create a small popup window positioned next to the meeting
-            const windowFeatures = `
-                width=620,
-                height=820,
-                left=${screen.width - 640},
-                top=20,
-                scrollbars=no,
-                resizable=yes,
-                toolbar=no,
-                menubar=no,
-                location=no,
-                status=no
-            `;
-
-            // Open popup with stealth interface
-            this.stealthWindow = window.open('about:blank', 'AI_Interview_Assistant', windowFeatures);
-            
-            if (this.stealthWindow) {
-                // Set up the stealth window content
-                this.setupStealthWindow();
-                console.log('🪟 Stealth window opened - Completely hidden from screen sharing');
-            } else {
-                console.error('❌ Failed to open stealth window - popup blocked?');
-                this.showTemporaryNotification('❌ Popup blocked - Allow popups for this site', 5000);
-            }
-        }
-
-        closeStealthWindow() {
-            if (this.stealthWindow && !this.stealthWindow.closed) {
-                this.stealthWindow.close();
-                this.stealthWindow = null;
-                console.log('🪟 Stealth window closed');
-            }
-        }
-
-        setupStealthWindow() {
-            const doc = this.stealthWindow.document;
-            
-            doc.title = 'AI Interview Assistant';
-            
-            // Set up the HTML structure
-            doc.head.innerHTML = `
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>AI Interview Assistant</title>
-                <style>
-                    * { margin: 0; padding: 0; box-sizing: border-box; }
-                    body {
-                        background: #000;
-                        color: #00ff00;
-                        font-family: 'Courier New', monospace;
-                        font-size: 12px;
-                        padding: 10px;
-                        height: 100vh;
-                        overflow: hidden;
-                    }
-                    .header {
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        margin-bottom: 12px;
-                        border-bottom: 1px solid rgba(0, 255, 0, 0.3);
-                        padding-bottom: 8px;
-                    }
-                    .title {
-                        font-weight: 600;
-                        color: #ff6b6b;
-                        text-shadow: 0 0 8px rgba(255, 107, 107, 0.4);
-                    }
-                    .content {
-                        height: calc(100vh - 60px);
-                        overflow: hidden;
-                    }
-                    #question-display {
-                        background: rgba(0, 100, 255, 0.1);
-                        border-left: 3px solid #0066ff;
-                        padding: 8px;
-                        margin-bottom: 10px;
-                        font-size: 11px;
-                        max-height: 60px;
-                        overflow-y: auto;
-                        display: none;
-                    }
-                    #answer-display {
-                        height: calc(100vh - 200px);
-                        overflow-y: auto;
-                        padding: 20px;
-                        background: rgba(0, 0, 0, 0.3);
-                        border: 1px solid #00ff00;
-                        border-radius: 8px;
-                        font-size: 13px;
-                        line-height: 1.7;
-                        white-space: pre-wrap;
-                        word-wrap: break-word;
-                    }
-                    .input-section {
-                        margin-top: 10px;
-                        border-top: 1px solid rgba(0, 255, 0, 0.3);
-                        padding-top: 10px;
-                    }
-                    input {
+                <!-- Text Input Option (Collapsed by default) -->
+                <div id="text-input-section" style="display: none;">
+                    <textarea id="resume-text" placeholder="Paste your comprehensive resume here (supports 15+ pages, 5000+ words)..." style="
                         width: 100%;
-                        padding: 8px;
-                        background: rgba(0, 0, 0, 0.7);
-                        border: 1px solid #00ff00;
+                        height: 80px;
+                        background: rgba(0, 0, 0, 0.5);
                         color: #00ff00;
+                        border: 1px solid #00ff00;
                         border-radius: 3px;
-                        margin-bottom: 8px;
-                    }
-                    button {
-                        width: 100%;
-                        padding: 8px;
+                        padding: 6px;
+                        font-family: monospace;
+                        font-size: 8px;
+                        resize: vertical;
+                        margin-bottom: 6px;
+                        max-height: 120px;
+                        overflow-y: auto;
+                        box-sizing: border-box;
+                    "></textarea>
+                    <div style="text-align: center; font-size: 8px; color: #666; margin-bottom: 6px;">
+                        Large resumes supported - AI will memorize all content
+                    </div>
+                </div>
+                
+                <div style="text-align: center;">
+                    <button id="upload-resume" style="
+                        background: #ff8c00;
+                        color: black;
+                        border: none;
+                        padding: 4px 8px;
+                        border-radius: 3px;
+                        cursor: pointer;
+                        font-size: 9px;
+                        margin: 2px;
+                    ">📤 Upload</button>
+                    <button id="toggle-text-input" style="
+                        background: #444;
+                        color: #ff8c00;
+                        border: none;
+                        padding: 4px 8px;
+                        border-radius: 3px;
+                        cursor: pointer;
+                        font-size: 9px;
+                        margin: 2px;
+                    ">📝 Text</button>
+                    <button id="clear-resume" style="
+                        background: #666;
+                        color: white;
+                        border: none;
+                        padding: 4px 8px;
+                        border-radius: 3px;
+                        cursor: pointer;
+                        font-size: 9px;
+                        margin: 2px;
+                    ">🗑️ Clear</button>
+                </div>
+            </div>
+            
+            <div id="question-area" style="
+                background: rgba(0, 100, 255, 0.1);
+                border: 1px solid #0066ff;
+                border-radius: 5px;
+                padding: 8px;
+                margin-bottom: 12px;
+                min-height: 30px;
+                display: none;
+                font-size: 9px;
+            ">
+                <strong>Question:</strong> <span id="question-text"></span>
+            </div>
+            
+            <div id="answer-area" style="
+                background: rgba(0, 0, 0, 0.5);
+                border: 1px solid #00ff00;
+                border-radius: 5px;
+                padding: 10px;
+                height: 200px;
+                overflow-y: auto;
+                line-height: 1.4;
+                font-size: 9px;
+            ">
+                <div style="text-align: center; color: #666; padding: 30px 0;">
+                    🎤 Ready to listen for interview questions
+                    <br><br>
+                    <button id="test-btn" style="
                         background: #00ff00;
                         color: black;
                         border: none;
-                        border-radius: 3px;
+                        padding: 6px 12px;
+                        border-radius: 4px;
                         cursor: pointer;
-                        font-weight: bold;
-                        margin-bottom: 5px;
+                        margin-top: 8px;
+                        font-size: 9px;
+                    ">Test Connection</button>
+                </div>
+            </div>
+            
+            <div style="margin-top: 10px; text-align: center;">
+                <button id="toggle-listen" style="
+                    background: #00ff00;
+                    color: black;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    font-weight: bold;
+                    font-size: 10px;
+                    margin-right: 8px;
+                ">🎤 Start Listening</button>
+                <button id="stealth-toggle" style="
+                    background: #ff6600;
+                    color: white;
+                    border: none;
+                    padding: 8px 12px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    font-size: 9px;
+                ">🫥 Stealth Mode</button>
+            </div>
+        `;
+
+        document.body.appendChild(this.overlay);
+        
+        // Force visibility immediately
+        this.overlay.style.display = 'block';
+        this.overlay.style.visibility = 'visible';
+        this.overlay.style.opacity = '1';
+        
+        // Add stealth mode indicator
+        this.addStealthIndicator();
+        
+        // Add event listeners
+        const testBtn = document.getElementById('test-btn');
+        if (testBtn) {
+            testBtn.addEventListener('click', () => {
+                this.testConnection();
+            });
+        }
+        
+        const toggleListenBtn = document.getElementById('toggle-listen');
+        if (toggleListenBtn) {
+            toggleListenBtn.addEventListener('click', () => {
+                this.toggleListening();
+            });
+        }
+
+        const stealthToggleBtn = document.getElementById('stealth-toggle');
+        if (stealthToggleBtn) {
+            stealthToggleBtn.addEventListener('click', () => {
+                this.toggleStealth();
+            });
+        }
+
+        // Resume functionality event listeners
+        const uploadResumeBtn = document.getElementById('upload-resume');
+        if (uploadResumeBtn) {
+            uploadResumeBtn.addEventListener('click', () => {
+                this.uploadResume();
+            });
+        }
+
+        const toggleTextInputBtn = document.getElementById('toggle-text-input');
+        if (toggleTextInputBtn) {
+            toggleTextInputBtn.addEventListener('click', () => {
+                this.toggleTextInput();
+            });
+        }
+
+        const clearResumeBtn = document.getElementById('clear-resume');
+        if (clearResumeBtn) {
+            clearResumeBtn.addEventListener('click', () => {
+                this.clearResume();
+            });
+        }
+
+        // File input change handler
+        const resumeFileInput = document.getElementById('resume-file');
+        if (resumeFileInput) {
+            resumeFileInput.addEventListener('change', (e) => {
+                this.handleFileSelection(e);
+            });
+        }
+
+        console.log('✅ Simplified overlay created and should be visible');
+        
+        // Add helpful instructions
+        console.log('🔒 CONTROLS:');
+        console.log('   • Click "Stealth Mode" button to hide from screen sharing');
+        console.log('   • Press Ctrl+Shift+H for emergency stealth toggle');
+        console.log('   • Look for red dot when in stealth mode');
+    }
+
+    addPrivacyCSS() {
+        // Inject advanced privacy CSS to hide from screen sharing
+        const style = document.createElement('style');
+        style.textContent = `
+            #ai-assistant-overlay {
+                /* Basic positioning and visibility */
+                position: fixed !important;
+                top: 20px !important;
+                right: 20px !important;
+                z-index: 2147483647 !important;
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                pointer-events: auto !important;
+                
+                /* Screen capture blocking techniques */
+                contain: layout style paint !important;
+                isolation: isolate !important;
+                will-change: transform, opacity !important;
+                
+                /* Advanced privacy layers */
+                mix-blend-mode: normal !important;
+                filter: none !important;
+                backdrop-filter: none !important;
+                
+                /* Prevent text selection and interactions */
+                -webkit-user-select: none !important;
+                -moz-user-select: none !important;
+                user-select: none !important;
+                -webkit-touch-callout: none !important;
+                -webkit-tap-highlight-color: transparent !important;
+                
+                /* Transform layers for privacy */
+                transform: translateZ(0) translate3d(0,0,0) !important;
+                -webkit-transform: translateZ(0) translate3d(0,0,0) !important;
+                transform-style: preserve-3d !important;
+                -webkit-transform-style: preserve-3d !important;
+            }
+            
+            /* Hide from all media types that aren't screen */
+            @media print {
+                #ai-assistant-overlay { display: none !important; }
+            }
+            
+            @media screen and (max-width: 0) {
+                #ai-assistant-overlay { display: none !important; }
+            }
+            
+            /* Additional screen sharing privacy */
+            #ai-assistant-overlay::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                pointer-events: none;
+                z-index: -1;
+                background: transparent;
+                mix-blend-mode: multiply;
+            }
+        `;
+        
+        document.head.appendChild(style);
+        
+        // Add screen sharing detection
+        this.setupScreenShareDetection();
+        
+        console.log('🔒 Advanced privacy system activated');
+    }
+
+    setupScreenShareDetection() {
+        // Monitor for screen sharing and completely hide overlay
+        let isScreenSharing = false;
+        let overlayBackup = null;
+        
+        // Detect screen sharing through getDisplayMedia API monitoring
+        const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia;
+        if (originalGetDisplayMedia) {
+            const self = this;
+            navigator.mediaDevices.getDisplayMedia = function(...args) {
+                console.log('🖥️ Screen sharing detected via API - full stealth mode');
+                isScreenSharing = true;
+                self.activateFullStealth();
+                return originalGetDisplayMedia.apply(this, args);
+            };
+        }
+        
+        // Monitor for Google Meet screen sharing UI changes
+        const meetObserver = new MutationObserver((mutations) => {
+            // Look for screen sharing indicators in Google Meet
+            const presentButton = document.querySelector('[data-tooltip*="present"], [aria-label*="Present"], button[aria-label*="present"]');
+            const screenShareActive = document.querySelector('[data-is-presenting="true"], .presenting-indicator, [aria-pressed="true"][aria-label*="present"]');
+            const shareScreenText = document.body.textContent.includes('Stop sharing') || document.body.textContent.includes('You are presenting');
+            
+            // Check URL for screen sharing indicators
+            const urlHasScreenShare = window.location.href.includes('screenshare') || window.location.href.includes('present');
+            
+            if (screenShareActive || shareScreenText || urlHasScreenShare) {
+                if (!isScreenSharing) {
+                    console.log('🖥️ Google Meet screen sharing detected - activating full stealth');
+                    isScreenSharing = true;
+                    this.activateFullStealth();
+                }
+            } else if (isScreenSharing && !shareScreenText) {
+                console.log('🖥️ Screen sharing ended - restoring overlay');
+                isScreenSharing = false;
+                this.deactivateFullStealth();
+            }
+        });
+        
+        meetObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['data-is-presenting', 'aria-label', 'aria-pressed']
+        });
+        
+        // Monitor page title for screen sharing indicators
+        const titleObserver = new MutationObserver(() => {
+            const title = document.title;
+            if (title.includes('Presenting') || title.includes('Screen share')) {
+                if (!isScreenSharing) {
+                    console.log('🖥️ Screen sharing detected via title - full stealth');
+                    isScreenSharing = true;
+                    this.activateFullStealth();
+                }
+            }
+        });
+        
+        titleObserver.observe(document.querySelector('title'), {
+            childList: true
+        });
+        
+        // Manual stealth toggle for emergency (Ctrl+Shift+H)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'H') {
+                isScreenSharing = !isScreenSharing;
+                if (isScreenSharing) {
+                    this.activateFullStealth();
+                } else {
+                    this.deactivateFullStealth();
+                }
+                console.log(`🔍 Manual stealth mode: ${isScreenSharing ? 'ON (HIDDEN)' : 'OFF (VISIBLE)'}`);
+            }
+        });
+        
+        // Auto-detect when sharing starts by monitoring browser tab visibility
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Tab might be hidden due to screen sharing
+                setTimeout(() => {
+                    if (document.hidden) {
+                        console.log('🖥️ Tab hidden - possible screen share - activating stealth');
+                        if (!isScreenSharing) {
+                            isScreenSharing = true;
+                            this.activateFullStealth();
+                        }
                     }
-                    .stealth-btn {
-                        background: #ff6b6b;
-                        color: white;
-                    }
-                    .status {
-                        text-align: center;
-                        font-size: 10px;
-                        color: #888;
-                        margin-bottom: 10px;
-                    }
-                    #answer-display::-webkit-scrollbar { width: 8px; }
-                    #answer-display::-webkit-scrollbar-track { background: rgba(0, 255, 0, 0.1); }
-                    #answer-display::-webkit-scrollbar-thumb { background: rgba(0, 255, 0, 0.6); border-radius: 4px; }
-                </style>
+                }, 1000);
+            }
+        });
+    }
+
+    activateFullStealth() {
+        if (this.overlay && this.overlay.parentNode) {
+            console.log('🫥 STEALTH MODE: Moving to separate window (invisible to screen capture)');
+            
+            // FIRST: Hide the main overlay completely from the meeting tab
+            this.overlay.style.cssText = `
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                transform: translateX(-9999px) !important;
             `;
             
-            doc.body.innerHTML = `
-                <div class="header">
-                    <div style="display: flex; align-items: center;">
-                        <span style="font-size: 14px; margin-right: 8px;">🕵️</span>
-                        <span class="title">STEALTH MODE - Hidden from screen sharing</span>
-                    </div>
-                </div>
-                
-                <div class="status" id="status">
-                    🤖 AI Connected - Ready for questions
-                </div>
-                
-                <div class="content">
-                    <div id="question-display"></div>
-                    <div id="answer-display">
-                        <div style="text-align: center; padding: 30px; color: #888;">
-                            <div style="font-size: 20px; margin-bottom: 15px;">🎤</div>
-                            <div style="margin-bottom: 10px;">AI Interview Assistant Ready</div>
-                            <div style="font-size: 10px;">
-                                • This window is INVISIBLE to screen sharing<br>
-                                • Only YOU can see this assistant<br>
-                                • Voice recognition active in main window<br>
-                                • Test with the input below
+            // THEN: Create the separate popup window
+            this.createOffscreenWindow();
+            
+            // Update stealth indicator
+            if (this.stealthIndicator) {
+                this.stealthIndicator.style.display = 'block';
+                this.stealthIndicator.style.background = '#ff0000';
+                this.stealthIndicator.title = 'AI Assistant - STEALTH MODE (Moved to separate window)';
+            }
+            
+            console.log('🎭 Stealth mode: Main overlay hidden, popup window opened');
+        }
+    }
+
+    deactivateFullStealth() {
+        if (this.overlay) {
+            console.log('👁️ NORMAL MODE: Back to main tab');
+            
+            // Close offscreen window if it exists
+            if (this.offscreenWindow && !this.offscreenWindow.closed) {
+                this.offscreenWindow.close();
+                this.offscreenWindow = null;
+            }
+            
+            // Restore the main overlay in the meeting tab with full visibility
+            this.overlay.style.cssText = `
+                position: fixed !important;
+                top: 20px !important;
+                right: 20px !important;
+                width: 380px !important;
+                max-height: 90vh !important;
+                background: rgba(0, 0, 0, 0.95) !important;
+                color: #00ff00 !important;
+                font-family: monospace !important;
+                font-size: 11px !important;
+                border: 2px solid #00ff00 !important;
+                border-radius: 10px !important;
+                z-index: 2147483647 !important;
+                padding: 12px !important;
+                box-shadow: 0 0 20px rgba(0, 255, 0, 0.5) !important;
+                overflow-y: auto !important;
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                pointer-events: auto !important;
+                transform: none !important;
+            `;
+            
+            // Hide stealth indicator
+            if (this.stealthIndicator) {
+                this.stealthIndicator.style.display = 'none';
+            }
+            
+            console.log('✨ Normal mode: Main overlay restored and visible');
+        }
+    }
+
+    createOffscreenWindow() {
+        // Create a separate popup window for the AI assistant during screen sharing
+        const windowFeatures = 'width=400,height=600,top=100,left=100,toolbar=no,menubar=no,scrollbars=yes,resizable=yes';
+        
+        try {
+            this.offscreenWindow = window.open('', 'AIAssistantOffscreen', windowFeatures);
+            
+            if (this.offscreenWindow) {
+                // Clone the overlay content to the new window
+                this.offscreenWindow.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>AI Interview Assistant (Private)</title>
+                        <style>
+                            body {
+                                margin: 0;
+                                background: #000;
+                                font-family: monospace;
+                                overflow: hidden;
+                            }
+                            #offscreen-overlay {
+                                position: fixed;
+                                top: 0;
+                                left: 0;
+                                right: 0;
+                                bottom: 0;
+                                background: rgba(0, 0, 0, 0.95);
+                                color: #00ff00;
+                                font-size: 11px;
+                                border: 2px solid #00ff00;
+                                padding: 12px;
+                                box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+                                overflow-y: auto;
+                            }
+                            
+                            /* Privacy header */
+                            .privacy-header {
+                                text-align: center;
+                                margin-bottom: 12px;
+                                color: #ff0000;
+                                font-weight: bold;
+                                font-size: 14px;
+                                background: rgba(255, 0, 0, 0.1);
+                                border: 1px solid #ff0000;
+                                padding: 8px;
+                                border-radius: 5px;
+                            }
+                            
+                            .status-section {
+                                text-align: center;
+                                padding: 8px;
+                                background: rgba(0, 255, 0, 0.1);
+                                border: 1px solid #00ff00;
+                                border-radius: 5px;
+                                margin-bottom: 12px;
+                                font-size: 10px;
+                            }
+                            
+                            button {
+                                background: #00ff00;
+                                color: black;
+                                border: none;
+                                padding: 8px 16px;
+                                border-radius: 5px;
+                                cursor: pointer;
+                                font-weight: bold;
+                                font-size: 10px;
+                                margin: 5px;
+                            }
+                            
+                            button:hover {
+                                background: #00cc00;
+                            }
+                            
+                            #answer-display {
+                                background: rgba(0, 0, 0, 0.5);
+                                border: 1px solid #00ff00;
+                                border-radius: 5px;
+                                padding: 10px;
+                                height: 300px;
+                                overflow-y: auto;
+                                line-height: 1.4;
+                                font-size: 9px;
+                                margin-top: 10px;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div id="offscreen-overlay">
+                            <div class="privacy-header">
+                                🔒 AI Interview Assistant - STEALTH MODE
+                                <br><small>This window is NOT visible in screen sharing</small>
+                            </div>
+                            
+                            <div class="status-section" id="offscreen-status">
+                                🎭 Stealth mode active - Ready for questions
+                            </div>
+                            
+                            <div style="text-align: center;">
+                                <button onclick="testConnection()">🧪 Test AI</button>
+                                <button onclick="returnToMainTab()">↩️ Return to Main Tab</button>
+                            </div>
+                            
+                            <div id="answer-display">
+                                <div style="text-align: center; color: #666; padding: 50px 0;">
+                                    🎤 Listening for questions in main tab...
+                                    <br><br>
+                                    This window stays private during screen sharing
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div class="input-section">
-                        <input type="text" id="question-input" placeholder="Type interview question here..." />
-                        <button id="submit-btn">🧪 Test Question</button>
-                        <button id="close-stealth-btn" class="stealth-btn">👁️ Exit Stealth Mode</button>
-                    </div>
-                </div>
-            `;
-            
-            // Set up event handlers in the popup
-            const questionInput = doc.getElementById('question-input');
-            const submitBtn = doc.getElementById('submit-btn');
-            const closeBton = doc.getElementById('close-stealth-btn');
-            
-            if (questionInput && submitBtn) {
-                const submitQuestion = () => {
-                    const question = questionInput.value.trim();
-                    if (question) {
-                        console.log('🧪 Question from stealth window:', question);
-                        this.getInterviewAIResponse(question);
-                        questionInput.value = '';
-                    }
-                };
+                        
+                        <script>
+                            function testConnection() {
+                                // Communicate with main tab
+                                if (window.opener && !window.opener.closed) {
+                                    window.opener.postMessage({
+                                        type: 'ai-test-connection'
+                                    }, '*');
+                                }
+                            }
+                            
+                            function returnToMainTab() {
+                                // Tell main tab to exit stealth mode
+                                if (window.opener && !window.opener.closed) {
+                                    window.opener.postMessage({
+                                        type: 'ai-exit-stealth'
+                                    }, '*');
+                                }
+                                window.close();
+                            }
+                            
+                            // Listen for updates from main tab
+                            window.addEventListener('message', function(event) {
+                                if (event.data.type === 'ai-update-answer') {
+                                    document.getElementById('answer-display').innerHTML = event.data.content;
+                                } else if (event.data.type === 'ai-update-status') {
+                                    document.getElementById('offscreen-status').textContent = event.data.status;
+                                }
+                            });
+                            
+                            // Keep window alive
+                            window.addEventListener('beforeunload', function() {
+                                if (window.opener && !window.opener.closed) {
+                                    window.opener.postMessage({
+                                        type: 'ai-offscreen-closed'
+                                    }, '*');
+                                }
+                            });
+                        </script>
+                    </body>
+                    </html>
+                `);
                 
-                questionInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') submitQuestion();
-                });
+                this.offscreenWindow.document.close();
                 
-                submitBtn.addEventListener('click', submitQuestion);
+                // Focus the offscreen window
+                this.offscreenWindow.focus();
+                
+                console.log('✅ Offscreen window created and focused');
+            } else {
+                console.warn('⚠️ Could not create offscreen window (popup blocked?)');
+                // Fallback: just hide the overlay
+                this.overlay.style.opacity = '0.1';
             }
+        } catch (error) {
+            console.error('❌ Failed to create offscreen window:', error);
+            // Fallback: just hide the overlay
+            this.overlay.style.opacity = '0.1';
+        }
+    }
+
+    addStealthIndicator() {
+        // Add a small stealth mode indicator
+        const stealthIndicator = document.createElement('div');
+        stealthIndicator.id = 'stealth-mode-indicator';
+        stealthIndicator.style.cssText = `
+            position: fixed !important;
+            top: 5px !important;
+            right: 5px !important;
+            width: 12px !important;
+            height: 12px !important;
+            background: #00ff00 !important;
+            border-radius: 50% !important;
+            z-index: 2147483646 !important;
+            display: none !important;
+            box-shadow: 0 0 4px rgba(0, 255, 0, 0.5) !important;
+        `;
+        stealthIndicator.title = 'AI Assistant - Stealth Mode';
+        document.body.appendChild(stealthIndicator);
+        
+        // Show indicator when stealth mode is active
+        this.stealthIndicator = stealthIndicator;
+    }
+
+    async checkAIConnection() {
+        try {
+            this.updateStatus('🔗 Checking AI connection...');
             
-            if (closeBton) {
-                closeBton.addEventListener('click', () => {
-                    this.testStealthMode(); // Toggle off stealth mode
-                });
+            const response = await fetch('http://localhost:8084/api/health');
+            if (response.ok) {
+                this.updateStatus('✅ AI Connected');
+                console.log('✅ AI service connected');
+                return true;
+            } else {
+                throw new Error('AI service not responding');
             }
+        } catch (error) {
+            this.updateStatus('❌ AI Offline - Start mentor app');
+            console.error('❌ AI connection failed:', error);
+            return false;
+        }
+    }
+
+    async startListening() {
+        try {
+            this.updateStatus('🎤 Requesting microphone access...');
             
-            // Store references for updating from main window
-            this.stealthElements = {
-                questionDisplay: doc.getElementById('question-display'),
-                answerDisplay: doc.getElementById('answer-display'),
-                status: doc.getElementById('status')
+            // Request microphone permission
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+            
+            console.log('✅ Microphone permission granted');
+            
+            // Stop the test stream
+            stream.getTracks().forEach(track => track.stop());
+            
+            // Set up speech recognition
+            await this.setupSpeechRecognition();
+            
+        } catch (error) {
+            console.error('❌ Microphone access failed:', error);
+            this.updateStatus('❌ Microphone access denied');
+            
+            // Show manual test button instead
+            document.getElementById('toggle-listen').style.display = 'none';
+        }
+    }
+
+    async setupSpeechRecognition() {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            console.error('❌ Speech recognition not supported');
+            this.updateStatus('❌ Speech recognition not supported');
+            return;
+        }
+
+        try {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            this.recognition = new SpeechRecognition();
+            
+            // Configuration
+            this.recognition.continuous = true;
+            this.recognition.interimResults = true;
+            this.recognition.lang = 'en-US';
+            
+            // Event handlers
+            this.recognition.onstart = () => {
+                console.log('🎤 Speech recognition started');
+                this.updateStatus('🎤 Listening for questions...');
+                this.isListening = true;
+                document.getElementById('toggle-listen').textContent = '⏹️ Stop Listening';
             };
             
-            console.log('🪟 Stealth window setup complete');
-        }
-
-        createLocalVisibleCopy() {
-            if (this.localCopy) {
-                this.removeLocalVisibleCopy();
-            }
+            this.recognition.onresult = (event) => {
+                this.handleSpeechResult(event);
+            };
             
-            // Create a copy of the overlay that's only visible to YOU
-            this.localCopy = this.overlay.cloneNode(true);
-            this.localCopy.id = 'ai-interview-local-copy';
-            
-            // Style the local copy to be visible to YOU
-            this.localCopy.style.cssText = `
-                position: fixed !important;
-                top: 10px !important;
-                right: 10px !important;
-                width: 600px !important;
-                height: 800px !important;
-                background: rgba(0, 0, 0, 0.98) !important;
-                color: #00ff00 !important;
-                font-family: 'Courier New', monospace !important;
-                font-size: 12px !important;
-                z-index: 2147483647 !important;
-                border-radius: 15px !important;
-                border: 2px solid rgba(255, 107, 107, 0.8) !important;
-                backdrop-filter: blur(20px) !important;
-                box-shadow: 0 0 20px rgba(255, 107, 107, 0.7) !important;
-                user-select: none !important;
-                pointer-events: auto !important;
-                opacity: 0.95 !important;
-                visibility: visible !important;
-                display: block !important;
-                transform: scale(1) !important;
-                transition: all 0.3s ease !important;
-                overflow: hidden !important;
+            this.recognition.onerror = (event) => {
+                console.log('🎤 Speech recognition error:', event.error);
                 
-                /* Advanced properties that screen capture might miss */
-                mix-blend-mode: normal !important;
-                isolation: isolate !important;
-                contain: strict !important;
-                will-change: transform !important;
-                
-                /* Webkit-specific properties for local display */
-                -webkit-transform: translateZ(1px) !important;
-                -webkit-backface-visibility: visible !important;
-                -webkit-perspective: 1000px !important;
-            `;
-            
-            // Add to a different part of the DOM that screen capture might miss
-            const container = document.createElement('div');
-            container.style.cssText = `
-                position: fixed !important;
-                top: 0 !important;
-                left: 0 !important;
-                width: 100vw !important;
-                height: 100vh !important;
-                pointer-events: none !important;
-                z-index: 2147483646 !important;
-                background: transparent !important;
-            `;
-            
-            container.appendChild(this.localCopy);
-            document.body.appendChild(container);
-            this.localContainer = container;
-            
-            // Reconnect event handlers to the local copy
-            this.reconnectEventHandlers();
-            
-            console.log('�️ Local visible copy created - YOU should see this clearly');
-        }
-
-        removeLocalVisibleCopy() {
-            if (this.localCopy && this.localContainer) {
-                this.localContainer.remove();
-                this.localCopy = null;
-                this.localContainer = null;
-                console.log('🔍 Local copy removed');
-            }
-        }
-
-        reconnectEventHandlers() {
-            if (!this.localCopy) return;
-            
-            // Reconnect stealth test button
-            const stealthBtn = this.localCopy.querySelector('#stealth-test-btn');
-            if (stealthBtn) {
-                stealthBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    this.testStealthMode();
-                });
-            }
-            
-            // Reconnect manual input
-            const manualInput = this.localCopy.querySelector('#manual-question-input');
-            const submitBtn = this.localCopy.querySelector('#manual-submit-btn');
-            
-            if (manualInput && submitBtn) {
-                manualInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        this.handleManualQuestionFromCopy(manualInput.value);
-                    }
-                });
-                
-                submitBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    this.handleManualQuestionFromCopy(manualInput.value);
-                });
-            }
-            
-            console.log('🔌 Event handlers reconnected to local copy');
-        }
-
-        handleManualQuestionFromCopy(question) {
-            if (!question.trim()) return;
-            
-            console.log('🧪 Manual question from local copy:', question);
-            this.getInterviewAIResponse(question.trim());
-            
-            // Clear both inputs
-            const originalInput = this.overlay.querySelector('#manual-question-input');
-            const copyInput = this.localCopy?.querySelector('#manual-question-input');
-            
-            if (originalInput) originalInput.value = '';
-            if (copyInput) copyInput.value = '';
-        }
-
-        async connectToAI() {
-            try {
-                console.log('🔗 Connecting to AI service...');
-                const response = await fetch('http://localhost:8084/api/health');
-                if (response.ok) {
-                    this.updateStatus('🤖 AI Connected - Ready to assist');
-                    this.isActive = true;
-                    console.log('✅ AI service connected successfully');
-                    
-                    // Load current interview configuration
-                    await this.loadInterviewConfig();
-                } else {
-                    throw new Error('AI service not available');
+                if (event.error === 'not-allowed') {
+                    this.updateStatus('❌ Microphone permission denied');
+                    return;
                 }
-            } catch (error) {
-                this.updateStatus('❌ AI Offline - Start mentor app');
-                console.error('❌ Failed to connect to AI:', error);
-            }
-        }
-
-        async loadInterviewConfig() {
-            try {
-                const response = await fetch('http://localhost:8084/api/get-interview-config');
-                if (response.ok) {
-                    const config = await response.json();
-                    console.log('📋 Loaded interview config:', config);
-                    
-                    // Update UI selectors
-                    const levelSelect = document.getElementById('interview-level-select');
-                    const companySelect = document.getElementById('target-company-select');
-                    
-                    if (levelSelect && config.interview_level) {
-                        levelSelect.value = config.interview_level;
-                    }
-                    
-                    if (companySelect && config.target_company) {
-                        companySelect.value = config.target_company;
-                    }
-                    
-                    console.log(`✅ Interview configured for ${config.interview_level} level${config.target_company ? ' at ' + config.target_company : ''}`);
+                
+                if (event.error === 'no-speech') {
+                    console.log('🔇 No speech detected - continuing...');
+                    return;
                 }
-            } catch (error) {
-                console.error('❌ Failed to load interview config:', error);
-            }
-        }
-
-        async updateInterviewLevel(level, company) {
-            try {
-                console.log(`🎯 Updating interview level: ${level}, company: ${company}`);
                 
-                const response = await fetch('http://localhost:8084/api/set-interview-level', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        level: level || 'IC6',
-                        company: company || null
-                    })
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    console.log('✅ Interview level updated:', result);
-                    
-                    // Show notification
-                    this.showTemporaryNotification(
-                        `🎯 ${result.message}`, 
-                        3000
-                    );
-                    
-                    // Update status to reflect new level
-                    this.updateStatus(`🤖 AI Ready - ${level} Level${company ? ' (' + company + ')' : ''}`);
-                } else {
-                    throw new Error('Failed to update interview level');
-                }
-            } catch (error) {
-                console.error('❌ Failed to update interview level:', error);
-                this.showTemporaryNotification('❌ Failed to update interview level', 3000);
-            }
-        }
-
-        startMeetingMonitoring() {
-            if (!this.isActive) return;
+                this.updateStatus(`⚠️ Speech error: ${event.error}`);
+            };
             
-            switch (this.meetingPlatform) {
-                case 'zoom':
-                case 'teams':
-                case 'google-meet':
-                case 'webex':
-                    this.monitorMeeting();
-                    break;
-                default:
-                    this.monitorGeneric();
-            }
-        }
-
-        monitorMeeting() {
-            console.log('🎤 Setting up meeting monitoring with speech recognition...');
-            this.startAudioMonitoring();
-            this.updateStatus('🎤 Monitoring meeting + Audio');
-        }
-
-        async startAudioMonitoring() {
-            console.log('🎤 Starting audio monitoring with intelligent persistence...');
-            this.updateStatus('🔧 Initializing voice recognition...');
-            
-            try {
-                console.log('🎤 Requesting microphone permission...');
-                
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    }
-                });
-                
-                console.log('✅ Microphone permission granted');
-                stream.getTracks().forEach(track => track.stop());
-                await this.initializeSpeechRecognition();
-                
-            } catch (error) {
-                console.error('❌ Voice recognition setup failed:', error);
-                this.showVoiceRecognitionFallback();
-            }
-        }
-
-        async initializeSpeechRecognition() {
-            console.log('🎤 Setting up speech recognition...');
-            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                console.error('❌ Speech recognition not supported');
-                this.showVoiceRecognitionFallback();
-                return;
-            }
-
-            try {
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                this.recognition = new SpeechRecognition();
-                
-                this.recognition.continuous = true;
-                this.recognition.interimResults = true;
-                this.recognition.maxAlternatives = 1;
-                this.recognition.lang = 'en-US';
-                
-                let restartTimeout;
-                
-                this.recognition.onstart = () => {
-                    console.log('🎤 Voice recognition started - ready to listen');
-                    this.updateStatus('🎤 Listening for questions...');
-                    this.showVoiceRecognitionWorking();
-                };
-                
-                this.recognition.onresult = (event) => {
-                    this.handleVoiceResult(event);
-                };
-                
-                this.recognition.onerror = (event) => {
-                    console.log('🎤 Voice recognition event:', event.error);
-                    
-                    if (event.error === 'not-allowed') {
-                        this.updateStatus('❌ Microphone permission denied');
-                        this.showVoiceRecognitionFallback();
-                        return;
-                    }
-                    
-                    // Handle non-critical errors that don't need restart
-                    if (event.error === 'no-speech' || event.error === 'audio-capture') {
-                        console.log('🔇 No speech detected - this is normal, continuing to listen...');
-                        this.updateStatus('🎤 Listening... (no speech detected yet)');
-                        return; // Don't restart for these common errors
-                    }
-                    
-                    if (event.error === 'network') {
-                        console.log('🌐 Network error in speech recognition, will retry...');
-                        this.updateStatus('⚠️ Network issue - retrying...');
-                    } else {
-                        console.error('🎤 Voice recognition error:', event.error);
-                        this.updateStatus(`⚠️ Voice error: ${event.error} - Restarting...`);
-                    }
-                    
-                    clearTimeout(restartTimeout);
-                    restartTimeout = setTimeout(() => {
-                        console.log('🔄 Restarting voice recognition...');
-                        if (this.recognition) {
-                            try {
-                                this.recognition.start();
-                            } catch (e) {
-                                console.log('🔄 Recognition already running, continuing...');
-                            }
-                        }
-                    }, 1000);
-                };
-                
-                this.recognition.onend = () => {
-                    console.log('🎤 Voice recognition ended - restarting...');
-                    clearTimeout(restartTimeout);
-                    restartTimeout = setTimeout(() => {
-                        if (this.recognition) {
+            this.recognition.onend = () => {
+                console.log('🎤 Speech recognition ended');
+                if (this.isListening) {
+                    // Restart if we should still be listening
+                    setTimeout(() => {
+                        if (this.recognition && this.isListening) {
                             this.recognition.start();
                         }
                     }, 100);
-                };
-
-                this.recognition.start();
-                console.log('✅ Voice recognition initialized');
-                
-            } catch (error) {
-                console.error('❌ Failed to start speech recognition:', error);
-                this.showVoiceRecognitionFallback();
-            }
-        }
-
-        handleVoiceResult(event) {
-            let finalTranscript = '';
-            
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0].transcript;
-                if (event.results[i].isFinal) {
-                    finalTranscript += transcript;
-                }
-            }
-            
-            if (finalTranscript.trim()) {
-                console.log('🎤 Final transcript:', finalTranscript);
-                
-                // Check if user is reading back an answer
-                if (this.interviewMode.answerState.isDisplayed) {
-                    this.detectUserReadingAnswer(finalTranscript);
-                }
-                
-                // Detect if this is a question or user response
-                if (this.isInterviewQuestion(finalTranscript)) {
-                    // Check if we should block new questions (user is reading current answer)
-                    if (this.interviewMode.blockNewQuestions) {
-                        console.log('🚫 Blocking new question - user is still reading current answer');
-                        return;
-                    }
-                    
-                    console.log('❓ New question detected:', finalTranscript);
-                    this.updateStatus('🧠 Processing interview question...');
-                    
-                    // Clear previous answer since we have a new question
-                    const previousAnswer = document.getElementById('ai-answer');
-                    if (previousAnswer) {
-                        previousAnswer.style.opacity = '0.3';
-                        console.log('🔄 Previous answer dimmed for new question');
-                    }
-                    
-                    this.getInterviewAIResponse(finalTranscript);
-                } else if (this.interviewMode.answerState.isDisplayed) {
-                    console.log('💬 User is responding to interviewer');
-                    this.handleUserResponse(finalTranscript);
                 } else {
-                    console.log('💬 General conversation:', finalTranscript);
-                    this.updateStatus('🎤 Listening for questions...');
-                }
-                
-                this.interviewMode.answerState.lastActivity = Date.now();
-            }
-        }
-
-        detectUserReadingAnswer(transcript) {
-            const answerDisplay = document.getElementById('ai-answer');
-            if (!answerDisplay || !answerDisplay.textContent) return;
-            
-            const answerText = answerDisplay.textContent.toLowerCase();
-            const userText = transcript.toLowerCase();
-            
-            // Don't trigger new questions if user is reading the current answer
-            if (this.interviewMode.answerState.userIsReading) {
-                console.log('🔄 User is reading current answer - not triggering new response');
-                this.extendAnswerPersistence('User still reading');
-                return;
-            }
-            
-            const answerWords = answerText.split(' ').filter(w => w.length > 3);
-            const userWords = userText.split(' ').filter(w => w.length > 3);
-            
-            let matchingWords = 0;
-            userWords.forEach(userWord => {
-                if (answerWords.some(answerWord => 
-                    answerWord.includes(userWord) || userWord.includes(answerWord))) {
-                    matchingWords++;
-                }
-            });
-            
-            const matchPercentage = matchingWords / Math.max(userWords.length, 1);
-            
-            if (matchPercentage > 0.3) {
-                console.log('📖 DETECTED: User is reading the AI answer back to interviewer');
-                this.markUserAsReading();
-                this.extendAnswerPersistence('User is reading answer');
-                // Block new questions while user is reading
-                this.interviewMode.blockNewQuestions = true;
-                setTimeout(() => {
-                    this.interviewMode.blockNewQuestions = false;
-                }, 15000); // Block for 15 seconds
-            } else if (userWords.length > 5) {
-                console.log('💭 User is elaborating or explaining further');
-                this.extendAnswerPersistence('User is elaborating');
-            }
-            
-            // Track which part of the answer the user is reading
-            this.highlightReadingProgress(transcript, answerDisplay);
-        }
-
-        highlightReadingProgress(transcript, answerElement) {
-            const answerText = answerElement.textContent;
-            const userText = transcript.toLowerCase();
-            
-            // Find which part of the answer matches what the user just said
-            const sentences = answerText.split(/[.!?]\s+/);
-            let bestMatch = { index: -1, score: 0 };
-            
-            sentences.forEach((sentence, index) => {
-                const sentenceLower = sentence.toLowerCase();
-                const words = userText.split(' ').filter(w => w.length > 2);
-                let matchCount = 0;
-                
-                words.forEach(word => {
-                    if (sentenceLower.includes(word)) {
-                        matchCount++;
-                    }
-                });
-                
-                const score = matchCount / Math.max(words.length, 1);
-                if (score > bestMatch.score && score > 0.3) {
-                    bestMatch = { index, score };
-                }
-            });
-            
-            // Auto-scroll to show the relevant part being read
-            if (bestMatch.index >= 0) {
-                const totalHeight = answerElement.scrollHeight;
-                const visibleHeight = answerElement.clientHeight;
-                const sentencePosition = (bestMatch.index / sentences.length) * totalHeight;
-                
-                // Scroll to show the sentence being read in the center
-                const targetScroll = Math.max(0, sentencePosition - (visibleHeight / 2));
-                answerElement.scrollTo({
-                    top: targetScroll,
-                    behavior: 'smooth'
-                });
-                
-                console.log(`📍 Auto-scrolled to sentence ${bestMatch.index + 1} (${(bestMatch.score * 100).toFixed(1)}% match)`);
-                
-                // Update reading progress indicator
-                const progressBar = document.getElementById('confidence-bar');
-                const progressText = document.getElementById('confidence-text');
-                if (progressBar && progressText) {
-                    const progress = ((bestMatch.index + 1) / sentences.length) * 100;
-                    progressBar.style.width = `${progress}%`;
-                    progressText.textContent = `${Math.round(progress)}%`;
-                }
-            }
-        }
-
-        handleUserResponse(transcript) {
-            console.log('🗣️ User is responding to interviewer');
-            this.extendAnswerPersistence('User is responding');
-            
-            const completionPhrases = [
-                'thank you', 'that\'s all', 'does that answer', 'any other questions',
-                'anything else', 'is there anything', 'what else'
-            ];
-            
-            const isComplete = completionPhrases.some(phrase => 
-                transcript.toLowerCase().includes(phrase));
-            
-            if (isComplete) {
-                console.log('✅ User seems to have completed their response');
-                // Give much more time before fade - interviewer needs time to process and ask next question
-                this.scheduleAnswerFade(45000); // 45 seconds instead of 10
-            }
-        }
-
-        markUserAsReading() {
-            if (!this.interviewMode.answerState.userIsReading) {
-                this.interviewMode.answerState.userIsReading = true;
-                this.interviewMode.answerState.readingStartTime = Date.now();
-                
-                const answerDisplay = document.getElementById('ai-answer');
-                if (answerDisplay) {
-                    answerDisplay.style.borderLeft = '4px solid #00ff00';
-                    answerDisplay.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.3)';
-                }
-                
-                this.updateInterviewStatus('📖 User is reading answer to interviewer');
-                console.log('📖 User reading detected - keeping answer visible');
-            }
-        }
-
-        extendAnswerPersistence(reason) {
-            if (this.answerPersistenceTimer) {
-                clearTimeout(this.answerPersistenceTimer);
-            }
-            if (this.answerFadeTimer) {
-                clearTimeout(this.answerFadeTimer);
-            }
-            
-            const answerDisplay = document.getElementById('ai-answer');
-            if (answerDisplay) {
-                answerDisplay.style.opacity = '1';
-                answerDisplay.style.backgroundColor = 'rgba(0, 255, 0, 0.05)';
-            }
-            
-            console.log(`⏰ Answer persistence extended: ${reason}`);
-            this.updateInterviewStatus(`⏰ Keeping answer visible: ${reason}`);
-            
-            this.scheduleAnswerFade(30000);
-        }
-
-        scheduleAnswerFade(delay) {
-            this.answerFadeTimer = setTimeout(() => {
-                this.gradualAnswerFade();
-            }, delay);
-        }
-
-        gradualAnswerFade() {
-            const answerDisplay = document.getElementById('ai-answer');
-            if (!answerDisplay) return;
-            
-            console.log('🌅 Starting gradual answer fade');
-            this.updateInterviewStatus('🌅 Answer fading - will clear on next question');
-            
-            let opacity = 1;
-            const fadeInterval = setInterval(() => {
-                opacity -= 0.05;
-                answerDisplay.style.opacity = Math.max(0.3, opacity);
-                
-                if (opacity <= 0.3) {
-                    clearInterval(fadeInterval);
-                    console.log('💡 Answer at minimum visibility - ready for next question');
-                }
-            }, 1000);
-        }
-
-        isInterviewQuestion(text) {
-            const cleanText = text.toLowerCase().trim();
-            
-            // If text is too short, likely not a question
-            if (cleanText.length < 3) return false;
-            
-            // Skip very obvious user responses/confirmations
-            const userResponsePatterns = [
-                /^(yes|no|okay|ok|sure|right|exactly|correct|got it|makes sense)$/,
-                /^(mm|hmm|uh|um|ah)$/,
-                /^(thanks|thank you|great|good|awesome)$/
-            ];
-            
-            const isUserResponse = userResponsePatterns.some(pattern => pattern.test(cleanText));
-            if (isUserResponse) return false;
-            
-            // UNIVERSAL INTERVIEW DETECTION - Any statement that could be an interview question
-            
-            // 1. EXPLICIT QUESTION MARKERS
-            const explicitQuestions = [
-                /\?$/, // Ends with question mark
-                /^(what|how|why|when|where|who|which|whose)/,
-                /^(can you|could you|would you|will you|do you|did you|have you|are you)/,
-                /^(tell me|describe|explain|walk me through|give me|show me)/,
-                /^(let's|let us)/
-            ];
-            
-            // 2. BEHAVIORAL PATTERNS  
-            const behavioralPatterns = [
-                /time when|situation where|experience with|example of/,
-                /disagreed|conflict|challenge|difficult|problem|issue/,
-                /led a team|managed|leadership|mentoring/,
-                /failed|mistake|wrong|error|bug/,
-                /proud of|achievement|success|accomplished/
-            ];
-            
-            // 3. TECHNICAL PATTERNS
-            const technicalPatterns = [
-                /design|implement|build|create|develop|architect/,
-                /algorithm|data structure|complexity|optimization/,
-                /scale|performance|latency|throughput|bottleneck/,
-                /database|api|system|service|infrastructure/,
-                /code|programming|software|technology|framework/,
-                /test|debug|deploy|monitor|maintain/
-            ];
-            
-            // 4. PRODUCT/BUSINESS PATTERNS
-            const productPatterns = [
-                /improve|optimize|feature|product|user experience/,
-                /metrics|analytics|data|growth|engagement/,
-                /strategy|roadmap|priority|decision|trade.?off/,
-                /customer|user|business|market|competition/
-            ];
-            
-            // 5. CODING CHALLENGE PATTERNS
-            const codingPatterns = [
-                /implement|write|code|function|method|class/,
-                /lru cache|binary tree|linked list|hash|sort|search/,
-                /two sum|reverse|palindrome|fibonacci|factorial/,
-                /recursive|iterative|dynamic programming|greedy/
-            ];
-            
-            // 6. SYSTEM DESIGN PATTERNS  
-            const systemDesignPatterns = [
-                /design (a|an)|build (a|an)|create (a|an)/,
-                /instagram|facebook|twitter|uber|netflix|amazon/,
-                /chat system|messaging|notification|feed|search/,
-                /distributed|microservices|load balancer|cache|database/
-            ];
-            
-            // 7. GREETINGS & CONVERSATION STARTERS
-            const greetingPatterns = [
-                /^(hi|hello|hey|good morning|good afternoon|good evening)/,
-                /how are you|how's it going|nice to meet/,
-                /ready to|let's start|shall we begin/,
-                /introduce yourself|tell me about yourself/
-            ];
-            
-            // 8. FOLLOW-UP PATTERNS
-            const followUpPatterns = [
-                /any questions|anything else|what else/,
-                /elaborate|more detail|expand on/,
-                /think about|consider|approach/,
-                /different way|alternative|other options/
-            ];
-            
-            // 9. COMPANY-SPECIFIC PATTERNS (META/Facebook style)
-            const companyPatterns = [
-                /facebook|meta|instagram|whatsapp/,
-                /news feed|timeline|stories|reels/,
-                /social media|social network|community/,
-                /privacy|security|content moderation/
-            ];
-            
-            // Combine all patterns
-            const allPatterns = [
-                ...explicitQuestions,
-                ...behavioralPatterns, 
-                ...technicalPatterns,
-                ...productPatterns,
-                ...codingPatterns,
-                ...systemDesignPatterns,
-                ...greetingPatterns,
-                ...followUpPatterns,
-                ...companyPatterns
-            ];
-            
-            // Check if ANY pattern matches
-            const matchesPattern = allPatterns.some(pattern => pattern.test(cleanText));
-            
-            // Additional heuristics:
-            // - Contains multiple words (likely a question vs single word response)
-            // - Contains professional terminology
-            // - Sounds like interviewer speech pattern
-            const wordCount = cleanText.split(/\s+/).length;
-            const isProfessionalTone = wordCount >= 3 && (
-                cleanText.includes('experience') ||
-                cleanText.includes('project') ||
-                cleanText.includes('work') ||
-                cleanText.includes('team') ||
-                cleanText.includes('company') ||
-                cleanText.includes('challenge') ||
-                cleanText.includes('technology') ||
-                cleanText.includes('solution')
-            );
-            
-            // If it matches patterns OR seems like professional interview discourse
-            const isLikelyQuestion = matchesPattern || isProfessionalTone;
-            
-            if (isLikelyQuestion) {
-                console.log('✅ DETECTED INTERVIEW QUESTION:', cleanText.substring(0, 50) + '...');
-                console.log('🎯 Question type detection: Universal interview pattern matched');
-                return true;
-            }
-            
-            // Default: if in doubt, treat as question (better to respond than miss)
-            // Only exclude very obvious non-questions
-            const definitivelyNotQuestion = cleanText.length < 5 || 
-                /^(yeah|yep|nope|mhm|uh huh|oh|wow|cool|nice)$/.test(cleanText);
-            
-            return !definitivelyNotQuestion;
-        }
-
-        async getInterviewAIResponse(question) {
-            try {
-                console.log('🧠 Getting personalized AI response for:', question);
-                this.updateInterviewStatus('🧠 AI analyzing question...');
-                
-                // First, try to get user profile for personalization
-                let usePersonalizedPrompt = false;
-                try {
-                    const profileResponse = await fetch('http://localhost:8084/api/get-profile');
-                    if (profileResponse.ok) {
-                        const profile = await profileResponse.json();
-                        // Check if profile has meaningful data
-                        if (profile.personal && profile.personal.fullName) {
-                            usePersonalizedPrompt = true;
-                            console.log('✅ User profile found - using personalized responses');
-                        }
-                    }
-                } catch (profileError) {
-                    console.log('ℹ️ No user profile available - using default interview mode');
-                }
-                
-                // Build the request - let backend handle personalization if profile exists
-                const requestBody = {
-                    question: question,
-                    interview_mode: true,
-                    context: 'senior_engineer_interview',
-                    optimization: 'comprehensive_technical',
-                    interview_level: 'IC6_IC7_E5_E6_E7', // Senior+ level interviews
-                    requirements: {
-                        depth: 'expert_level',
-                        include_examples: true,
-                        include_code_samples: true,
-                        include_architecture_details: true,
-                        include_trade_offs: true,
-                        include_scalability_considerations: true,
-                        response_length: 'comprehensive'
-                    },
-                    temperature: 0.3, // Lower for more precise technical answers
-                    personalized: usePersonalizedPrompt
-                };
-
-                const response = await fetch('http://localhost:8084/api/ask', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(requestBody)
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('✅ Got personalized AI response:', data.answer);
-                    console.log('📏 Response length:', data.answer?.length || 0);
-                    console.log('🎯 Interview mode:', data.interview_mode);
-                    
-                    // Show personalization status
-                    if (usePersonalizedPrompt) {
-                        this.updateInterviewStatus('✅ Personalized answer ready - Based on your profile');
-                    } else {
-                        this.updateInterviewStatus('✅ Answer ready - Upload resume for personalization');
-                    }
-                    
-                    this.displayStealthInterviewAnswer(data.answer || data.response, question);
-                } else {
-                    console.error('❌ Interview AI API error:', response.status);
-                    this.displayStealthInterviewAnswer('Sorry, I couldn\'t process that question right now. Could you please repeat it?', question);
-                    this.updateInterviewStatus('❌ AI Error - Check connection');
-                }
-            } catch (error) {
-                console.error('❌ Network error getting interview AI response:', error);
-                this.displayStealthInterviewAnswer('Network connection issue - please check your internet connection.', question);
-                this.updateInterviewStatus('❌ Connection Error');
-            }
-        }
-
-        displayStealthInterviewAnswer(response, question) {
-            console.log('🎯 Displaying stealth interview answer:', response);
-            
-            // Update both regular overlay and stealth window if active
-            if (this.stealthState.hiddenFromScreenShare && this.stealthWindow && !this.stealthWindow.closed) {
-                this.updateStealthWindow(question, response);
-            } else {
-                this.updateRegularOverlay(question, response);
-            }
-        }
-
-        updateStealthWindow(question, response) {
-            if (!this.stealthElements) return;
-            
-            const { questionDisplay, answerDisplay, status } = this.stealthElements;
-            
-            // Show question
-            if (question && questionDisplay) {
-                questionDisplay.style.display = 'block';
-                questionDisplay.textContent = `❓ Question: ${question}`;
-            }
-            
-            // Update status
-            if (status) {
-                status.textContent = '🤖 AI Responding...';
-            }
-            
-            // Display answer with typing effect
-            if (answerDisplay) {
-                this.typewriterEffectInPopup(answerDisplay, response, () => {
-                    if (status) {
-                        status.textContent = '🤖 AI Ready - Voice recognition active';
-                    }
-                });
-            }
-        }
-
-        updateRegularOverlay(question, response) {
-            // Get elements from the regular overlay
-            const questionDisplay = this.overlay.querySelector('#current-question');
-            const answerDisplay = this.overlay.querySelector('#ai-answer');
-            
-            if (!questionDisplay || !answerDisplay) {
-                console.warn('Overlay elements not found');
-                return;
-            }
-            
-            // Reset answer state for new question
-            this.interviewMode.answerState = {
-                isDisplayed: true,
-                userIsReading: false,
-                readingStartTime: null,
-                readingCompleted: false,
-                lastActivity: Date.now()
-            };
-            
-            // Only clear if this is a NEW question
-            if (this.lastQuestion !== question) {
-                questionDisplay.textContent = '';
-                answerDisplay.textContent = '';
-                answerDisplay.style.opacity = '1';
-                answerDisplay.style.borderLeft = 'none';
-                answerDisplay.style.backgroundColor = 'transparent';
-                answerDisplay.style.display = 'block';
-                
-                // Clear timers
-                if (this.answerPersistenceTimer) {
-                    clearTimeout(this.answerPersistenceTimer);
-                }
-                if (this.answerFadeTimer) {
-                    clearTimeout(this.answerFadeTimer);
-                }
-                
-                this.lastQuestion = question;
-            }
-            
-            // Show the question
-            if (question) {
-                questionDisplay.innerHTML = `<strong>❓ Question:</strong> ${question}`;
-                questionDisplay.style.display = 'block';
-                questionDisplay.classList.add('active');
-            }
-            
-            // Optimize answer for interview context
-            const interviewAnswer = this.optimizeAnswerForInterview(response, question);
-            
-            // Display answer with improved typing effect
-            this.typewriterEffect(answerDisplay, interviewAnswer, () => {
-                console.log('✅ Answer display complete - Intelligent persistence active');
-                this.setInitialAnswerPersistence();
-            });
-        }
-
-        typewriterEffectInPopup(element, text, callback) {
-            if (!element) return;
-            
-            element.textContent = '';
-            let index = 0;
-            const speed = 15; // Faster typing for popup
-            
-            const type = () => {
-                if (index < text.length) {
-                    element.textContent += text.charAt(index);
-                    index++;
-                    element.scrollTop = element.scrollHeight;
-                    setTimeout(type, speed);
-                } else if (callback) {
-                    callback();
+                    this.updateStatus('🔇 Stopped listening');
+                    document.getElementById('toggle-listen').textContent = '🎤 Start Listening';
                 }
             };
             
-            type();
-        }
-
-        getActiveElement(id) {
-            // Try to get element from local copy first (if in stealth mode), then original
-            if (this.localCopy) {
-                const localElement = this.localCopy.querySelector(`#${id}`);
-                if (localElement) return localElement;
-            }
+            this.updateStatus('✅ Ready to listen');
+            console.log('✅ Speech recognition ready');
             
-            return this.overlay.querySelector(`#${id}`);
+        } catch (error) {
+            console.error('❌ Speech recognition setup failed:', error);
+            this.updateStatus('❌ Speech recognition failed');
         }
+    }
 
-        setElementContent(id, content) {
-            // Set content in both original and local copy
-            const originalElement = this.overlay.querySelector(`#${id}`);
-            const localElement = this.localCopy?.querySelector(`#${id}`);
-            
-            if (originalElement) originalElement.innerHTML = content;
-            if (localElement) localElement.innerHTML = content;
-        }
-
-        clearElementContent(id) {
-            // Clear content in both original and local copy
-            const originalElement = this.overlay.querySelector(`#${id}`);
-            const localElement = this.localCopy?.querySelector(`#${id}`);
-            
-            if (originalElement) originalElement.innerHTML = '';
-            if (localElement) localElement.innerHTML = '';
-        }
-
-        setElementStyle(id, styles) {
-            // Set styles in both original and local copy
-            const originalElement = this.overlay.querySelector(`#${id}`);
-            const localElement = this.localCopy?.querySelector(`#${id}`);
-            
-            if (originalElement) {
-                Object.assign(originalElement.style, styles);
-            }
-            if (localElement) {
-                Object.assign(localElement.style, styles);
+    handleSpeechResult(event) {
+        let finalTranscript = '';
+        
+        // Get final transcript
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
             }
         }
-
-        optimizeAnswerForInterview(rawResponse, question) {
-            let answer = rawResponse;
+        
+        if (finalTranscript.trim()) {
+            console.log('🎯 Speech detected:', finalTranscript);
             
-            const questionLower = question ? question.toLowerCase() : '';
-            const isGreeting = questionLower.includes('how are you') || questionLower.includes('hello') || questionLower.includes('hi ');
-            const isAboutYou = questionLower.includes('tell me about yourself') || questionLower.includes('about you');
-            const isTechnical = questionLower.includes('technical') || questionLower.includes('code') || 
-                              questionLower.includes('programming') || questionLower.includes('algorithm') ||
-                              questionLower.includes('system design') || questionLower.includes('architecture') ||
-                              questionLower.includes('java') || questionLower.includes('python') || 
-                              questionLower.includes('javascript') || questionLower.includes('react') ||
-                              questionLower.includes('experience with') || questionLower.includes('how do you');
-            const isCoding = questionLower.includes('coding') || questionLower.includes('implement') ||
-                           questionLower.includes('write code') || questionLower.includes('algorithm') ||
-                           questionLower.includes('data structure');
-            
-            // Remove AI references and make responses more human
-            answer = answer.replace(/As an AI|I'm an AI|As a language model|I'm a language model/gi, '');
-            answer = answer.replace(/I don't have personal experience/gi, 'In my experience');
-            answer = answer.replace(/I cannot|I can't/gi, 'Let me approach this');
-            answer = answer.replace(/I don't have feelings/gi, 'I feel');
-            answer = answer.replace(/I'm not able to/gi, 'Let me think about');
-            
-            // Handle specific interview question types with senior-level depth
-            if (isGreeting) {
-                answer = "I'm doing excellent, thank you! I'm really excited about this opportunity and the technical challenges we'll discuss. How has your day been going?";
-            } else if (isAboutYou) {
-                answer = "I'm a senior software engineer with deep expertise in distributed systems, scalable architecture, and leading high-impact technical initiatives. I've spent significant time optimizing large-scale systems, mentoring engineering teams, and driving technical strategy. I'm particularly passionate about solving complex engineering problems and building systems that can scale to millions of users. What specific aspects of my technical background would be most relevant for this role?";
-            }
-            
-            // For technical questions, ensure comprehensive coverage
-            if (isTechnical || isCoding) {
-                // Don't shorten technical answers - keep them comprehensive
-                if (answer.length > 1200) {
-                    // Only trim if extremely long, but keep technical depth
-                    const sentences = answer.split('. ');
-                    let coreAnswer = sentences.slice(0, 8).join('. ') + '.';
-                    
-                    if (sentences.length > 8) {
-                        coreAnswer += `\n\n🔧 Additional Technical Details:\n${sentences.slice(8, 12).map(s => `• ${s.trim()}`).join('\n')}`;
-                    }
-                    answer = coreAnswer;
-                }
+            // Simple question detection
+            if (this.isQuestion(finalTranscript)) {
+                console.log('❓ Question detected:', finalTranscript);
+                this.processQuestion(finalTranscript);
             } else {
-                // For non-technical questions, moderate length
-                if (answer.length > 800) {
-                    const sentences = answer.split('. ');
-                    let keyAnswer = sentences.slice(0, 5).join('. ') + '.';
-                    
-                    if (sentences.length > 5) {
-                        keyAnswer += `\n\n💡 Key Points:\n${sentences.slice(5, 8).map(s => `• ${s.trim()}`).join('\n')}`;
-                    }
-                    answer = keyAnswer;
-                }
-            }
-            
-            // Add better paragraph breaks for readability
-            answer = answer.replace(/\. ([A-Z])/g, '.\n\n$1');
-            answer = answer.replace(/([.!?])\s*([A-Z][a-z])/g, '$1\n\n$2');
-            
-            // Add confident, senior-level starters for technical questions
-            const seniorStarters = [
-                "In my experience building large-scale systems, ",
-                "From my work on distributed architectures, ",
-                "Having led multiple technical initiatives, ",
-                "Based on my deep experience with production systems, ",
-                "From architecting solutions at scale, "
-            ];
-            
-            if (isTechnical && !answer.match(/^(In my|From my|Having|Based on|From arch)/i) && !isGreeting) {
-                const starter = seniorStarters[Math.floor(Math.random() * seniorStarters.length)];
-                answer = starter + answer.charAt(0).toLowerCase() + answer.slice(1);
-            }
-            
-            // Add follow-up for coding/technical questions
-            if ((isTechnical || isCoding) && !answer.includes('Would you like me to')) {
-                answer += "\n\nWould you like me to dive deeper into any specific aspect, walk through the implementation details, or discuss the scalability considerations?";
-            }
-            
-            return answer;
-        }
-
-        typewriterEffect(element, text, callback) {
-            if (this.interviewMode.isTyping) {
-                return;
-            }
-            
-            this.interviewMode.isTyping = true;
-            element.innerHTML = '';
-            element.classList.add('typing-cursor');
-            
-            let index = 0;
-            const baseTypingSpeed = 25; // Much faster for fluent conversation
-            
-            const typeChar = () => {
-                if (index < text.length) {
-                    const char = text.charAt(index);
-                    
-                    let delay = baseTypingSpeed;
-                    if (char === '.' || char === '!' || char === '?') {
-                        delay = baseTypingSpeed * 2; // Shorter pauses
-                    } else if (char === ',' || char === ';') {
-                        delay = baseTypingSpeed * 1.5; // Shorter pauses
-                    } else if (char === '\n') {
-                        delay = baseTypingSpeed * 2; // Shorter pauses
-                    } else if (char === ' ') {
-                        delay = baseTypingSpeed * 1.1;
-                    }
-                    
-                    if (char === '\n') {
-                        element.innerHTML += '<br>';
-                    } else {
-                        element.innerHTML += char;
-                    }
-                    
-                    index++;
-                    element.scrollTop = element.scrollHeight;
-                    
-                    setTimeout(typeChar, delay);
-                } else {
-                    element.classList.remove('typing-cursor');
-                    this.interviewMode.isTyping = false;
-                    
-                    if (callback) callback();
-                }
-            };
-            
-            typeChar();
-        }
-
-        setInitialAnswerPersistence() {
-            // Don't set any automatic fade - keep until next question
-            // this.scheduleAnswerFade(60000); // REMOVED: No time-based fade
-            
-            const answerDisplay = document.getElementById('ai-answer');
-            if (answerDisplay) {
-                answerDisplay.style.borderLeft = '3px solid #00ff00';
-                answerDisplay.style.backgroundColor = 'rgba(0, 255, 0, 0.05)';
-                answerDisplay.style.opacity = '1';
-            }
-            
-            console.log('📌 Answer will stay visible until next question is asked');
-            console.log('🧠 Intelligent monitoring active - will extend if user is reading/responding');
-        }
-
-        showVoiceRecognitionWorking() {
-            const statusEl = document.getElementById('ai-status');
-            if (statusEl) {
-                statusEl.innerHTML = '🎤 Voice Recognition Active';
-                statusEl.style.color = '#00ff00';
-            }
-            
-            // Show ready state in interview content
-            const contentEl = document.getElementById('interview-content');
-            if (contentEl && !document.getElementById('ai-answer').style.display) {
-                contentEl.innerHTML = `
-                    <div style="text-align: center; padding: 30px; color: #00ff00;">
-                        <div style="font-size: 24px; margin-bottom: 15px;">🎤</div>
-                        <div style="margin-bottom: 10px; font-weight: bold;">Ready for Interview Questions</div>
-                        <div style="font-size: 10px;">
-                            🧠 Intelligent persistence enabled<br>
-                            📖 Detects when you're reading answers<br>
-                            ⏰ Keeps answers visible until you're done<br>
-                            🎯 Test: "Hi how are you" or "Tell me about yourself"
-                        </div>
-                    </div>
-                `;
-            }
-        }
-
-        showVoiceRecognitionFallback() {
-            const statusEl = document.getElementById('ai-status');
-            if (statusEl) {
-                statusEl.innerHTML = '⚠️ Voice Recognition Not Available';
-                statusEl.style.color = '#ff6b6b';
-            }
-            
-            const contentEl = document.getElementById('interview-content');
-            if (contentEl) {
-                contentEl.innerHTML = `
-                    <div style="text-align: center; padding: 30px; color: #ff6b6b;">
-                        <div style="font-size: 24px; margin-bottom: 15px;">⚠️</div>
-                        <div style="margin-bottom: 10px;">Voice Recognition Unavailable</div>
-                        <div style="font-size: 10px;">
-                            Please allow microphone access or<br>
-                            use a supported browser (Chrome/Edge)
-                        </div>
-                    </div>
-                `;
-            }
-        }
-
-        monitorGeneric() {
-            console.log('🔍 Starting generic platform monitoring');
-            this.updateStatus('🔍 Monitoring generic platform');
-        }
-
-        updateStatus(status) {
-            const statusEl = document.getElementById('ai-status');
-            if (statusEl) {
-                statusEl.textContent = status;
-            }
-            console.log('📊 Status:', status);
-        }
-
-        updateInterviewStatus(status) {
-            this.updateStatus(status);
-            const confidenceEl = document.getElementById('confidence-text');
-            if (confidenceEl) {
-                confidenceEl.textContent = status.includes('✅') ? 'Ready' : 
-                                         status.includes('🧠') ? 'Think' :
-                                         status.includes('📖') ? 'Read' :
-                                         status.includes('⏰') ? 'Wait' : 'Listen';
-            }
-        }
-
-        handleManualQuestion() {
-            const manualInput = document.getElementById('manual-question-input');
-            if (!manualInput) return;
-            
-            const question = manualInput.value.trim();
-            if (!question) return;
-            
-            console.log('🧪 Manual question submitted:', question);
-            
-            // Update status to show processing
-            this.updateInterviewStatus('🧪 Testing question...');
-            
-            // Always process the question (bypass isInterviewQuestion check for manual testing)
-            this.getInterviewAIResponse(question);
-            
-            // Clear input
-            manualInput.value = '';
-            
-            // Show visual feedback
-            const submitBtn = document.getElementById('manual-submit-btn');
-            if (submitBtn) {
-                const originalText = submitBtn.textContent;
-                submitBtn.textContent = '✓ Sent';
-                submitBtn.style.background = '#00ff00';
-                
-                setTimeout(() => {
-                    submitBtn.textContent = originalText;
-                    submitBtn.style.background = '#00ff00';
-                }, 1500);
-            }
-        }
-
-        testStealthMode() {
-            if (this.stealthState.hiddenFromScreenShare) {
-                console.log('🔍 Deactivating stealth mode (manual test)');
-                this.deactivateStealthMode('Manual test');
-                
-                // Update button text
-                const testBtn = document.getElementById('stealth-test-btn');
-                if (testBtn) {
-                    testBtn.textContent = '🕵️ Test Stealth Mode';
-                    testBtn.style.background = '#ff6b6b';
-                }
-            } else {
-                console.log('🕵️ Activating stealth mode (manual test)');
-                this.activateStealthMode('Manual test');
-                
-                // Update button text
-                const testBtn = document.getElementById('stealth-test-btn');
-                if (testBtn) {
-                    testBtn.textContent = '👁️ Exit Stealth Mode';
-                    testBtn.style.background = '#00ff00';
-                    testBtn.style.color = 'black';
-                }
+                console.log('💬 Speech (not a question):', finalTranscript);
             }
         }
     }
 
-    // Initialize the assistant
-    const assistant = new MeetingAIAssistant();
-    
-    // Make it globally accessible for debugging
-    window.AIMentorAssistant = assistant;
-    
-    // Add test functions for debugging
-    window.testVoice = function(text) {
-        console.log('🧪 Testing voice input:', text);
-        assistant.handleVoiceResult({
-            resultIndex: 0,
-            results: [{
-                isFinal: true,
-                0: { transcript: text }
-            }]
-        });
-    };
-    
-    window.quickTests = {
-        greeting: () => testVoice("Hi how are you"),
-        about: () => testVoice("Tell me about yourself"),
-        experience: () => testVoice("What is your experience with Python"),
-        api: () => testVoice("How do you design APIs")
-    };
-    
-    // Log available test functions
-    setTimeout(() => {
-        console.log('🧪 Test functions available:');
-        console.log('- testVoice("your question")');
-        console.log('- quickTests.greeting()');
-        console.log('- quickTests.about()');
-        console.log('- quickTests.experience()');
-        console.log('- quickTests.api()');
-        console.log('- Say "Hi how are you" or "Tell me about yourself" to test voice');
-    }, 2000);
+    isQuestion(text) {
+        const questionWords = ['what', 'how', 'why', 'when', 'where', 'who', 'tell me', 'describe', 'explain'];
+        const lowerText = text.toLowerCase();
+        
+        return questionWords.some(word => lowerText.includes(word)) || text.trim().endsWith('?');
+    }
 
-    console.log('✅ AI Mentor Content Script fully loaded with intelligent persistence');
+    async processQuestion(question) {
+        try {
+            console.log('🎯 Processing question:', question);
+            
+            // Show the question immediately
+            const questionArea = document.getElementById('question-area');
+            const questionText = document.getElementById('question-text');
+            if (questionArea && questionText) {
+                questionArea.style.display = 'block';
+                questionText.textContent = question;
+            }
+            
+            this.updateStatus('🧠 AI is thinking...');
+            
+            // Get AI response
+            const response = await fetch('http://localhost:8084/api/ask', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    question: question,
+                    interview_mode: true
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.displayAnswer(data.response, question);
+                this.updateStatus('✅ Answer ready - Read it back!');
+            } else {
+                throw new Error(`API error: ${response.status}`);
+            }
+
+        } catch (error) {
+            console.error('❌ Failed to process question:', error);
+            this.displayAnswer('❌ Sorry, I could not process that question. Please check the AI service.', question);
+            this.updateStatus('❌ Error processing question');
+        }
+    }
+
+    handleOffscreenMessage(event) {
+        // Handle messages from the offscreen window
+        if (event.data.type === 'ai-test-connection') {
+            console.log('🧪 Test connection request from offscreen window');
+            this.testConnection();
+        } else if (event.data.type === 'ai-exit-stealth') {
+            console.log('↩️ Exit stealth mode request from offscreen window');
+            this.deactivateFullStealth();
+        } else if (event.data.type === 'ai-offscreen-closed') {
+            console.log('🪟 Offscreen window closed');
+            this.offscreenWindow = null;
+            // Automatically exit stealth mode if window is closed
+            this.deactivateFullStealth();
+        }
+    }
+
+    displayAnswer(answer, question) {
+        // Show the question area with the current question
+        const questionArea = document.getElementById('question-area');
+        const questionText = document.getElementById('question-text');
+        if (questionArea && questionText) {
+            questionArea.style.display = 'block';
+            questionText.textContent = question;
+        }
+
+        // Display the answer in a readable format
+        const answerContent = `
+            <div style="margin-bottom: 15px; background: rgba(0, 100, 255, 0.1); padding: 8px; border-radius: 5px;">
+                <strong style="color: #0066ff;">❓ Question:</strong><br>
+                <span style="color: #white; font-size: 10px;">${question}</span>
+            </div>
+            <div style="background: rgba(0, 255, 0, 0.1); padding: 10px; border-radius: 5px; border-left: 3px solid #00ff00;">
+                <strong style="color: #00ff00; font-size: 11px;">💡 Your Answer:</strong><br><br>
+                <div style="color: #00ff00; line-height: 1.6; font-size: 10px;">
+                    ${answer.replace(/\n/g, '<br>')}
+                </div>
+            </div>
+            <div style="margin-top: 15px; text-align: center; font-size: 10px; color: #666; border-top: 1px solid #333; padding-top: 8px;">
+                📋 <strong>Read this answer back to the interviewer</strong> 📋<br>
+                <small>Ready for next question...</small>
+            </div>
+        `;
+        
+        // Update main tab overlay
+        const answerArea = document.getElementById('answer-area');
+        if (answerArea) {
+            answerArea.innerHTML = answerContent;
+            answerArea.scrollTop = 0;
+        }
+        
+        // Also update offscreen window if it exists
+        if (this.offscreenWindow && !this.offscreenWindow.closed) {
+            this.offscreenWindow.postMessage({
+                type: 'ai-update-answer',
+                content: answerContent
+            }, '*');
+        }
+
+        console.log('✅ Answer displayed for question:', question);
+    }
+
+    toggleListening() {
+        if (this.isListening) {
+            this.stopListening();
+        } else {
+            this.startSpeechRecognition();
+        }
+    }
+
+    async startSpeechRecognition() {
+        if (this.recognition) {
+            try {
+                this.isListening = true;
+                this.recognition.start();
+            } catch (error) {
+                console.error('❌ Failed to start recognition:', error);
+                this.updateStatus('❌ Failed to start listening');
+            }
+        }
+    }
+
+    stopListening() {
+        if (this.recognition) {
+            this.isListening = false;
+            this.recognition.stop();
+        }
+    }
+
+    testConnection() {
+        this.processQuestion("Tell me about yourself");
+    }
+
+    async uploadResume() {
+        const fileInput = document.getElementById('resume-file');
+        const textInput = document.getElementById('resume-text');
+        
+        let resumeText = '';
+        
+        // Check if file is selected
+        if (fileInput.files && fileInput.files[0]) {
+            const file = fileInput.files[0];
+            this.updateResumeStatus('⏳ Processing file...');
+            
+            try {
+                resumeText = await this.extractTextFromFile(file);
+                if (!resumeText.trim()) {
+                    this.updateResumeStatus('❌ Could not extract text from file - try text input');
+                    this.showTextInputHelper();
+                    return;
+                }
+            } catch (error) {
+                console.error('File processing error:', error);
+                this.updateResumeStatus('❌ ' + error.message);
+                this.showTextInputHelper();
+                return;
+            }
+        } 
+        // Check text input
+        else if (textInput.value.trim()) {
+            resumeText = textInput.value.trim();
+        } 
+        // No input provided
+        else {
+            this.updateResumeStatus('❌ Please select a file or enter text');
+            return;
+        }
+
+        try {
+            this.updateResumeStatus('⏳ Uploading resume...');
+            
+            const response = await fetch('http://localhost:8084/api/resume', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    resume_text: resumeText
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const wordCount = Math.round(data.resume_length / 5); // Estimate words (avg 5 chars per word)
+                this.updateResumeStatus(`🧠 Comprehensive resume memorized! (${data.resume_length} chars, ~${wordCount} words)`);
+                
+                // Clear inputs after successful upload
+                fileInput.value = '';
+                textInput.value = '';
+                
+                console.log(`✅ Large resume uploaded and memorized by AI: ${data.resume_length} characters`);
+            } else {
+                throw new Error(`Upload failed: ${response.status}`);
+            }
+
+        } catch (error) {
+            console.error('❌ Resume upload failed:', error);
+            this.updateResumeStatus('❌ Upload failed - Check AI service');
+        }
+    }
+
+    async extractTextFromFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                
+                if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+                    // Handle text files
+                    const text = new TextDecoder().decode(arrayBuffer);
+                    resolve(text);
+                } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+                    // For PDF files, we'll need to suggest conversion
+                    reject(new Error('PDF parsing requires conversion. Please copy your resume text and use the "📝 Text Input" option instead.'));
+                } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+                          file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
+                    // For Word files, suggest conversion
+                    reject(new Error('Word document parsing requires conversion. Please copy your resume text and use the "📝 Text Input" option instead.'));
+                } else {
+                    // Try to read as text anyway
+                    try {
+                        const text = new TextDecoder().decode(arrayBuffer);
+                        if (text && text.trim().length > 50) {
+                            resolve(text);
+                        } else {
+                            reject(new Error('Could not extract readable text. Please use the "📝 Text Input" option and paste your resume text.'));
+                        }
+                    } catch (error) {
+                        reject(new Error('Unsupported file format. Please convert to TXT or use the "📝 Text Input" option.'));
+                    }
+                }
+            };
+            
+            reader.onerror = () => reject(new Error('File reading failed'));
+            
+            // Read as ArrayBuffer to handle all file types
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    handleFileSelection(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+            this.updateResumeStatus(`📄 Selected: ${file.name} (${fileSizeMB}MB)`);
+            
+            // Show different messages for large files
+            if (file.size > 1024 * 1024) { // > 1MB
+                this.updateResumeStatus(`📄 Large resume detected: ${file.name} (${fileSizeMB}MB) - Ready to process`);
+            }
+            
+            // Hide text input when file is selected
+            document.getElementById('text-input-section').style.display = 'none';
+        }
+    }
+
+    showTextInputHelper() {
+        // Automatically show text input section when file processing fails
+        const textSection = document.getElementById('text-input-section');
+        const toggleBtn = document.getElementById('toggle-text-input');
+        
+        textSection.style.display = 'block';
+        toggleBtn.textContent = '📁 File Upload';
+        
+        // Clear file input
+        document.getElementById('resume-file').value = '';
+        
+        // Add helpful message
+        setTimeout(() => {
+            this.updateResumeStatus('💡 Please copy your resume text and paste it below');
+        }, 2000);
+    }
+
+    toggleTextInput() {
+        const textSection = document.getElementById('text-input-section');
+        const toggleBtn = document.getElementById('toggle-text-input');
+        
+        if (textSection.style.display === 'none') {
+            textSection.style.display = 'block';
+            toggleBtn.textContent = '📁 File Upload';
+            
+            // Clear file input when switching to text
+            document.getElementById('resume-file').value = '';
+        } else {
+            textSection.style.display = 'none';
+            toggleBtn.textContent = '📝 Text Input';
+        }
+    }
+
+    async clearResume() {
+        try {
+            this.updateResumeStatus('⏳ Clearing resume...');
+            
+            const response = await fetch('http://localhost:8084/api/resume', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    resume_text: ''
+                })
+            });
+
+            if (response.ok) {
+                this.updateResumeStatus('Resume cleared from AI memory');
+                
+                // Clear all inputs
+                document.getElementById('resume-file').value = '';
+                document.getElementById('resume-text').value = '';
+                
+                console.log('✅ Resume cleared from AI memory');
+            } else {
+                throw new Error(`Clear failed: ${response.status}`);
+            }
+
+        } catch (error) {
+            console.error('❌ Resume clear failed:', error);
+            this.updateResumeStatus('❌ Clear failed');
+        }
+    }
+
+    async checkResumeStatus() {
+        try {
+            const response = await fetch('http://localhost:8084/api/resume');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.has_resume) {
+                    const wordCount = Math.round(data.resume_length / 5);
+                    this.updateResumeStatus(`🧠 AI knows your background (${data.resume_length} chars, ~${wordCount} words)`);
+                } else {
+                    this.updateResumeStatus('Ready for your comprehensive resume');
+                }
+            }
+        } catch (error) {
+            console.log('Could not check resume status:', error);
+            this.updateResumeStatus('Upload your 15-page resume for personalized responses');
+        }
+    }
+
+    updateResumeStatus(message) {
+        const statusElement = document.getElementById('resume-status');
+        if (statusElement) {
+            statusElement.textContent = message;
+        }
+    }
+
+    updateStatus(message) {
+        const statusElement = document.getElementById('status');
+        if (statusElement) {
+            statusElement.textContent = message;
+        }
+        
+        // Also update offscreen window if it exists
+        if (this.offscreenWindow && !this.offscreenWindow.closed) {
+            this.offscreenWindow.postMessage({
+                type: 'ai-update-status',
+                status: message
+            }, '*');
+        }
+        
+        console.log('📊 Status:', message);
+    }
+
+    toggleMinimize() {
+        const overlay = this.overlay.querySelector('div');
+        const minimizeBtn = document.getElementById('minimize-assistant');
+        
+        if (overlay.style.height === '40px') {
+            // Restore
+            overlay.style.height = 'auto';
+            overlay.style.overflow = 'visible';
+            minimizeBtn.textContent = '➖ Minimize';
+            
+            // Show all sections
+            document.getElementById('resume-section').style.display = 'block';
+            document.getElementById('answer-area').style.display = 'block';
+            document.getElementById('toggle-listen').style.display = 'inline-block';
+        } else {
+            // Minimize
+            overlay.style.height = '40px';
+            overlay.style.overflow = 'hidden';
+            minimizeBtn.textContent = '⬆️ Restore';
+            
+            // Hide sections except status
+            document.getElementById('resume-section').style.display = 'none';
+            document.getElementById('answer-area').style.display = 'none';
+            document.getElementById('toggle-listen').style.display = 'none';
+        }
+    }
 }
+
+// Initialize when page loads
+console.log('🚀 Starting AI Assistant initialization...');
+
+function initializeAssistant() {
+    try {
+        if (window.location.hostname.includes('meet.google.com')) {
+            console.log('✅ On Google Meet, creating assistant');
+            const assistant = new AIInterviewAssistant();
+            assistant.initialize();
+            
+            // Store reference for testing
+            window.aiAssistant = assistant;
+            console.log('✅ AI Assistant fully initialized and visible');
+        } else {
+            console.log('ℹ️ Not on Google Meet, skipping initialization');
+        }
+    } catch (error) {
+        console.error('❌ Failed to initialize assistant:', error);
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeAssistant);
+} else {
+    initializeAssistant();
+}
+
+// Also expose for testing
+window.testQuestion = function(question) {
+    console.log('🧪 Testing question:', question);
+    if (window.aiAssistant) {
+        window.aiAssistant.processQuestion(question);
+    } else {
+        console.log('❌ Assistant not initialized yet');
+    }
+};
+
+console.log('✅ AI Interview Assistant script loaded and ready');

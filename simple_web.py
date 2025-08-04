@@ -9,6 +9,8 @@ import asyncio
 from datetime import datetime
 from app.ai_assistant import AIAssistant
 from app.config import Config
+import base64
+import io
 
 app = Flask(__name__)
 CORS(app)
@@ -213,6 +215,7 @@ def ask_ai():
         data = request.get_json()
         question = data.get('question', '')
         context = data.get('context', 'web_interface')
+        interview_mode = data.get('interview_mode', False)
         
         if not question:
             return jsonify({'error': 'Question is required'}), 400
@@ -220,23 +223,64 @@ def ask_ai():
         # Generate AI response
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        response = loop.run_until_complete(
-            ai_assistant._generate_ai_response(question, {
-                'type': context,
-                'timestamp': datetime.now().isoformat(),
-                'source': 'web_browser'
-            })
-        )
+        
+        if interview_mode:
+            # Use interview-specific response that includes resume context
+            response = loop.run_until_complete(
+                ai_assistant._generate_interview_response(question)
+            )
+        else:
+            # Use general response
+            response = loop.run_until_complete(
+                ai_assistant._generate_ai_response(question, {
+                    'type': context,
+                    'timestamp': datetime.now().isoformat(),
+                    'source': 'web_browser'
+                })
+            )
+        
         loop.close()
         
         return jsonify({
             'response': response,
             'timestamp': datetime.now().isoformat(),
-            'context': context
+            'context': context,
+            'interview_mode': interview_mode,
+            'has_resume': ai_assistant.has_resume_context()
         })
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/resume', methods=['POST'])
+def upload_resume():
+    """Upload and store resume for personalized responses."""
+    try:
+        data = request.get_json()
+        resume_text = data.get('resume_text', '')
+        
+        if not resume_text.strip():
+            return jsonify({'error': 'Resume text is required'}), 400
+        
+        # Store resume in AI assistant for context
+        ai_assistant.set_resume_context(resume_text)
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Resume uploaded successfully',
+            'resume_length': len(resume_text)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/resume', methods=['GET'])
+def get_resume_status():
+    """Get current resume status."""
+    return jsonify({
+        'has_resume': ai_assistant.has_resume_context(),
+        'resume_length': ai_assistant.get_resume_length() if ai_assistant.has_resume_context() else 0
+    })
 
 @app.route('/api/health')
 def health():
@@ -251,7 +295,8 @@ def status():
             'Real-time Q&A',
             'Coding assistance', 
             'Meeting support',
-            'Context memory'
+            'Context memory',
+            'Resume-based responses'
         ]
     })
 

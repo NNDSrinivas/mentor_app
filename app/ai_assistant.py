@@ -192,6 +192,9 @@ class AIAssistant:
         self.interview_level = "IC6"  # Default to IC6 level
         self.target_company = None  # Will be set based on context
         
+        # Load existing resume if available
+        self._load_resume_from_file()
+        
     async def process_real_time_audio(self, audio_data: bytes, session_id: str):
         """Process real-time audio and respond if needed."""
         try:
@@ -439,6 +442,23 @@ class AIAssistant:
         - Target Level: {self.interview_level} (Senior Software Engineer level)
         - Target Company: {self.target_company or "Tech Company"}
         - Response Style: Professional, confident, detailed but concise
+        
+        COMPREHENSIVE RESUME ANALYSIS:
+        When provided with a detailed resume, extract and utilize:
+        - All work experience with specific accomplishments
+        - Technical skills and expertise areas
+        - Education and certifications
+        - Projects with quantifiable impacts
+        - Leadership and team management experience
+        - Industry knowledge and domain expertise
+        - Awards, recognitions, and achievements
+        
+        For extensive resumes (5000+ words), prioritize:
+        1. Most recent and relevant experience
+        2. Quantifiable achievements and metrics
+        3. Technical depth in candidate's expertise areas
+        4. Leadership and cross-functional impact
+        5. Unique experiences that differentiate the candidate
         """
         
         if profile_context.get("has_profile"):
@@ -464,15 +484,24 @@ class AIAssistant:
         
         RESPONSE GUIDELINES:
         1. Answer as the candidate with {self.interview_level} level expertise
-        2. Reference your specific experience and projects when relevant
+        2. Mine the comprehensive resume for specific, relevant examples
         3. Provide technical depth appropriate for senior-level interviews
         4. Use STAR method for behavioral questions (Situation, Task, Action, Result)
         5. Show system design thinking for architecture questions
         6. Demonstrate leadership and impact for senior roles
-        7. Keep responses under 2 minutes speaking time (300-400 words max)
+        7. Keep responses under 2-3 minutes speaking time (400-600 words max for comprehensive answers)
         8. Be confident but not arrogant
         9. Ask clarifying questions when appropriate
-        10. Reference specific technologies, frameworks, and methodologies
+        10. Reference specific technologies, frameworks, and methodologies from resume
+        11. Quantify impact with metrics and numbers when available
+        12. Connect experiences across different roles and projects
+        
+        COMPREHENSIVE RESUME UTILIZATION:
+        - Extract relevant details from all 15+ pages of experience
+        - Highlight unique combinations of skills and experience
+        - Reference specific projects, technologies, and achievements
+        - Show progression and growth across roles
+        - Demonstrate breadth and depth of expertise
         
         TECHNICAL FOCUS AREAS:
         - System Design & Architecture
@@ -482,7 +511,7 @@ class AIAssistant:
         - Cross-functional Collaboration
         - Technical Decision Making
         
-        Respond as the candidate would, drawing from their background and targeting {self.interview_level} level expectations.
+        Respond as the candidate would, drawing comprehensively from their extensive background and targeting {self.interview_level} level expectations.
         """
         
         return base_prompt
@@ -657,7 +686,7 @@ class AIAssistant:
                     {"role": "system", "content": self._get_system_prompt()},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=1200,  # Longer responses for senior-level questions
+                max_tokens=2000,  # Increased for comprehensive resume-based responses
                 temperature=0.7,  # Balanced creativity and consistency
             )
             
@@ -698,7 +727,11 @@ class AIAssistant:
         # Fallback to generic interview prompt
         prompt = f"INTERVIEW QUESTION: {question}\n\n"
         
-        if profile_context.get("has_profile"):
+        # Add resume context if available
+        if self.has_resume_context():
+            prompt += "ANSWER AS THE CANDIDATE with this background:\n"
+            prompt += f"RESUME/BACKGROUND:\n{self.get_resume_context()[:8000]}\n\n"  # Increased to 8000 chars
+        elif profile_context.get("has_profile"):
             prompt += "ANSWER AS THE CANDIDATE with the following background:\n"
             personal = profile_context.get("personal", {})
             
@@ -1135,3 +1168,88 @@ Provide helpful, experienced advice based on 20 years in the industry. Be practi
         except Exception as e:
             logger.error(f"Error adding custom pattern: {e}")
             return False
+
+    # Resume Context Management
+    def set_resume_context(self, resume_text: str):
+        """Set resume context for personalized responses."""
+        try:
+            self.resume_context = resume_text.strip()
+            
+            # Save to file for persistence
+            self._save_resume_to_file(self.resume_context)
+            
+            logger.info(f"✅ Resume context set and saved ({len(self.resume_context)} characters)")
+            return True
+        except Exception as e:
+            logger.error(f"Error setting resume context: {e}")
+            return False
+    
+    def _save_resume_to_file(self, resume_text: str):
+        """Save resume to file for persistence across sessions."""
+        try:
+            import os
+            resume_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'user_resume.txt')
+            os.makedirs(os.path.dirname(resume_file), exist_ok=True)
+            
+            with open(resume_file, 'w', encoding='utf-8') as f:
+                f.write(resume_text)
+            
+            logger.info("Resume saved to file for persistence")
+        except Exception as e:
+            logger.warning(f"Could not save resume to file: {e}")
+    
+    def _load_resume_from_file(self):
+        """Load resume from file if exists."""
+        try:
+            import os
+            resume_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'user_resume.txt')
+            
+            if os.path.exists(resume_file):
+                with open(resume_file, 'r', encoding='utf-8') as f:
+                    resume_text = f.read().strip()
+                
+                if resume_text:
+                    self.resume_context = resume_text
+                    logger.info(f"✅ Resume loaded from file ({len(resume_text)} characters)")
+                    return True
+            
+            return False
+        except Exception as e:
+            logger.warning(f"Could not load resume from file: {e}")
+            return False
+    
+    def has_resume_context(self) -> bool:
+        """Check if resume context is available."""
+        # Try to load from file if not in memory
+        if not hasattr(self, 'resume_context') or not self.resume_context:
+            self._load_resume_from_file()
+        
+        return hasattr(self, 'resume_context') and bool(self.resume_context)
+    
+    def get_resume_length(self) -> int:
+        """Get the length of the stored resume."""
+        if self.has_resume_context():
+            return len(self.resume_context)
+        return 0
+    
+    def get_resume_context(self) -> str:
+        """Get the stored resume context."""
+        if self.has_resume_context():
+            return self.resume_context
+        return ''
+    
+    def clear_resume_context(self):
+        """Clear the stored resume context."""
+        self.resume_context = ""
+        
+        # Also remove the file
+        try:
+            import os
+            resume_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'user_resume.txt')
+            if os.path.exists(resume_file):
+                os.remove(resume_file)
+                logger.info("Resume file deleted")
+        except Exception as e:
+            logger.warning(f"Could not delete resume file: {e}")
+        
+        logger.info("Resume context cleared from memory")
