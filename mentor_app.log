@@ -1,0 +1,354 @@
+2025-08-03 16:01:38,673 - __main__ - INFO - Using virtual environment Python
+2025-08-03 16:01:38,674 - __main__ - INFO - Initializing AI Mentor Application...
+2025-08-03 16:01:38,674 - __main__ - INFO - Running universal IDE setup...
+2025-08-03 16:01:38,977 - __main__ - INFO - ✅ Universal IDE setup completed
+2025-08-03 16:01:38,977 - __main__ - INFO - Starting web interface...
+2025-08-03 16:01:38,978 - __main__ - INFO - Web interface started successfully
+2025-08-03 16:01:40,980 - __main__ - INFO - Starting universal IDE bridge...
+2025-08-03 16:01:40,985 - __main__ - INFO - Universal IDE bridge started successfully
+2025-08-03 16:01:42,991 - __main__ - INFO - Checking browser extension availability...
+2025-08-03 16:01:42,991 - __main__ - INFO - ✅ Browser extension found
+2025-08-03 16:01:42,991 - __main__ - INFO - Checking VS Code extension...
+2025-08-03 16:01:43,224 - __main__ - INFO - ✅ VS Code found - extension ready
+2025-08-03 16:01:43,224 - __main__ - INFO - ============================================================
+2025-08-03 16:01:43,224 - __main__ - INFO - 🚀 AI MENTOR APPLICATION - UNIVERSAL IDE EDITION
+2025-08-03 16:01:43,224 - __main__ - INFO - ============================================================
+2025-08-03 16:01:43,224 - __main__ - INFO - ✅ 5 core services running
+2025-08-03 16:01:43,224 - __main__ - INFO - 
+2025-08-03 16:01:43,224 - __main__ - INFO - 📍 ACCESS POINTS:
+2025-08-03 16:01:43,224 - __main__ - INFO -    🌐 Web Interface: Starting...
+2025-08-03 16:01:43,224 - __main__ - INFO -    🛠️  IDE Bridge: Universal IDE integration active
+2025-08-03 16:01:43,224 - __main__ - INFO - 
+2025-08-03 16:01:43,224 - __main__ - INFO - 🔧 SUPPORTED IDEs:
+2025-08-03 16:01:43,224 - __main__ - INFO -    • VS Code (with extension)
+2025-08-03 16:01:43,224 - __main__ - INFO -    • JetBrains IDEs (IntelliJ, PyCharm, WebStorm)
+2025-08-03 16:01:43,224 - __main__ - INFO -    • Sublime Text
+2025-08-03 16:01:43,224 - __main__ - INFO -    • Vim/Neovim
+2025-08-03 16:01:43,224 - __main__ - INFO -    • Emacs
+2025-08-03 16:01:43,224 - __main__ - INFO -    • Atom
+2025-08-03 16:01:43,224 - __main__ - INFO -    • And more...
+2025-08-03 16:01:43,224 - __main__ - INFO - 
+2025-08-03 16:01:43,224 - __main__ - INFO - 📖 SETUP INSTRUCTIONS:
+2025-08-03 16:01:43,224 - __main__ - INFO -    1. Install browser extension from 'browser_extension/' folder
+2025-08-03 16:01:43,224 - __main__ - INFO -    2. Open any supported IDE
+2025-08-03 16:01:43,224 - __main__ - INFO -    3. Join a meeting (Zoom, Teams, Google Meet)
+2025-08-03 16:01:43,224 - __main__ - INFO -    4. Use Ctrl+Alt+A for AI assistance in any IDE
+2025-08-03 16:01:43,224 - __main__ - INFO - 
+2025-08-03 16:01:43,225 - __main__ - INFO - 🎯 FEATURES:
+2025-08-03 16:01:43,225 - __main__ - INFO -    • Real-time meeting monitoring
+2025-08-03 16:01:43,225 - __main__ - INFO -    • Universal IDE integration
+2025-08-03 16:01:43,225 - __main__ - INFO -    • Jira-based coding assistance
+2025-08-03 16:01:43,225 - __main__ - INFO -    • Smart code suggestions
+2025-08-03 16:01:43,225 - __main__ - INFO -    • Meeting context awareness
+2025-08-03 16:01:43,225 - __main__ - INFO - ============================================================
+2025-08-03 16:01:46,228 - __main__ - ERROR - Application error: No module named 'requests'
+2025-08-03 16:01:46,229 - __main__ - INFO - Stopping all services...
+2025-08-03 16:01:46,229 - __main__ - INFO - Stopping web_interface...
+2025-08-03 16:01:46,685 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 16:01:46,686 - __main__ - INFO - All services stopped
+2025-08-03 16:03:05,161 - __main__ - INFO - Using virtual environment Python
+2025-08-03 16:03:05,161 - __main__ - INFO - Initializing AI Mentor Application...
+2025-08-03 16:03:05,161 - __main__ - INFO - Running universal IDE setup...
+2025-08-03 16:03:05,464 - __main__ - INFO - ✅ Universal IDE setup completed
+2025-08-03 16:03:05,464 - __main__ - INFO - Starting web interface...
+2025-08-03 16:03:05,465 - __main__ - INFO - Web interface started successfully
+2025-08-03 16:03:07,471 - __main__ - INFO - Starting universal IDE bridge...
+2025-08-03 16:03:07,478 - __main__ - INFO - Universal IDE bridge started successfully
+2025-08-03 16:03:09,481 - __main__ - INFO - Checking browser extension availability...
+2025-08-03 16:03:09,482 - __main__ - INFO - ✅ Browser extension found
+2025-08-03 16:03:09,482 - __main__ - INFO - Checking VS Code extension...
+2025-08-03 16:03:09,668 - __main__ - INFO - ✅ VS Code found - extension ready
+2025-08-03 16:03:09,668 - __main__ - INFO - ============================================================
+2025-08-03 16:03:09,668 - __main__ - INFO - 🚀 AI MENTOR APPLICATION - UNIVERSAL IDE EDITION
+2025-08-03 16:03:09,668 - __main__ - INFO - ============================================================
+2025-08-03 16:03:09,668 - __main__ - INFO - ✅ 5 core services running
+2025-08-03 16:03:09,668 - __main__ - INFO - 
+2025-08-03 16:03:09,669 - __main__ - INFO - 📍 ACCESS POINTS:
+2025-08-03 16:03:09,669 - __main__ - INFO -    🌐 Web Interface: Starting...
+2025-08-03 16:03:09,669 - __main__ - INFO -    🛠️  IDE Bridge: Universal IDE integration active
+2025-08-03 16:03:09,669 - __main__ - INFO - 
+2025-08-03 16:03:09,669 - __main__ - INFO - 🔧 SUPPORTED IDEs:
+2025-08-03 16:03:09,669 - __main__ - INFO -    • VS Code (with extension)
+2025-08-03 16:03:09,669 - __main__ - INFO -    • JetBrains IDEs (IntelliJ, PyCharm, WebStorm)
+2025-08-03 16:03:09,669 - __main__ - INFO -    • Sublime Text
+2025-08-03 16:03:09,669 - __main__ - INFO -    • Vim/Neovim
+2025-08-03 16:03:09,669 - __main__ - INFO -    • Emacs
+2025-08-03 16:03:09,669 - __main__ - INFO -    • Atom
+2025-08-03 16:03:09,669 - __main__ - INFO -    • And more...
+2025-08-03 16:03:09,669 - __main__ - INFO - 
+2025-08-03 16:03:09,669 - __main__ - INFO - 📖 SETUP INSTRUCTIONS:
+2025-08-03 16:03:09,669 - __main__ - INFO -    1. Install browser extension from 'browser_extension/' folder
+2025-08-03 16:03:09,669 - __main__ - INFO -    2. Open any supported IDE
+2025-08-03 16:03:09,669 - __main__ - INFO -    3. Join a meeting (Zoom, Teams, Google Meet)
+2025-08-03 16:03:09,669 - __main__ - INFO -    4. Use Ctrl+Alt+A for AI assistance in any IDE
+2025-08-03 16:03:09,669 - __main__ - INFO - 
+2025-08-03 16:03:09,669 - __main__ - INFO - 🎯 FEATURES:
+2025-08-03 16:03:09,669 - __main__ - INFO -    • Real-time meeting monitoring
+2025-08-03 16:03:09,669 - __main__ - INFO -    • Universal IDE integration
+2025-08-03 16:03:09,669 - __main__ - INFO -    • Jira-based coding assistance
+2025-08-03 16:03:09,669 - __main__ - INFO -    • Smart code suggestions
+2025-08-03 16:03:09,669 - __main__ - INFO -    • Meeting context awareness
+2025-08-03 16:03:09,669 - __main__ - INFO - ============================================================
+2025-08-03 16:03:13,177 - __main__ - INFO - 🌐 Web interface detected on port 8081
+2025-08-03 16:03:13,177 - __main__ - INFO - 🎉 Application ready! Press Ctrl+C to stop
+2025-08-03 16:51:25,093 - __main__ - INFO - Received termination signal
+2025-08-03 16:51:25,093 - __main__ - INFO - Stopping all services...
+2025-08-03 16:51:25,094 - __main__ - INFO - Stopping web_interface...
+2025-08-03 16:51:25,491 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 16:51:25,495 - __main__ - INFO - All services stopped
+2025-08-03 16:51:25,495 - __main__ - INFO - Stopping all services...
+2025-08-03 16:51:25,495 - __main__ - INFO - Stopping web_interface...
+2025-08-03 16:51:25,495 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 16:51:25,495 - __main__ - INFO - All services stopped
+2025-08-03 16:52:06,990 - __main__ - INFO - Using virtual environment Python
+2025-08-03 16:52:06,990 - __main__ - INFO - Initializing AI Mentor Application...
+2025-08-03 16:52:06,990 - __main__ - INFO - Running universal IDE setup...
+2025-08-03 16:52:07,270 - __main__ - INFO - ✅ Universal IDE setup completed
+2025-08-03 16:52:07,270 - __main__ - INFO - Starting web interface...
+2025-08-03 16:52:07,271 - __main__ - INFO - Web interface started successfully
+2025-08-03 16:52:09,276 - __main__ - INFO - Starting universal IDE bridge...
+2025-08-03 16:52:09,281 - __main__ - INFO - Universal IDE bridge started successfully
+2025-08-03 16:52:11,286 - __main__ - INFO - Checking browser extension availability...
+2025-08-03 16:52:11,287 - __main__ - INFO - ✅ Browser extension found
+2025-08-03 16:52:11,287 - __main__ - INFO - Checking VS Code extension...
+2025-08-03 16:52:11,444 - __main__ - INFO - ✅ VS Code found - extension ready
+2025-08-03 16:52:11,444 - __main__ - INFO - ============================================================
+2025-08-03 16:52:11,444 - __main__ - INFO - 🚀 AI MENTOR APPLICATION - UNIVERSAL IDE EDITION
+2025-08-03 16:52:11,444 - __main__ - INFO - ============================================================
+2025-08-03 16:52:11,444 - __main__ - INFO - ✅ 5 core services running
+2025-08-03 16:52:11,444 - __main__ - INFO - 
+2025-08-03 16:52:11,444 - __main__ - INFO - 📍 ACCESS POINTS:
+2025-08-03 16:52:11,444 - __main__ - INFO -    🌐 Web Interface: Starting...
+2025-08-03 16:52:11,444 - __main__ - INFO -    🛠️  IDE Bridge: Universal IDE integration active
+2025-08-03 16:52:11,444 - __main__ - INFO - 
+2025-08-03 16:52:11,444 - __main__ - INFO - 🔧 SUPPORTED IDEs:
+2025-08-03 16:52:11,444 - __main__ - INFO -    • VS Code (with extension)
+2025-08-03 16:52:11,444 - __main__ - INFO -    • JetBrains IDEs (IntelliJ, PyCharm, WebStorm)
+2025-08-03 16:52:11,444 - __main__ - INFO -    • Sublime Text
+2025-08-03 16:52:11,444 - __main__ - INFO -    • Vim/Neovim
+2025-08-03 16:52:11,445 - __main__ - INFO -    • Emacs
+2025-08-03 16:52:11,445 - __main__ - INFO -    • Atom
+2025-08-03 16:52:11,445 - __main__ - INFO -    • And more...
+2025-08-03 16:52:11,445 - __main__ - INFO - 
+2025-08-03 16:52:11,445 - __main__ - INFO - 📖 SETUP INSTRUCTIONS:
+2025-08-03 16:52:11,445 - __main__ - INFO -    1. Install browser extension from 'browser_extension/' folder
+2025-08-03 16:52:11,445 - __main__ - INFO -    2. Open any supported IDE
+2025-08-03 16:52:11,445 - __main__ - INFO -    3. Join a meeting (Zoom, Teams, Google Meet)
+2025-08-03 16:52:11,445 - __main__ - INFO -    4. Use Ctrl+Alt+A for AI assistance in any IDE
+2025-08-03 16:52:11,445 - __main__ - INFO - 
+2025-08-03 16:52:11,445 - __main__ - INFO - 🎯 FEATURES:
+2025-08-03 16:52:11,445 - __main__ - INFO -    • Real-time meeting monitoring
+2025-08-03 16:52:11,445 - __main__ - INFO -    • Universal IDE integration
+2025-08-03 16:52:11,445 - __main__ - INFO -    • Jira-based coding assistance
+2025-08-03 16:52:11,445 - __main__ - INFO -    • Smart code suggestions
+2025-08-03 16:52:11,445 - __main__ - INFO -    • Meeting context awareness
+2025-08-03 16:52:11,445 - __main__ - INFO - ============================================================
+2025-08-03 16:52:14,563 - __main__ - INFO - 🌐 Web interface detected on port 8081
+2025-08-03 16:52:14,563 - __main__ - INFO - 🎉 Application ready! Press Ctrl+C to stop
+2025-08-03 16:52:59,089 - __main__ - INFO - Received termination signal
+2025-08-03 16:52:59,090 - __main__ - INFO - Stopping all services...
+2025-08-03 16:52:59,090 - __main__ - INFO - Stopping web_interface...
+2025-08-03 16:52:59,663 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 16:52:59,664 - __main__ - INFO - All services stopped
+2025-08-03 16:52:59,664 - __main__ - INFO - Stopping all services...
+2025-08-03 16:52:59,664 - __main__ - INFO - Stopping web_interface...
+2025-08-03 16:52:59,664 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 16:52:59,664 - __main__ - INFO - All services stopped
+2025-08-03 16:53:42,814 - __main__ - INFO - Using virtual environment Python
+2025-08-03 16:53:42,814 - __main__ - INFO - Initializing AI Mentor Application...
+2025-08-03 16:53:42,814 - __main__ - INFO - Running universal IDE setup...
+2025-08-03 16:53:43,117 - __main__ - INFO - ✅ Universal IDE setup completed
+2025-08-03 16:53:43,118 - __main__ - INFO - Starting web interface...
+2025-08-03 16:53:43,118 - __main__ - INFO - Web interface started successfully
+2025-08-03 16:53:45,124 - __main__ - INFO - Starting universal IDE bridge...
+2025-08-03 16:53:45,129 - __main__ - INFO - Universal IDE bridge started successfully
+2025-08-03 16:53:47,130 - __main__ - INFO - Checking browser extension availability...
+2025-08-03 16:53:47,131 - __main__ - INFO - ✅ Browser extension found
+2025-08-03 16:53:47,131 - __main__ - INFO - Checking VS Code extension...
+2025-08-03 16:53:47,284 - __main__ - INFO - ✅ VS Code found - extension ready
+2025-08-03 16:53:47,284 - __main__ - INFO - ============================================================
+2025-08-03 16:53:47,284 - __main__ - INFO - 🚀 AI MENTOR APPLICATION - UNIVERSAL IDE EDITION
+2025-08-03 16:53:47,284 - __main__ - INFO - ============================================================
+2025-08-03 16:53:47,284 - __main__ - INFO - ✅ 5 core services running
+2025-08-03 16:53:47,284 - __main__ - INFO - 
+2025-08-03 16:53:47,284 - __main__ - INFO - 📍 ACCESS POINTS:
+2025-08-03 16:53:47,284 - __main__ - INFO -    🌐 Web Interface: Starting...
+2025-08-03 16:53:47,284 - __main__ - INFO -    🛠️  IDE Bridge: Universal IDE integration active
+2025-08-03 16:53:47,284 - __main__ - INFO - 
+2025-08-03 16:53:47,284 - __main__ - INFO - 🔧 SUPPORTED IDEs:
+2025-08-03 16:53:47,284 - __main__ - INFO -    • VS Code (with extension)
+2025-08-03 16:53:47,284 - __main__ - INFO -    • JetBrains IDEs (IntelliJ, PyCharm, WebStorm)
+2025-08-03 16:53:47,284 - __main__ - INFO -    • Sublime Text
+2025-08-03 16:53:47,284 - __main__ - INFO -    • Vim/Neovim
+2025-08-03 16:53:47,284 - __main__ - INFO -    • Emacs
+2025-08-03 16:53:47,284 - __main__ - INFO -    • Atom
+2025-08-03 16:53:47,284 - __main__ - INFO -    • And more...
+2025-08-03 16:53:47,284 - __main__ - INFO - 
+2025-08-03 16:53:47,284 - __main__ - INFO - 📖 SETUP INSTRUCTIONS:
+2025-08-03 16:53:47,284 - __main__ - INFO -    1. Install browser extension from 'browser_extension/' folder
+2025-08-03 16:53:47,285 - __main__ - INFO -    2. Open any supported IDE
+2025-08-03 16:53:47,285 - __main__ - INFO -    3. Join a meeting (Zoom, Teams, Google Meet)
+2025-08-03 16:53:47,285 - __main__ - INFO -    4. Use Ctrl+Alt+A for AI assistance in any IDE
+2025-08-03 16:53:47,285 - __main__ - INFO - 
+2025-08-03 16:53:47,285 - __main__ - INFO - 🎯 FEATURES:
+2025-08-03 16:53:47,285 - __main__ - INFO -    • Real-time meeting monitoring
+2025-08-03 16:53:47,285 - __main__ - INFO -    • Universal IDE integration
+2025-08-03 16:53:47,285 - __main__ - INFO -    • Jira-based coding assistance
+2025-08-03 16:53:47,285 - __main__ - INFO -    • Smart code suggestions
+2025-08-03 16:53:47,285 - __main__ - INFO -    • Meeting context awareness
+2025-08-03 16:53:47,285 - __main__ - INFO - ============================================================
+2025-08-03 16:53:50,427 - __main__ - INFO - 🌐 Web interface detected on port 8081
+2025-08-03 16:53:50,427 - __main__ - INFO - 🎉 Application ready! Press Ctrl+C to stop
+2025-08-03 17:00:40,558 - __main__ - INFO - Received termination signal
+2025-08-03 17:00:40,559 - __main__ - INFO - Stopping all services...
+2025-08-03 17:00:40,559 - __main__ - INFO - Stopping web_interface...
+2025-08-03 17:00:40,973 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 17:00:40,976 - __main__ - INFO - All services stopped
+2025-08-03 17:00:40,977 - __main__ - INFO - Stopping all services...
+2025-08-03 17:00:40,977 - __main__ - INFO - Stopping web_interface...
+2025-08-03 17:00:40,977 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 17:00:40,977 - __main__ - INFO - All services stopped
+2025-08-03 17:01:13,518 - __main__ - INFO - Using virtual environment Python
+2025-08-03 17:01:13,518 - __main__ - INFO - Initializing AI Mentor Application...
+2025-08-03 17:01:13,518 - __main__ - INFO - Running universal IDE setup...
+2025-08-03 17:01:13,807 - __main__ - INFO - ✅ Universal IDE setup completed
+2025-08-03 17:01:13,808 - __main__ - INFO - Starting web interface...
+2025-08-03 17:01:13,808 - __main__ - INFO - Web interface started successfully
+2025-08-03 17:01:15,814 - __main__ - INFO - Starting universal IDE bridge...
+2025-08-03 17:01:15,818 - __main__ - INFO - Universal IDE bridge started successfully
+2025-08-03 17:01:17,823 - __main__ - INFO - Checking browser extension availability...
+2025-08-03 17:01:17,823 - __main__ - INFO - ✅ Browser extension found
+2025-08-03 17:01:17,823 - __main__ - INFO - Checking VS Code extension...
+2025-08-03 17:01:18,012 - __main__ - INFO - ✅ VS Code found - extension ready
+2025-08-03 17:01:18,012 - __main__ - INFO - ============================================================
+2025-08-03 17:01:18,012 - __main__ - INFO - 🚀 AI MENTOR APPLICATION - UNIVERSAL IDE EDITION
+2025-08-03 17:01:18,012 - __main__ - INFO - ============================================================
+2025-08-03 17:01:18,012 - __main__ - INFO - ✅ 5 core services running
+2025-08-03 17:01:18,012 - __main__ - INFO - 
+2025-08-03 17:01:18,012 - __main__ - INFO - 📍 ACCESS POINTS:
+2025-08-03 17:01:18,012 - __main__ - INFO -    🌐 Web Interface: Starting...
+2025-08-03 17:01:18,012 - __main__ - INFO -    🛠️  IDE Bridge: Universal IDE integration active
+2025-08-03 17:01:18,012 - __main__ - INFO - 
+2025-08-03 17:01:18,012 - __main__ - INFO - 🔧 SUPPORTED IDEs:
+2025-08-03 17:01:18,012 - __main__ - INFO -    • VS Code (with extension)
+2025-08-03 17:01:18,012 - __main__ - INFO -    • JetBrains IDEs (IntelliJ, PyCharm, WebStorm)
+2025-08-03 17:01:18,012 - __main__ - INFO -    • Sublime Text
+2025-08-03 17:01:18,012 - __main__ - INFO -    • Vim/Neovim
+2025-08-03 17:01:18,012 - __main__ - INFO -    • Emacs
+2025-08-03 17:01:18,012 - __main__ - INFO -    • Atom
+2025-08-03 17:01:18,012 - __main__ - INFO -    • And more...
+2025-08-03 17:01:18,012 - __main__ - INFO - 
+2025-08-03 17:01:18,012 - __main__ - INFO - 📖 SETUP INSTRUCTIONS:
+2025-08-03 17:01:18,012 - __main__ - INFO -    1. Install browser extension from 'browser_extension/' folder
+2025-08-03 17:01:18,012 - __main__ - INFO -    2. Open any supported IDE
+2025-08-03 17:01:18,012 - __main__ - INFO -    3. Join a meeting (Zoom, Teams, Google Meet)
+2025-08-03 17:01:18,012 - __main__ - INFO -    4. Use Ctrl+Alt+A for AI assistance in any IDE
+2025-08-03 17:01:18,012 - __main__ - INFO - 
+2025-08-03 17:01:18,012 - __main__ - INFO - 🎯 FEATURES:
+2025-08-03 17:01:18,012 - __main__ - INFO -    • Real-time meeting monitoring
+2025-08-03 17:01:18,012 - __main__ - INFO -    • Universal IDE integration
+2025-08-03 17:01:18,012 - __main__ - INFO -    • Jira-based coding assistance
+2025-08-03 17:01:18,012 - __main__ - INFO -    • Smart code suggestions
+2025-08-03 17:01:18,012 - __main__ - INFO -    • Meeting context awareness
+2025-08-03 17:01:18,012 - __main__ - INFO - ============================================================
+2025-08-03 17:01:21,018 - __main__ - ERROR - Application error: No module named 'requests'
+2025-08-03 17:01:21,019 - __main__ - INFO - Stopping all services...
+2025-08-03 17:01:21,019 - __main__ - INFO - Stopping web_interface...
+2025-08-03 17:01:21,418 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 17:01:21,419 - __main__ - INFO - All services stopped
+2025-08-03 17:03:49,899 - __main__ - INFO - Using virtual environment Python
+2025-08-03 17:03:49,899 - __main__ - INFO - Initializing AI Mentor Application...
+2025-08-03 17:03:49,899 - __main__ - INFO - Running universal IDE setup...
+2025-08-03 17:03:50,335 - __main__ - INFO - ✅ Universal IDE setup completed
+2025-08-03 17:03:50,335 - __main__ - INFO - Starting web interface...
+2025-08-03 17:03:50,335 - __main__ - INFO - Web interface started successfully
+2025-08-03 17:03:52,341 - __main__ - INFO - Starting universal IDE bridge...
+2025-08-03 17:03:52,346 - __main__ - INFO - Universal IDE bridge started successfully
+2025-08-03 17:03:54,351 - __main__ - INFO - Checking browser extension availability...
+2025-08-03 17:03:54,352 - __main__ - INFO - ✅ Browser extension found
+2025-08-03 17:03:54,352 - __main__ - INFO - Checking VS Code extension...
+2025-08-03 17:03:54,535 - __main__ - INFO - ✅ VS Code found - extension ready
+2025-08-03 17:03:54,535 - __main__ - INFO - ============================================================
+2025-08-03 17:03:54,535 - __main__ - INFO - 🚀 AI MENTOR APPLICATION - UNIVERSAL IDE EDITION
+2025-08-03 17:03:54,535 - __main__ - INFO - ============================================================
+2025-08-03 17:03:54,535 - __main__ - INFO - ✅ 5 core services running
+2025-08-03 17:03:54,535 - __main__ - INFO - 
+2025-08-03 17:03:54,535 - __main__ - INFO - 📍 ACCESS POINTS:
+2025-08-03 17:03:54,535 - __main__ - INFO -    🌐 Web Interface: Starting...
+2025-08-03 17:03:54,535 - __main__ - INFO -    🛠️  IDE Bridge: Universal IDE integration active
+2025-08-03 17:03:54,535 - __main__ - INFO - 
+2025-08-03 17:03:54,535 - __main__ - INFO - 🔧 SUPPORTED IDEs:
+2025-08-03 17:03:54,535 - __main__ - INFO -    • VS Code (with extension)
+2025-08-03 17:03:54,535 - __main__ - INFO -    • JetBrains IDEs (IntelliJ, PyCharm, WebStorm)
+2025-08-03 17:03:54,535 - __main__ - INFO -    • Sublime Text
+2025-08-03 17:03:54,535 - __main__ - INFO -    • Vim/Neovim
+2025-08-03 17:03:54,535 - __main__ - INFO -    • Emacs
+2025-08-03 17:03:54,535 - __main__ - INFO -    • Atom
+2025-08-03 17:03:54,535 - __main__ - INFO -    • And more...
+2025-08-03 17:03:54,535 - __main__ - INFO - 
+2025-08-03 17:03:54,535 - __main__ - INFO - 📖 SETUP INSTRUCTIONS:
+2025-08-03 17:03:54,535 - __main__ - INFO -    1. Install browser extension from 'browser_extension/' folder
+2025-08-03 17:03:54,535 - __main__ - INFO -    2. Open any supported IDE
+2025-08-03 17:03:54,535 - __main__ - INFO -    3. Join a meeting (Zoom, Teams, Google Meet)
+2025-08-03 17:03:54,535 - __main__ - INFO -    4. Use Ctrl+Alt+A for AI assistance in any IDE
+2025-08-03 17:03:54,535 - __main__ - INFO - 
+2025-08-03 17:03:54,535 - __main__ - INFO - 🎯 FEATURES:
+2025-08-03 17:03:54,535 - __main__ - INFO -    • Real-time meeting monitoring
+2025-08-03 17:03:54,535 - __main__ - INFO -    • Universal IDE integration
+2025-08-03 17:03:54,535 - __main__ - INFO -    • Jira-based coding assistance
+2025-08-03 17:03:54,535 - __main__ - INFO -    • Smart code suggestions
+2025-08-03 17:03:54,535 - __main__ - INFO -    • Meeting context awareness
+2025-08-03 17:03:54,535 - __main__ - INFO - ============================================================
+2025-08-03 17:03:57,541 - __main__ - ERROR - Application error: No module named 'requests'
+2025-08-03 17:03:57,541 - __main__ - INFO - Stopping all services...
+2025-08-03 17:03:57,541 - __main__ - INFO - Stopping web_interface...
+2025-08-03 17:03:58,067 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 17:03:58,071 - __main__ - INFO - All services stopped
+2025-08-03 17:05:18,952 - __main__ - INFO - Using virtual environment Python
+2025-08-03 17:05:18,952 - __main__ - INFO - Initializing AI Mentor Application...
+2025-08-03 17:05:18,952 - __main__ - INFO - Running universal IDE setup...
+2025-08-03 17:05:19,336 - __main__ - INFO - ✅ Universal IDE setup completed
+2025-08-03 17:05:19,336 - __main__ - INFO - Starting web interface...
+2025-08-03 17:05:19,337 - __main__ - INFO - Web interface started successfully
+2025-08-03 17:05:21,338 - __main__ - INFO - Starting universal IDE bridge...
+2025-08-03 17:05:21,340 - __main__ - INFO - Universal IDE bridge started successfully
+2025-08-03 17:05:23,345 - __main__ - INFO - Checking browser extension availability...
+2025-08-03 17:05:23,346 - __main__ - INFO - ✅ Browser extension found
+2025-08-03 17:05:23,347 - __main__ - INFO - Checking VS Code extension...
+2025-08-03 17:05:23,544 - __main__ - INFO - ✅ VS Code found - extension ready
+2025-08-03 17:05:23,544 - __main__ - INFO - ============================================================
+2025-08-03 17:05:23,544 - __main__ - INFO - 🚀 AI MENTOR APPLICATION - UNIVERSAL IDE EDITION
+2025-08-03 17:05:23,544 - __main__ - INFO - ============================================================
+2025-08-03 17:05:23,544 - __main__ - INFO - ✅ 5 core services running
+2025-08-03 17:05:23,544 - __main__ - INFO - 
+2025-08-03 17:05:23,545 - __main__ - INFO - 📍 ACCESS POINTS:
+2025-08-03 17:05:23,545 - __main__ - INFO -    🌐 Web Interface: Starting...
+2025-08-03 17:05:23,545 - __main__ - INFO -    🛠️  IDE Bridge: Universal IDE integration active
+2025-08-03 17:05:23,545 - __main__ - INFO - 
+2025-08-03 17:05:23,545 - __main__ - INFO - 🔧 SUPPORTED IDEs:
+2025-08-03 17:05:23,545 - __main__ - INFO -    • VS Code (with extension)
+2025-08-03 17:05:23,545 - __main__ - INFO -    • JetBrains IDEs (IntelliJ, PyCharm, WebStorm)
+2025-08-03 17:05:23,545 - __main__ - INFO -    • Sublime Text
+2025-08-03 17:05:23,545 - __main__ - INFO -    • Vim/Neovim
+2025-08-03 17:05:23,545 - __main__ - INFO -    • Emacs
+2025-08-03 17:05:23,545 - __main__ - INFO -    • Atom
+2025-08-03 17:05:23,545 - __main__ - INFO -    • And more...
+2025-08-03 17:05:23,545 - __main__ - INFO - 
+2025-08-03 17:05:23,545 - __main__ - INFO - 📖 SETUP INSTRUCTIONS:
+2025-08-03 17:05:23,545 - __main__ - INFO -    1. Install browser extension from 'browser_extension/' folder
+2025-08-03 17:05:23,545 - __main__ - INFO -    2. Open any supported IDE
+2025-08-03 17:05:23,545 - __main__ - INFO -    3. Join a meeting (Zoom, Teams, Google Meet)
+2025-08-03 17:05:23,545 - __main__ - INFO -    4. Use Ctrl+Alt+A for AI assistance in any IDE
+2025-08-03 17:05:23,545 - __main__ - INFO - 
+2025-08-03 17:05:23,545 - __main__ - INFO - 🎯 FEATURES:
+2025-08-03 17:05:23,545 - __main__ - INFO -    • Real-time meeting monitoring
+2025-08-03 17:05:23,545 - __main__ - INFO -    • Universal IDE integration
+2025-08-03 17:05:23,545 - __main__ - INFO -    • Jira-based coding assistance
+2025-08-03 17:05:23,545 - __main__ - INFO -    • Smart code suggestions
+2025-08-03 17:05:23,545 - __main__ - INFO -    • Meeting context awareness
+2025-08-03 17:05:23,545 - __main__ - INFO - ============================================================
+2025-08-03 17:05:26,546 - __main__ - ERROR - Application error: No module named 'requests'
+2025-08-03 17:05:26,546 - __main__ - INFO - Stopping all services...
+2025-08-03 17:05:26,546 - __main__ - INFO - Stopping web_interface...
+2025-08-03 17:05:26,894 - __main__ - INFO - Stopping ide_bridge...
+2025-08-03 17:05:26,896 - __main__ - INFO - All services stopped

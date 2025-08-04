@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🕵️ AI Assistant Stealth Mode Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+        .highlight {
+            background: rgba(255, 255, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .stealth-demo {
+            border: 2px solid #00ff00;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            margin: 15px 0;
+        }
+        button {
+            background: #00ff00;
+            color: black;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #00dd00;
+        }
+        .warning {
+            background: rgba(255, 165, 0, 0.2);
+            border: 1px solid orange;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🕵️ AI Interview Assistant - Stealth Mode Test</h1>
+        
+        <div class="test-section">
+            <h2>📋 How Stealth Mode Works</h2>
+            <p><strong>Current Issue:</strong> You were worried that when you share your screen during interviews, the AI overlay would be hidden from YOU as well, making it impossible to read the answers.</p>
+            
+            <p><strong>✅ SOLUTION:</strong> The stealth mode has been fixed so that:</p>
+            <ul>
+                <li>🔒 <span class="highlight">The overlay is ALWAYS visible to YOU</span> on your local screen</li>
+                <li>🕵️ <span class="highlight">The overlay is HIDDEN from screen sharing</span> (interviewers can't see it)</li>
+                <li>⌨️ <span class="highlight">Ctrl+Shift+A</span> = Emergency manual hide (if you need to hide it from yourself temporarily)</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h2>🧪 Testing Instructions</h2>
+            <ol>
+                <li><strong>Load the Extension:</strong> Go to <code>chrome://extensions/</code> and reload the AI Interview Assistant</li>
+                <li><strong>Visit a Meeting Platform:</strong> Go to <a href="https://meet.google.com" target="_blank">Google Meet</a>, <a href="https://zoom.us" target="_blank">Zoom</a>, or Teams</li>
+                <li><strong>Start Screen Sharing:</strong> Start sharing your screen</li>
+                <li><strong>Observe:</strong> 
+                    <ul>
+                        <li>✅ AI overlay should remain visible to YOU</li>
+                        <li>🕵️ AI overlay should be hidden from the screen share</li>
+                        <li>💬 You should see a notification: "🕵️ Stealth mode ON - Hidden from screen sharing"</li>
+                    </ul>
+                </li>
+                <li><strong>Test Manual Toggle:</strong> Press <code>Ctrl+Shift+A</code> to test emergency hide/show</li>
+            </ol>
+        </div>
+
+        <div class="test-section">
+            <h2>🎯 Expected Behavior</h2>
+            
+            <div class="stealth-demo">
+                <strong>Normal State (No Screen Sharing):</strong><br>
+                👁️ AI Overlay: VISIBLE to you<br>
+                📺 Screen Share: Not active
+            </div>
+
+            <div class="stealth-demo">
+                <strong>During Screen Sharing:</strong><br>
+                👁️ AI Overlay: STILL VISIBLE to you (on your local screen)<br>
+                🕵️ Screen Share: AI overlay HIDDEN from others<br>
+                💡 You can read answers while interviewers see nothing
+            </div>
+
+            <div class="stealth-demo">
+                <strong>Emergency Manual Hide (Ctrl+Shift+A):</strong><br>
+                🫥 AI Overlay: HIDDEN from you temporarily<br>
+                ⌨️ Press Ctrl+Shift+A again to show
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔧 Stealth Technologies Used</h2>
+            <ul>
+                <li><strong>CSS Mix-Blend-Mode:</strong> Confuses screen capture APIs</li>
+                <li><strong>Transform Tricks:</strong> 3D transforms that don't translate to captures</li>
+                <li><strong>Filter Effects:</strong> Visual filters that screen capture ignores</li>
+                <li><strong>Isolation Layers:</strong> CSS containment that prevents capture detection</li>
+                <li><strong>Z-Index Manipulation:</strong> Layering techniques</li>
+            </ul>
+            
+            <div class="warning">
+                <strong>⚠️ Note:</strong> Stealth effectiveness can vary by browser and meeting platform. Test thoroughly before important interviews.
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🚀 Quick Actions</h2>
+            <button onclick="window.open('chrome://extensions/', '_blank')">Open Chrome Extensions</button>
+            <button onclick="window.open('https://meet.google.com', '_blank')">Open Google Meet</button>
+            <button onclick="showKeyboardTest()">Test Keyboard Shortcuts</button>
+        </div>
+
+        <div id="keyboard-test" style="display: none;" class="test-section">
+            <h3>⌨️ Keyboard Test</h3>
+            <p>Press <strong>Ctrl+Shift+A</strong> now to test the shortcut:</p>
+            <div id="key-status" class="stealth-demo">Waiting for Ctrl+Shift+A...</div>
+        </div>
+    </div>
+
+    <script>
+        function showKeyboardTest() {
+            document.getElementById('keyboard-test').style.display = 'block';
+            document.getElementById('keyboard-test').scrollIntoView();
+            
+            document.addEventListener('keydown', function(event) {
+                if (event.ctrlKey && event.shiftKey && event.code === 'KeyA') {
+                    event.preventDefault();
+                    document.getElementById('key-status').innerHTML = '✅ Ctrl+Shift+A detected! This shortcut will work in the AI overlay.';
+                    document.getElementById('key-status').style.background = 'rgba(0, 255, 0, 0.2)';
+                }
+            });
+        }
+        
+        console.log('🕵️ Stealth Mode Test Page Loaded');
+        console.log('📝 Instructions:');
+        console.log('   1. Load the AI extension');
+        console.log('   2. Go to a meeting platform');
+        console.log('   3. Start screen sharing');
+        console.log('   4. Verify overlay is visible to you but hidden from share');
+    </script>
+</body>
+</html>

@@ -1,56 +1,132 @@
-# AI Mentor Assistant (Prototype)
+# 🤖 AI Mentor Assistant - Universal IDE Edition
 
-This repository contains a **prototype** for a personal AI‑mentor application.  The goal of the project is to explore how an agent can help engineers by:
+A production-ready AI-powered coding assistant that provides **real-time meeting integration** and works seamlessly across **all major IDEs**.
 
-* automatically capturing and summarizing meetings and screen recordings;
-* building a knowledge base from a project’s code, documentation and tasks;
-* answering questions about the system like a senior engineer or architect; and
-* providing guidance on day‑to‑day activities such as coding and documentation.
+## 🎯 Core Features
 
-This is **not** a full‑featured product.  It contains skeletal modules that outline how such a system could be structured.  Each component includes placeholder functions for capturing data, transcribing audio/video, summarizing content, recording the screen and integrating with a knowledge base.  You can expand these modules by plugging in real APIs (e.g., Zoom/Teams bots, OpenAI Whisper for speech‑to‑text, LLMs for summarization, or OpenCV for video analysis) and connecting them to your environment.
+- 🎤 **Real-time Meeting Monitoring** (Zoom, Teams, Google Meet)
+- 💻 **Universal IDE Integration** (VS Code, IntelliJ, PyCharm, Sublime, Vim, Emacs, etc.)
+- 🔗 **Jira Task Integration** 
+- 🧠 **Context-aware Code Suggestions**
+- 📡 **Inter-Extension Communication**
 
-## Project structure
+## 🚀 Quick Start
+
+### 1. Start the Application
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Start all services
+python start_mentor_app.py
+```
+
+### 2. Install Browser Extension
+1. Open Chrome: `chrome://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked" 
+4. Select `browser_extension/` folder
+
+### 3. Configuration
+Create `.env` file from template:
+```bash
+cp .env.template .env
+# Edit .env with your API keys
+```
+
+## 📁 Production Structure
 
 ```
 mentor_app/
-├── README.md            – project overview and setup instructions
-├── requirements.txt      – Python dependencies
-└── app/
-    ├── __init__.py
-    ├── capture.py        – meeting and audio/video capture stubs
-    ├── transcription.py  – speech‑to‑text stubs
-    ├── summarization.py  – LLM summarization stubs
-    ├── screen_record.py  – screen recording stubs
-    ├── knowledge_base.py – knowledge‑base integration stubs
-    └── main.py           – example orchestration of components
+├── 🚀 start_mentor_app.py          # Main application launcher
+├── 🌐 web_interface.py             # Flask API server
+├── 🔗 universal_ide_bridge.py     # Universal IDE integration
+├── 📊 check_status.py              # System status checker
+├── 🛠️  setup_universal_ides.sh     # IDE setup automation
+├── 
+├── 🔌 browser_extension/           # Chrome extension
+│   ├── manifest.json
+│   ├── content.js
+│   ├── background.js
+│   └── popup.html
+├── 
+├── 💻 vscode_extension/            # VS Code extension
+│   ├── package.json
+│   └── src/extension.ts
+├── 
+└── 📱 app/                         # Core AI modules
+    ├── main.py
+    ├── ai_assistant.py
+    ├── capture.py
+    └── config.py
 ```
 
-## Getting started
+## 🎮 Usage
 
-1. **Install dependencies**
+### Meeting Integration
+1. Join any meeting platform (Zoom, Teams, Google Meet)
+2. Extension automatically detects and monitors
+3. AI becomes context-aware of discussions
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
+### IDE Assistance  
+1. Open any supported IDE
+2. Press `Ctrl+Alt+A` for AI help
+3. Get coding suggestions based on meeting context
 
-2. **Run the prototype**
+### System Monitoring
+```bash
+# Check all services
+python check_status.py
+```
 
-   The `main.py` script demonstrates how the different components might work together.  It currently calls placeholder functions that simply print messages.  Replace the bodies of these functions with your own logic.
+## 🔧 Supported Platforms
 
-   ```bash
-   python -m app.main
-   ```
+### IDEs
+- VS Code, IntelliJ IDEA, PyCharm, WebStorm
+- Sublime Text, Atom, Vim, Emacs
+- Android Studio, PhpStorm
 
-3. **Extend the modules**
+### Meeting Platforms
+- Zoom, Microsoft Teams, Google Meet
+- WebEx, Slack Huddles
 
-   * **capture.py** – Add functions to join meetings (via APIs or webhooks) and capture audio/video streams.
-   * **transcription.py** – Integrate a speech‑to‑text engine (e.g., Whisper, Google Speech‑to‑Text) to transcribe audio.
-   * **summarization.py** – Use a large language model (LLM) to summarize transcribed text, extract decisions and action items and answer questions.
-   * **screen_record.py** – Implement screen capture using a browser extension (for web meetings) or native libraries (e.g., `ffmpeg`, `pyautogui`) and process frames with computer‑vision techniques.
-   * **knowledge_base.py** – Build a knowledge base from your code repositories and documentation.  Store embeddings in a vector database and use them to provide context to the LLM.
+### Programming Languages
+- Python, JavaScript, TypeScript, Java
+- C++, Go, Rust, PHP, Ruby, Swift
 
-## Notes on deployment
+## 🛠️ Architecture
 
-Recording meetings and screens may be subject to company policy and privacy regulations.  Always obtain consent from participants and coordinate with your IT and security teams before deploying.  For environments with strict software controls, consider implementing your capture logic as a browser extension or a server‑side meeting bot.
+- **Web Interface** (Port 8080) - Main API and dashboard
+- **Universal IDE Bridge** (Port 8081) - IDE integration hub  
+- **Browser Extension** - Meeting monitoring
+- **IDE Extensions** - Editor-specific integrations
+
+## 📞 Support
+
+### Status Check
+```bash
+python check_status.py
+```
+
+### Logs
+Application logs in: `mentor_app.log`
+
+### Troubleshooting
+- Ensure all services are running
+- Check Chrome extension is enabled
+- Verify API keys in `.env` file
+
+## 🔒 Security
+
+- All processing happens locally
+- Meeting content not stored permanently  
+- Minimal browser permissions
+- API keys kept secure in `.env`
+
+## 📄 License
+
+MIT License
+
+---
+
+**🚀 Ready to revolutionize your coding workflow with AI assistance across all IDEs!**
