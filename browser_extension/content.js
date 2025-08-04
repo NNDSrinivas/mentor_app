@@ -1,28 +1,7 @@
-// AI Interview Assistant - Minimal Clean Version
-// Focus: Microphone access and basic functionality
+// AI Interview Assistant - Chrome Extension for Google Meet
+// Provides real-time AI assistance during interviews with privacy controls
 
 console.log('🤖 AI Interview Assistant Loading...');
-
-// Add immediate test div to verify script loading
-const testDiv = document.createElement('div');
-testDiv.style.cssText = `
-    position: fixed !important;
-    top: 10px !important;
-    left: 10px !important;
-    background: red !important;
-    color: white !important;
-    padding: 10px !important;
-    z-index: 999999 !important;
-    font-size: 12px !important;
-`;
-testDiv.textContent = 'AI Extension Loading...';
-document.body.appendChild(testDiv);
-
-setTimeout(() => {
-    if (testDiv && testDiv.parentNode) {
-        testDiv.parentNode.removeChild(testDiv);
-    }
-}, 3000);
 
 class AIInterviewAssistant {
     constructor() {
@@ -38,9 +17,6 @@ class AIInterviewAssistant {
 
     initialize() {
         console.log('🔧 Initializing AI Interview Assistant...');
-        
-        // Add a simple test indicator first
-        this.addTestIndicator();
         
         // Initialize speech recognition
         this.initializeSpeechRecognition();
@@ -114,44 +90,6 @@ class AIInterviewAssistant {
         } catch (error) {
             console.log('ℹ️ No saved resume found');
         }
-    }
-
-    addTestIndicator() {
-        // Add a very visible test indicator to confirm the extension is working
-        const testDiv = document.createElement('div');
-        testDiv.id = 'ai-test-indicator';
-        testDiv.style.cssText = `
-            position: fixed !important;
-            top: 50% !important;
-            left: 50% !important;
-            transform: translate(-50%, -50%) !important;
-            background: red !important;
-            color: white !important;
-            padding: 20px !important;
-            z-index: 2147483647 !important;
-            font-family: Arial, sans-serif !important;
-            font-size: 16px !important;
-            border-radius: 10px !important;
-            box-shadow: 0 0 20px rgba(255, 0, 0, 0.8) !important;
-            text-align: center !important;
-            border: 3px solid white !important;
-        `;
-        testDiv.innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 10px;">🤖 AI ASSISTANT ACTIVE!</div>
-            <div style="font-size: 12px;">Extension loaded successfully</div>
-            <div style="font-size: 10px; margin-top: 8px; color: #ffcccc;">This will disappear in 3 seconds</div>
-        `;
-        
-        document.body.appendChild(testDiv);
-        
-        // Remove after 3 seconds
-        setTimeout(() => {
-            if (testDiv.parentNode) {
-                testDiv.remove();
-            }
-        }, 3000);
-        
-        console.log('🚨 Test indicator added - you should see a red popup in the center of the screen');
     }
 
     async init() {
