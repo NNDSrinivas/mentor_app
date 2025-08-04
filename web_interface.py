@@ -475,6 +475,100 @@ def profile_manager_page():
     """Serve the profile manager HTML page"""
     return send_from_directory('.', 'profile_manager.html')
 
+@app.route('/api/set-interview-level', methods=['POST'])
+def set_interview_level():
+    """Set interview level for AI responses"""
+    try:
+        data = request.get_json()
+        level = data.get('level', 'IC6')
+        company = data.get('company', None)
+        
+        ai_assistant.set_interview_configuration(level, company)
+        
+        return jsonify({
+            'success': True,
+            'level': level,
+            'company': company,
+            'message': f'Interview level set to {level}' + (f' for {company}' if company else '')
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/get-interview-config', methods=['GET'])
+def get_interview_config():
+    """Get current interview configuration"""
+    try:
+        config = ai_assistant.get_interview_configuration()
+        return jsonify({
+            'success': True,
+            **config
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/get-company-questions', methods=['GET'])
+def get_company_questions():
+    """Get company-specific interview questions"""
+    try:
+        company = request.args.get('company')
+        question_type = request.args.get('type')  # behavioral, technical, system_design
+        
+        if not company:
+            return jsonify({'success': False, 'error': 'Company parameter required'}), 400
+        
+        # Get questions using the company knowledge base
+        questions = ai_assistant.company_kb.get_company_questions(company, question_type) if ai_assistant.company_kb else []
+        
+        return jsonify({
+            'success': True,
+            'company': company,
+            'question_type': question_type,
+            'questions': questions
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/get-interview-tips', methods=['GET'])
+def get_interview_tips():
+    """Get company-specific interview tips"""
+    try:
+        company = request.args.get('company')
+        role_level = request.args.get('level', 'senior')
+        
+        if not company:
+            return jsonify({'success': False, 'error': 'Company parameter required'}), 400
+        
+        tips = ai_assistant.company_kb.get_interview_tips(company, role_level) if ai_assistant.company_kb else {}
+        
+        return jsonify({
+            'success': True,
+            'company': company,
+            'role_level': role_level,
+            'tips': tips
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/search-similar-questions', methods=['POST'])
+def search_similar_questions():
+    """Search for similar interview questions"""
+    try:
+        data = request.get_json()
+        question = data.get('question')
+        
+        if not question:
+            return jsonify({'success': False, 'error': 'Question parameter required'}), 400
+        
+        similar_questions = ai_assistant.get_similar_interview_questions(question)
+        
+        return jsonify({
+            'success': True,
+            'query': question,
+            'similar_questions': similar_questions
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/health')
 def health():
     return jsonify({'status': 'healthy'})
@@ -488,7 +582,9 @@ def status():
             'Real-time Q&A',
             'Coding assistance', 
             'Meeting support',
-            'Context memory'
+            'Context memory',
+            'Resume Integration',
+            'IC6/IC7 Level Responses'
         ]
     })
 

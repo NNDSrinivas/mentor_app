@@ -11,6 +11,10 @@ class MeetingDetector {
     console.log('🎯 MeetingDetector initializing...');
     this.isRecording = false;
     this.currentMeeting = null;
+    this.offscreenDocumentCreated = false;
+    
+    // Create offscreen document for stealth UI
+    this.setupOffscreenDocument();
     
     // Listen for tab updates to detect meeting platforms
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -23,6 +27,60 @@ class MeetingDetector {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this.handleMessage(message, sender, sendResponse);
     });
+  }
+
+  async setupOffscreenDocument() {
+    try {
+      // Check if offscreen document already exists
+      const existingContexts = await chrome.runtime.getContexts({
+        contextTypes: ['OFFSCREEN_DOCUMENT']
+      });
+
+      if (existingContexts.length > 0) {
+        console.log('🔄 Offscreen document already exists');
+        this.offscreenDocumentCreated = true;
+        return;
+      }
+
+      // Create offscreen document for stealth UI
+      await chrome.offscreen.createDocument({
+        url: 'offscreen.html',
+        reasons: ['USER_MEDIA', 'DISPLAY_MEDIA'],
+        justification: 'Audio processing and stealth interview UI that is invisible to screen capture'
+      });
+
+      this.offscreenDocumentCreated = true;
+      console.log('✅ Offscreen document created for stealth interview assistance');
+    } catch (error) {
+      console.error('❌ Failed to create offscreen document:', error);
+    }
+  }
+
+  async enableStealthMode() {
+    if (!this.offscreenDocumentCreated) {
+      await this.setupOffscreenDocument();
+    }
+
+    try {
+      // Send message to offscreen document to show stealth UI
+      await chrome.runtime.sendMessage({
+        action: 'showStealthUI'
+      });
+      console.log('🕵️ Stealth mode activated via offscreen document');
+    } catch (error) {
+      console.error('❌ Failed to enable stealth mode:', error);
+    }
+  }
+
+  async disableStealthMode() {
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'hideStealthUI'
+      });
+      console.log('👁️ Stealth mode deactivated');
+    } catch (error) {
+      console.error('❌ Failed to disable stealth mode:', error);
+    }
   }
   
   checkForMeeting(tab) {
@@ -65,7 +123,7 @@ class MeetingDetector {
   }
   
   handleMessage(message, sender, sendResponse) {
-    switch (message.type) {
+    switch (message.type || message.action) {
       case 'meeting_started':
         this.onMeetingStarted(message.data);
         break;
@@ -81,7 +139,39 @@ class MeetingDetector {
       case 'screen_shared':
         this.onScreenShared(message.data);
         break;
+        
+      case 'enableStealthMode':
+        this.enableStealthMode();
+        sendResponse({ success: true });
+        break;
+        
+      case 'disableStealthMode':
+        this.disableStealthMode();
+        sendResponse({ success: true });
+        break;
+        
+      case 'updateInterviewConfig':
+        // Forward to offscreen document
+        chrome.runtime.sendMessage({
+          action: 'updateConfig',
+          level: message.level,
+          company: message.company
+        });
+        sendResponse({ success: true });
+        break;
+        
+      case 'processQuestionInStealth':
+        // Forward to offscreen document
+        chrome.runtime.sendMessage({
+          action: 'processQuestion',
+          question: message.question
+        });
+        sendResponse({ success: true });
+        break;
     }
+    
+    // Return true to indicate we will send a response asynchronously
+    return true;
   }
   
   onMeetingStarted(data) {

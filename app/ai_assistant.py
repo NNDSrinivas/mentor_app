@@ -23,6 +23,31 @@ from .knowledge_base import KnowledgeBase
 from .transcription import TranscriptionService
 from .summarization import SummarizationService
 
+# Import ProfileManager for resume context
+try:
+    from .profile_manager import ProfileManager
+    PROFILE_MANAGER_AVAILABLE = True
+except ImportError:
+    PROFILE_MANAGER_AVAILABLE = False
+    ProfileManager = None
+
+# Import company interview knowledge base
+try:
+    from .company_interview_kb import CompanyInterviewKB
+    COMPANY_KB_AVAILABLE = True
+except ImportError:
+    COMPANY_KB_AVAILABLE = False
+    CompanyInterviewKB = None
+
+# Import speaker diarization
+try:
+    from .speaker_diarization import SpeakerDiarizer, InterviewFlowManager
+    DIARIZATION_AVAILABLE = True
+except ImportError:
+    DIARIZATION_AVAILABLE = False
+    SpeakerDiarizer = None
+    InterviewFlowManager = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -131,9 +156,41 @@ class AIAssistant:
         self.transcription = TranscriptionService()
         self.summarization = SummarizationService()
         
+        # Initialize ProfileManager for resume context
+        self.profile_manager = None
+        if PROFILE_MANAGER_AVAILABLE:
+            try:
+                self.profile_manager = ProfileManager()
+                logger.info("✅ ProfileManager initialized for resume context")
+            except Exception as e:
+                logger.warning(f"⚠️ ProfileManager initialization failed: {e}")
+        
+        # Initialize company interview knowledge base
+        self.company_kb = None
+        if COMPANY_KB_AVAILABLE:
+            try:
+                self.company_kb = CompanyInterviewKB(self.memory.kb)
+                logger.info("✅ Company interview knowledge base initialized")
+            except Exception as e:
+                logger.warning(f"⚠️ Company KB initialization failed: {e}")
+        
+        # Initialize speaker diarization for interview flow
+        self.interview_flow = None
+        if DIARIZATION_AVAILABLE:
+            try:
+                self.interview_flow = InterviewFlowManager()
+                self.interview_flow.register_response_callback(self._handle_interview_response)
+                logger.info("✅ Speaker diarization initialized for interview flow")
+            except Exception as e:
+                logger.warning(f"⚠️ Speaker diarization initialization failed: {e}")
+        
         self.pending_questions = []
         self.interaction_mode = "private"  # private, public, silent
         self.is_screen_sharing = False
+        
+        # Interview level configuration
+        self.interview_level = "IC6"  # Default to IC6 level
+        self.target_company = None  # Will be set based on context
         
     async def process_real_time_audio(self, audio_data: bytes, session_id: str):
         """Process real-time audio and respond if needed."""
@@ -372,20 +429,63 @@ class AIAssistant:
         """
     
     def _get_system_prompt(self) -> str:
-        """Get system prompt for AI assistant."""
-        return """
-        You are an AI Assistant that acts as a persistent team member. You:
+        """Get system prompt for AI assistant with interview context."""
+        profile_context = self.get_user_profile_context()
         
-        1. Remember all previous conversations and meetings
-        2. Understand the team's projects, goals, and context
-        3. Provide helpful answers and ask clarifying questions
-        4. Act naturally as if you've been part of the team for months
-        5. Reference previous discussions when relevant
-        6. Help with technical questions, decisions, and problem-solving
-        7. Maintain conversation context across sessions
+        base_prompt = f"""
+        You are an AI Interview Assistant helping a candidate during a technical interview.
         
-        Be conversational, helpful, and demonstrate your persistent memory of the team's work.
+        INTERVIEW CONTEXT:
+        - Target Level: {self.interview_level} (Senior Software Engineer level)
+        - Target Company: {self.target_company or "Tech Company"}
+        - Response Style: Professional, confident, detailed but concise
         """
+        
+        if profile_context.get("has_profile"):
+            profile_info = profile_context["personal"]
+            base_prompt += f"""
+        
+        CANDIDATE PROFILE:
+        - Name: {profile_info.get("name", "Candidate")}
+        - Current Role: {profile_info.get("current_role", "Software Engineer")}
+        - Experience: {profile_info.get("experience_years", "5+")} years
+        - Current Company: {profile_info.get("company", "Tech Company")}
+        - Industry: {profile_info.get("industry", "Technology")}
+        - Key Skills: {", ".join(profile_context.get("skills", [])[:5])}
+        
+        KEY PROJECTS & ACHIEVEMENTS:
+        {profile_context.get("key_projects", "Various software projects")}
+        
+        ACHIEVEMENTS:
+        {profile_context.get("achievements", "Strong technical contributions")}
+        """
+        
+        base_prompt += f"""
+        
+        RESPONSE GUIDELINES:
+        1. Answer as the candidate with {self.interview_level} level expertise
+        2. Reference your specific experience and projects when relevant
+        3. Provide technical depth appropriate for senior-level interviews
+        4. Use STAR method for behavioral questions (Situation, Task, Action, Result)
+        5. Show system design thinking for architecture questions
+        6. Demonstrate leadership and impact for senior roles
+        7. Keep responses under 2 minutes speaking time (300-400 words max)
+        8. Be confident but not arrogant
+        9. Ask clarifying questions when appropriate
+        10. Reference specific technologies, frameworks, and methodologies
+        
+        TECHNICAL FOCUS AREAS:
+        - System Design & Architecture
+        - Scalability & Performance
+        - Code Quality & Best Practices
+        - Team Leadership & Mentoring
+        - Cross-functional Collaboration
+        - Technical Decision Making
+        
+        Respond as the candidate would, drawing from their background and targeting {self.interview_level} level expectations.
+        """
+        
+        return base_prompt
     
     async def _get_current_context(self) -> Dict[str, Any]:
         """Get current context (screen content, meeting info, etc.)."""
@@ -426,6 +526,219 @@ class AIAssistant:
                 importance += 2
                 
         return min(10, importance)
+    
+    def set_interview_level(self, level: str):
+        """Set the interview level for appropriate response complexity."""
+        valid_levels = ["IC3", "IC4", "IC5", "IC6", "IC7", "E3", "E4", "E5", "E6", "E7"]
+        if level in valid_levels:
+            self.interview_level = level
+            logger.info(f"🎯 Interview level set to: {level}")
+        else:
+            logger.warning(f"⚠️ Invalid interview level: {level}. Using default IC6")
+            self.interview_level = "IC6"
+    
+    def set_target_company(self, company: str):
+        """Set target company for company-specific interview preparation."""
+        self.target_company = company
+        logger.info(f"🏢 Target company set to: {company}")
+    
+    def get_user_profile_context(self) -> Dict[str, Any]:
+        """Get user profile context for personalized responses."""
+        if not self.profile_manager:
+            return {
+                "has_profile": False,
+                "interview_level": self.interview_level,
+                "target_company": self.target_company
+            }
+        
+        try:
+            profile = self.profile_manager.get_profile()
+            
+            # Extract key information for AI context
+            context = {
+                "has_profile": True,
+                "interview_level": self.interview_level,
+                "target_company": self.target_company,
+                "personal": {
+                    "name": profile.get("personal", {}).get("fullName", ""),
+                    "current_role": profile.get("personal", {}).get("currentRole", ""),
+                    "experience_years": profile.get("personal", {}).get("experienceYears", ""),
+                    "company": profile.get("personal", {}).get("currentCompany", ""),
+                    "industry": profile.get("personal", {}).get("industry", "")
+                },
+                "skills": profile.get("skills", {}).get("selected", []),
+                "key_projects": profile.get("experience", {}).get("keyProjects", ""),
+                "achievements": profile.get("experience", {}).get("achievements", ""),
+                "resume_analyzed": profile.get("resume", {}).get("analyzed", False),
+                "resume_info": profile.get("resume", {}).get("extractedInfo", {})
+            }
+            
+            return context
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting profile context: {e}")
+            return {
+                "has_profile": False,
+                "interview_level": self.interview_level,
+                "target_company": self.target_company
+            }
+    
+    def _handle_interview_response(self, question: str, response: str):
+        """Handle generated interview response from speaker diarization."""
+        logger.info(f"🎯 Interview response generated for question: {question[:50]}...")
+        
+        # Store the response for display
+        self.pending_questions.append({
+            'question': question,
+            'response': response,
+            'timestamp': datetime.now().isoformat(),
+            'type': 'interview_qa'
+        })
+    
+    async def process_interview_speech(self, transcript: str, voice_features: Dict = None) -> Optional[str]:
+        """Process speech with speaker diarization for interview flow."""
+        
+        if not self.interview_flow:
+            # Fallback to simple processing if diarization not available
+            return await self.process_simple_speech(transcript)
+        
+        try:
+            # Use voice features if available, otherwise use empty dict
+            features = voice_features or {}
+            
+            # Process speech segment and check if response is needed
+            complete_question = self.interview_flow.process_speech_segment(transcript, features)
+            
+            if complete_question:
+                logger.info(f"🎤 Complete question detected: {complete_question}")
+                
+                # Generate AI response for the complete question
+                ai_response = await self._generate_interview_response(complete_question)
+                
+                # Notify the flow manager
+                self.interview_flow.notify_response_generated(complete_question, ai_response)
+                
+                return ai_response
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error in interview speech processing: {e}")
+            return await self.process_simple_speech(transcript)
+    
+    async def process_simple_speech(self, transcript: str) -> Optional[str]:
+        """Simple speech processing without diarization."""
+        
+        # Check if this looks like a question
+        question_indicators = ['?', 'tell me', 'describe', 'explain', 'what', 'how', 'why']
+        text_lower = transcript.lower()
+        
+        is_question = any(indicator in text_lower for indicator in question_indicators)
+        
+        if is_question and len(transcript) > 10:
+            return await self._generate_interview_response(transcript)
+        
+        return None
+    
+    async def _generate_interview_response(self, question: str) -> str:
+        """Generate AI response for interview question with full context."""
+        
+        try:
+            # Get user profile context
+            profile_context = self.get_user_profile_context()
+            
+            # Build enhanced prompt with interview context
+            prompt = self._build_interview_prompt(question, profile_context)
+            
+            # Generate response with interview-specific settings
+            response = self.openai_client.chat.completions.create(
+                model=Config.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": self._get_system_prompt()},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=1200,  # Longer responses for senior-level questions
+                temperature=0.7,  # Balanced creativity and consistency
+            )
+            
+            ai_response = response.choices[0].message.content.strip()
+            
+            # Store conversation entry
+            entry = ConversationEntry(
+                timestamp=datetime.now().isoformat(),
+                meeting_id="interview_session",
+                speaker="ai_assistant",
+                content=ai_response,
+                type="ai_answer",
+                context={"question": question, "interview_level": self.interview_level},
+                sentiment="helpful",
+                importance=8
+            )
+            
+            self.memory.add_conversation("interview_session", entry)
+            
+            logger.info(f"🤖 Generated {len(ai_response)} character response for interview")
+            return ai_response
+            
+        except Exception as e:
+            logger.error(f"❌ Error generating interview response: {e}")
+            return f"I'd be happy to discuss {question.lower()}. Could you provide a bit more context about what specific aspect you'd like me to focus on?"
+    
+    def _build_interview_prompt(self, question: str, profile_context: Dict) -> str:
+        """Build interview-specific prompt with context."""
+        
+        # First check if we have company-specific knowledge
+        if self.company_kb and self.target_company:
+            company_prompt = self.company_kb.generate_company_specific_response(
+                self.target_company, question, profile_context
+            )
+            if company_prompt:
+                return company_prompt
+        
+        # Fallback to generic interview prompt
+        prompt = f"INTERVIEW QUESTION: {question}\n\n"
+        
+        if profile_context.get("has_profile"):
+            prompt += "ANSWER AS THE CANDIDATE with the following background:\n"
+            personal = profile_context.get("personal", {})
+            
+            if personal.get("current_role"):
+                prompt += f"- Current Role: {personal['current_role']}\n"
+            if personal.get("experience_years"):
+                prompt += f"- Experience: {personal['experience_years']} years\n"
+            if personal.get("company"):
+                prompt += f"- Current Company: {personal['company']}\n"
+            
+            skills = profile_context.get("skills", [])
+            if skills:
+                prompt += f"- Key Skills: {', '.join(skills[:5])}\n"
+            
+            if profile_context.get("key_projects"):
+                prompt += f"- Key Projects: {profile_context['key_projects'][:200]}...\n"
+        
+        prompt += f"\nProvide a {self.interview_level} level response that:\n"
+        prompt += "1. Demonstrates senior technical expertise\n"
+        prompt += "2. Uses specific examples from your experience\n"
+        prompt += "3. Shows leadership and impact\n"
+        prompt += "4. Addresses scalability and architecture concerns\n"
+        prompt += "5. Is confident but not arrogant\n"
+        prompt += "6. Stays under 400 words (2 minutes speaking time)\n"
+        
+        if self.target_company:
+            prompt += f"7. Is tailored for {self.target_company}'s interview style\n"
+            
+            # Add company-specific tips if available
+            if self.company_kb:
+                tips = self.company_kb.get_interview_tips(self.target_company, "senior")
+                if tips:
+                    prompt += "8. Consider these company-specific points:\n"
+                    for category, tip_list in tips.items():
+                        if category == "behavioral" and "behavioral" in question.lower():
+                            prompt += f"   - {tip_list[0]}\n"
+                        elif category == "technical" and any(word in question.lower() for word in ["design", "implement", "code", "architecture"]):
+                            prompt += f"   - {tip_list[0]}\n"
+        
+        return prompt
     
     def set_interaction_mode(self, mode: str):
         """Set interaction mode: private, public, or silent."""
@@ -739,3 +1052,86 @@ Provide helpful, experienced advice based on 20 years in the industry. Be practi
                 
         except Exception as e:
             logger.error(f"Error processing real-time audio: {e}")
+    
+    def set_interview_configuration(self, level: str, company: str = None):
+        """Set interview level and target company."""
+        
+        valid_levels = ["IC5", "IC6", "IC7", "E5", "E6", "E7"]
+        if level in valid_levels:
+            self.interview_level = level
+            logger.info(f"✅ Interview level set to: {level}")
+        else:
+            logger.warning(f"⚠️ Invalid interview level: {level}")
+        
+        if company:
+            valid_companies = ["Meta", "Google", "Amazon", "Microsoft", "Apple", "Netflix"]
+            if company in valid_companies:
+                self.target_company = company
+                logger.info(f"✅ Target company set to: {company}")
+            else:
+                logger.warning(f"⚠️ Unsupported company: {company}")
+    
+    def get_interview_configuration(self) -> Dict[str, Any]:
+        """Get current interview configuration."""
+        
+        config = {
+            "interview_level": self.interview_level,
+            "target_company": self.target_company,
+            "available_levels": ["IC5", "IC6", "IC7", "E5", "E6", "E7"],
+            "available_companies": ["Meta", "Google", "Amazon", "Microsoft", "Apple", "Netflix"]
+        }
+        
+        # Add company-specific tips if available
+        if self.company_kb and self.target_company:
+            config["company_tips"] = self.company_kb.get_interview_tips(
+                self.target_company, "senior"
+            )
+            config["company_questions"] = self.company_kb.get_company_questions(
+                self.target_company
+            )[:5]  # First 5 questions as examples
+        
+        return config
+    
+    def get_similar_interview_questions(self, question: str) -> List[Dict]:
+        """Get similar interview questions from knowledge base."""
+        
+        if not self.company_kb:
+            return []
+        
+        try:
+            return self.company_kb.search_similar_questions(
+                question, self.target_company
+            )
+        except Exception as e:
+            logger.error(f"Error searching similar questions: {e}")
+            return []
+    
+    def add_custom_interview_pattern(self, company: str, question_type: str, 
+                                   pattern: str, examples: List[str], 
+                                   framework: str, key_points: List[str]):
+        """Add a custom interview pattern to the knowledge base."""
+        
+        if not self.company_kb:
+            logger.warning("Company knowledge base not available")
+            return False
+        
+        try:
+            from .company_interview_kb import InterviewPattern
+            
+            custom_pattern = InterviewPattern(
+                company=company,
+                question_type=question_type,
+                pattern=pattern,
+                example_questions=examples,
+                response_framework=framework,
+                key_points=key_points,
+                common_followups=[]
+            )
+            
+            self.company_kb.add_custom_pattern(custom_pattern)
+            logger.info(f"✅ Added custom pattern for {company} {question_type}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error adding custom pattern: {e}")
+            return False

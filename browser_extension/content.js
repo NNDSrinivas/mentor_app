@@ -128,6 +128,28 @@ if (window.AIMentorInitialized) {
                             
                             <!-- Manual input for testing -->
                             <div style="margin-top: 15px; border-top: 1px solid rgba(0, 255, 0, 0.3); padding-top: 15px;">
+                                <div style="margin-bottom: 8px; font-size: 10px; color: #888;">Interview Level Configuration:</div>
+                                <select id="interview-level-select" 
+                                        style="width: 100%; padding: 8px; background: rgba(0, 0, 0, 0.7); border: 1px solid #00ff00; color: #00ff00; border-radius: 5px; font-size: 11px; margin-bottom: 8px;">
+                                    <option value="IC5">IC5 - Software Engineer</option>
+                                    <option value="IC6" selected>IC6 - Senior Software Engineer</option>
+                                    <option value="IC7">IC7 - Staff Software Engineer</option>
+                                    <option value="E5">E5 - Senior Engineer (Meta)</option>
+                                    <option value="E6">E6 - Staff Engineer (Meta)</option>
+                                    <option value="E7">E7 - Senior Staff Engineer (Meta)</option>
+                                </select>
+                                <select id="target-company-select" 
+                                        style="width: 100%; padding: 8px; background: rgba(0, 0, 0, 0.7); border: 1px solid #00ff00; color: #00ff00; border-radius: 5px; font-size: 11px; margin-bottom: 8px;">
+                                    <option value="">Select Target Company (Optional)</option>
+                                    <option value="Meta">Meta</option>
+                                    <option value="Google">Google</option>
+                                    <option value="Amazon">Amazon</option>
+                                    <option value="Microsoft">Microsoft</option>
+                                    <option value="Apple">Apple</option>
+                                    <option value="Netflix">Netflix</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                                
                                 <div style="margin-bottom: 8px; font-size: 10px; color: #888;">Manual Input (for testing without voice):</div>
                                 <input type="text" id="manual-question-input" placeholder="Type interview question here..." 
                                        style="width: 95%; padding: 10px; background: rgba(0, 0, 0, 0.7); border: 1px solid #00ff00; color: #00ff00; border-radius: 5px; font-size: 12px; margin-bottom: 8px;" />
@@ -334,6 +356,8 @@ if (window.AIMentorInitialized) {
             const manualInput = document.getElementById('manual-question-input');
             const manualSubmitBtn = document.getElementById('manual-submit-btn');
             const stealthTestBtn = document.getElementById('stealth-test-btn');
+            const interviewLevelSelect = document.getElementById('interview-level-select');
+            const targetCompanySelect = document.getElementById('target-company-select');
             
             if (manualInput && manualSubmitBtn) {
                 // Handle Enter key in input
@@ -351,6 +375,21 @@ if (window.AIMentorInitialized) {
                 });
                 
                 console.log('✅ Manual input handlers initialized');
+            }
+            
+            // Setup interview level configuration
+            if (interviewLevelSelect) {
+                interviewLevelSelect.addEventListener('change', (e) => {
+                    this.updateInterviewLevel(e.target.value, targetCompanySelect?.value);
+                });
+                console.log('✅ Interview level selector initialized');
+            }
+            
+            if (targetCompanySelect) {
+                targetCompanySelect.addEventListener('change', (e) => {
+                    this.updateInterviewLevel(interviewLevelSelect?.value, e.target.value);
+                });
+                console.log('✅ Target company selector initialized');
             }
             
             if (stealthTestBtn) {
@@ -1138,12 +1177,77 @@ if (window.AIMentorInitialized) {
                     this.updateStatus('🤖 AI Connected - Ready to assist');
                     this.isActive = true;
                     console.log('✅ AI service connected successfully');
+                    
+                    // Load current interview configuration
+                    await this.loadInterviewConfig();
                 } else {
                     throw new Error('AI service not available');
                 }
             } catch (error) {
                 this.updateStatus('❌ AI Offline - Start mentor app');
                 console.error('❌ Failed to connect to AI:', error);
+            }
+        }
+
+        async loadInterviewConfig() {
+            try {
+                const response = await fetch('http://localhost:8084/api/get-interview-config');
+                if (response.ok) {
+                    const config = await response.json();
+                    console.log('📋 Loaded interview config:', config);
+                    
+                    // Update UI selectors
+                    const levelSelect = document.getElementById('interview-level-select');
+                    const companySelect = document.getElementById('target-company-select');
+                    
+                    if (levelSelect && config.interview_level) {
+                        levelSelect.value = config.interview_level;
+                    }
+                    
+                    if (companySelect && config.target_company) {
+                        companySelect.value = config.target_company;
+                    }
+                    
+                    console.log(`✅ Interview configured for ${config.interview_level} level${config.target_company ? ' at ' + config.target_company : ''}`);
+                }
+            } catch (error) {
+                console.error('❌ Failed to load interview config:', error);
+            }
+        }
+
+        async updateInterviewLevel(level, company) {
+            try {
+                console.log(`🎯 Updating interview level: ${level}, company: ${company}`);
+                
+                const response = await fetch('http://localhost:8084/api/set-interview-level', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        level: level || 'IC6',
+                        company: company || null
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('✅ Interview level updated:', result);
+                    
+                    // Show notification
+                    this.showTemporaryNotification(
+                        `🎯 ${result.message}`, 
+                        3000
+                    );
+                    
+                    // Update status to reflect new level
+                    this.updateStatus(`🤖 AI Ready - ${level} Level${company ? ' (' + company + ')' : ''}`);
+                } else {
+                    throw new Error('Failed to update interview level');
+                }
+            } catch (error) {
+                console.error('❌ Failed to update interview level:', error);
+                this.showTemporaryNotification('❌ Failed to update interview level', 3000);
             }
         }
 
