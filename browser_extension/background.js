@@ -771,12 +771,16 @@ class BackgroundService {
     async performHealthCheck() {
         console.log('🔍 Performing health check...');
         try {
-            // Check if AI service is responsive
+            // Check if AI service is responsive with proper timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            
             const response = await fetch('http://localhost:8084/api/health', {
                 method: 'GET',
-                timeout: 5000
+                signal: controller.signal
             });
             
+            clearTimeout(timeoutId);
             console.log('📡 Health check response:', response.status, response.ok);
             const isHealthy = response.ok;
             const healthData = {

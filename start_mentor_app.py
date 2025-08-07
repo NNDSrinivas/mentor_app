@@ -45,7 +45,7 @@ class MentorAppLauncher:
             logger.info("Starting web interface...")
             web_process = subprocess.Popen([
                 self.python_exec, 
-                os.path.join(self.base_dir, 'web_interface.py')
+                os.path.join(self.base_dir, 'simple_web.py')
             ])
             self.processes.append(('web_interface', web_process))
             logger.info("Web interface started successfully")

@@ -212,9 +212,11 @@ class StealthInterviewAssistant {
                 body: JSON.stringify({
                     question: question,
                     context: {
+                        type: 'personalized_interview_response',
                         interview_level: this.interviewLevel,
                         target_company: this.targetCompany,
-                        mode: 'stealth_interview'
+                        mode: 'stealth_interview',
+                        use_profile: true
                     }
                 })
             });

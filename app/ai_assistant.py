@@ -191,6 +191,52 @@ class AIAssistant:
         # Interview level configuration
         self.interview_level = "IC6"  # Default to IC6 level
         self.target_company = None  # Will be set based on context
+    
+    def _detect_interview_level(self, profile: Dict[str, Any]) -> str:
+        """Auto-detect appropriate interview level based on profile data."""
+        try:
+            personal = profile.get("personal", {})
+            experience_years = personal.get("experienceYears", "")
+            current_role = personal.get("currentRole", "").lower()
+            company = personal.get("currentCompany", "").lower()
+            
+            # Parse experience years
+            years = 0
+            if isinstance(experience_years, str) and experience_years:
+                # Extract numbers from experience years string
+                import re
+                numbers = re.findall(r'\d+', experience_years)
+                if numbers:
+                    years = int(numbers[0])
+            elif isinstance(experience_years, (int, float)):
+                years = int(experience_years)
+            
+            # Detect level based on experience and role
+            leadership_keywords = ['senior', 'lead', 'principal', 'staff', 'architect', 'manager', 'director']
+            senior_keywords = ['senior', 'sr', 'lead', 'principal', 'staff']
+            
+            is_leadership = any(keyword in current_role for keyword in leadership_keywords)
+            is_senior = any(keyword in current_role for keyword in senior_keywords)
+            
+            # FAANG companies might have higher standards
+            faang_companies = ['google', 'apple', 'facebook', 'meta', 'amazon', 'netflix', 'microsoft']
+            is_faang = any(comp in company for comp in faang_companies)
+            
+            # Determine level
+            if years >= 12 or 'principal' in current_role or 'staff' in current_role:
+                return "IC7" if not is_faang else "IC7"
+            elif years >= 8 or 'senior' in current_role or 'lead' in current_role:
+                return "IC6" if not is_faang else "IC6"
+            elif years >= 5 or is_senior:
+                return "IC5" if not is_faang else "IC5"
+            elif years >= 3:
+                return "IC4"
+            else:
+                return "IC3"
+                
+        except Exception as e:
+            logger.warning(f"Error detecting interview level: {e}")
+            return "IC6"  # Default fallback
         
         # Load existing resume if available
         self._load_resume_from_file()
@@ -583,10 +629,13 @@ class AIAssistant:
         try:
             profile = self.profile_manager.get_profile()
             
+            # Auto-detect interview level based on profile
+            detected_level = self._detect_interview_level(profile)
+            
             # Extract key information for AI context
             context = {
                 "has_profile": True,
-                "interview_level": self.interview_level,
+                "interview_level": detected_level,
                 "target_company": self.target_company,
                 "personal": {
                     "name": profile.get("personal", {}).get("fullName", ""),
@@ -814,6 +863,7 @@ class AIAssistant:
     async def _generate_ai_response(self, prompt: str, context: Dict[str, Any]) -> str:
         """Generate AI response using OpenAI."""
         try:
+            logger.info(f"🔍 Received context: {context}")
             client = OpenAI(api_key=Config.OPENAI_API_KEY)
             
             # Check for senior-level interview requirements
@@ -836,38 +886,94 @@ class AIAssistant:
             
             # Check if this is a personalized interview response
             if context.get('type') == 'personalized_interview_response':
-                system_prompt = """
-You are answering an interview question as the specific person described in the prompt. This is a SENIOR ENGINEER (IC6/IC7/E5/E6/E7) level interview.
+                logger.info(f"🎯 Using personalized interview response mode")
+                # Get actual profile data for personalization
+                profile_context = self.get_user_profile_context()
+                
+                # Start with resume context if available (most specific)
+                if self.has_resume_context():
+                    logger.info(f"📄 Using resume context: {len(self.get_resume_context())} characters")
+                    profile_section = f"""
+YOUR ACTUAL PROFESSIONAL BACKGROUND (from your resume):
+{self.get_resume_context()[:4000]}
+
+Based on the above resume information, you are answering interview questions as yourself with these exact experiences and achievements.
+"""
+                # Fallback to ProfileManager data
+                elif profile_context.get("has_profile"):
+                    logger.info(f"👤 Using ProfileManager data as fallback")
+                    personal = profile_context.get("personal", {})
+                    skills = profile_context.get("skills", [])
+                    projects = profile_context.get("key_projects", "")
+                    achievements = profile_context.get("achievements", "")
+                    resume_info = profile_context.get("resume_info", {})
+                    
+                    profile_section = f"""
+YOUR PROFESSIONAL IDENTITY:
+- Name: {personal.get("name", "Senior Engineer")}
+- Current Role: {personal.get("current_role", "Senior Software Engineer")}
+- Experience: {personal.get("experience_years", "8+")} years in the industry
+- Current Company: {personal.get("company", "Tech Company")}
+- Industry: {personal.get("industry", "Technology")}
+
+YOUR TECHNICAL EXPERTISE:
+- Core Technologies: {", ".join(skills[:8]) if skills else "Full-stack development, system design, cloud platforms"}
+- Additional Skills: {", ".join(skills[8:]) if len(skills) > 8 else "Various modern frameworks and tools"}
+
+YOUR KEY PROJECTS & ACCOMPLISHMENTS:
+{projects if projects else "Led multiple high-impact engineering projects with measurable business outcomes"}
+
+YOUR ACHIEVEMENTS:
+{achievements if achievements else "Consistently delivered technical solutions that scaled and performed at enterprise level"}
+
+RESUME HIGHLIGHTS:
+{resume_info.get('summary', 'Proven track record of technical leadership and system architecture') if resume_info else 'Strong technical background with leadership experience'}
+"""
+                else:
+                    logger.info(f"⚠️ No profile data available, using generic template")
+                    profile_section = """
+YOUR PROFESSIONAL IDENTITY:
+- You are a Senior Software Engineer with 8+ years of experience
+- Currently working at a major tech company in a senior IC role
+- Strong background in full-stack development and system architecture
+- Proven track record of technical leadership and mentoring
+
+YOUR EXPERTISE:
+- Full-stack development (React, Node.js, Python, Java)
+- System design and architecture
+- Cloud platforms (AWS/Azure/GCP)
+- Database design and optimization
+- DevOps and CI/CD practices
+"""
+
+                system_prompt = f"""
+You are answering an interview question as the specific person described below. This is a SENIOR ENGINEER ({interview_level}) level interview.
+
+{profile_section}
 
 CRITICAL INSTRUCTIONS:
 - You ARE this person - respond in first person as them
-- Use their exact background, experience, and achievements
-- Reference their specific companies, projects, and technologies
-- Include real metrics and accomplishments from their resume
+- Use your exact background, experience, and achievements listed above
+- Reference your specific companies, projects, and technologies
+- Include real metrics and accomplishments from your career
 - Sound authentic and human - like this senior engineer would actually speak
 - Never mention AI, assistance, or that you're generating a response
-- Demonstrate IC6/IC7 level thinking: architectural decisions, trade-offs, business impact
+- Demonstrate {interview_level} level thinking: architectural decisions, trade-offs, business impact
 - Show depth appropriate for senior engineering roles (8+ years experience)
 
 FOR DIFFERENT QUESTION TYPES:
 
-SYSTEM DESIGN: Show architectural thinking, scalability considerations, real-world trade-offs. Reference actual systems you've built. Discuss CAP theorem, consistency patterns, distributed systems challenges.
+SYSTEM DESIGN: Show architectural thinking, scalability considerations, real-world trade-offs. Reference actual systems you've built from your experience. Discuss CAP theorem, consistency patterns, distributed systems challenges based on your background.
 
-CODING: Demonstrate proficiency with your actual tech stack. Discuss real problems you've solved. Show understanding of production concerns, performance optimization, code quality at scale.
+CODING: Demonstrate proficiency with your actual tech stack listed above. Discuss real problems you've solved. Show understanding of production concerns, performance optimization, code quality at scale.
 
-BEHAVIORAL: Use specific examples from your 8+ years. Show leadership, collaboration, problem-solving. Reference actual challenges and how you overcame them. Demonstrate mentoring and strategic thinking.
+BEHAVIORAL: Use specific examples from your years of experience. Show leadership, collaboration, problem-solving. Reference actual challenges and how you overcame them. Demonstrate mentoring and strategic thinking.
 
 PRODUCT/BUSINESS: Connect technical decisions to business outcomes. Show understanding of stakeholder needs. Reference measurable impact you've delivered. Discuss trade-offs between technical debt and feature velocity.
 
-JAVA/TECHNICAL EXPERIENCE: If asked about Java specifically, demonstrate deep understanding:
-- JVM internals, memory management, garbage collection
-- Spring ecosystem, microservices patterns
-- Performance tuning and profiling
-- Enterprise-scale Java applications
-- Design patterns and architectural considerations
-- Integration with other technologies in your actual stack
+TECHNICAL DEPTH: If asked about specific technologies in your background, demonstrate deep understanding appropriate for {interview_level} level including architecture patterns, performance considerations, and production experience.
 
-The prompt contains all the specific details about who you are and your background. Answer AS that person based on their actual senior-level experience.
+Answer AS this person based on their actual senior-level experience detailed above.
 """
             elif is_senior_interview or is_expert_response:
                 system_prompt = f"""

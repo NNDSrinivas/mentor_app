@@ -11,6 +11,9 @@ class AIInterviewAssistant {
         this.offscreenWindow = null;
         this.stealthIndicator = null;
         this.isStealthMode = false;
+        this.questionTimeout = null; // Add debouncing for questions
+        this.lastApiCall = 0; // Track API call timing
+        this.lastStatusMessage = ''; // Prevent duplicate status updates
         
         console.log('🤖 AI Interview Assistant initialized');
     }
@@ -63,18 +66,284 @@ class AIInterviewAssistant {
         this.setupSpeechRecognition();
     }
 
-    async checkBackend() {
-        // Check if backend is running
+    async setupSpeechRecognition() {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            console.error('❌ Speech recognition not supported');
+            this.updateStatus('❌ Speech recognition not supported');
+            return;
+        }
+
         try {
-            const response = await fetch('http://localhost:8084/api/health');
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            this.recognition = new SpeechRecognition();
+            
+            // Configuration
+            this.recognition.continuous = true;
+            this.recognition.interimResults = true;
+            this.recognition.lang = 'en-US';
+            
+            // Event handlers
+            this.recognition.onstart = () => {
+                console.log('🎤 Speech recognition started');
+                this.updateStatus('🎤 Listening for questions...');
+                this.isListening = true;
+                const toggleBtn = document.getElementById('toggle-listen');
+                if (toggleBtn) toggleBtn.textContent = '⏹️ Stop Listening';
+            };
+            
+            this.recognition.onresult = (event) => {
+                this.handleSpeechResult(event);
+            };
+            
+            this.recognition.onerror = (event) => {
+                console.log('🎤 Speech recognition error:', event.error);
+                
+                if (event.error === 'not-allowed') {
+                    this.updateStatus('❌ Microphone permission denied');
+                    return;
+                }
+                
+                if (event.error === 'no-speech') {
+                    console.log('🔇 No speech detected - continuing...');
+                    return;
+                }
+                
+                this.updateStatus(`⚠️ Speech error: ${event.error}`);
+            };
+            
+            this.recognition.onend = () => {
+                console.log('🎤 Speech recognition ended');
+                if (this.isListening) {
+                    // Restart with longer delay to reduce CPU usage
+                    setTimeout(() => {
+                        if (this.recognition && this.isListening) {
+                            try {
+                                this.recognition.start();
+                            } catch (error) {
+                                console.log('Speech recognition restart failed:', error);
+                                // Don't restart too aggressively if there are errors
+                                setTimeout(() => {
+                                    if (this.isListening) this.recognition.start();
+                                }, 1000);
+                            }
+                        }
+                    }, 500); // Increased delay from 100ms to 500ms
+                } else {
+                    this.updateStatus('🔇 Stopped listening');
+                    const toggleBtn = document.getElementById('toggle-listen');
+                    if (toggleBtn) toggleBtn.textContent = '🎤 Start Listening';
+                }
+            };
+            
+            this.updateStatus('✅ Ready to listen');
+            console.log('✅ Speech recognition ready');
+            
+        } catch (error) {
+            console.error('❌ Speech recognition setup failed:', error);
+            this.updateStatus('❌ Speech recognition failed');
+        }
+    }
+
+    handleSpeechResult(event) {
+        let finalTranscript = '';
+        
+        // Get final transcript
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            }
+        }
+        
+        if (finalTranscript.trim()) {
+            console.log('🎯 Speech detected:', finalTranscript);
+            
+            // Simple question detection
+            if (this.isQuestion(finalTranscript)) {
+                console.log('❓ Question detected:', finalTranscript);
+                this.processQuestion(finalTranscript);
+            } else {
+                console.log('💬 Speech (not a question):', finalTranscript);
+            }
+        }
+    }
+
+    isQuestion(text) {
+        const questionWords = ['what', 'how', 'why', 'when', 'where', 'who', 'tell me', 'describe', 'explain', 'can you', 'could you', 'would you'];
+        const lowerText = text.toLowerCase();
+        
+        return questionWords.some(word => lowerText.includes(word)) || 
+               text.trim().endsWith('?') ||
+               lowerText.includes('about yourself') ||
+               lowerText.includes('experience with');
+    }
+
+    async processQuestion(question) {
+        try {
+            // Prevent rapid-fire API calls
+            const now = Date.now();
+            if (now - this.lastApiCall < 2000) {
+                console.log('⏳ Rate limiting: Please wait before asking another question');
+                return;
+            }
+            this.lastApiCall = now;
+            
+            console.log('🎯 Processing question:', question);
+            
+            // Show the question immediately
+            const questionArea = document.getElementById('question-area');
+            const questionText = document.getElementById('question-text');
+            if (questionArea && questionText) {
+                questionArea.style.display = 'block';
+                questionText.textContent = question;
+            }
+            
+            this.updateStatus('🧠 AI is thinking...');
+            
+            // Optimized API call with timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+            
+            const response = await fetch('http://localhost:8084/api/ask', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    question: question,
+                    interview_mode: true,
+                    expertise_level: 'senior',
+                    use_resume: true
+                }),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                const data = await response.json();
+                this.displayAnswer(data.response, question);
+                this.updateStatus('✅ Answer ready - Read it back!');
+            } else {
+                throw new Error(`API error: ${response.status}`);
+            }
+
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                console.error('❌ Request timeout after 15 seconds');
+                this.displayAnswer('❌ Request timed out. The AI service might be slow or overloaded. Please try again.', question);
+                this.updateStatus('⏱️ Timeout - Try again');
+            } else {
+                console.error('❌ Failed to process question:', error);
+                this.displayAnswer('❌ Sorry, I could not process that question. Please check that the AI service is running (python start_mentor_app.py)', question);
+                this.updateStatus('❌ Error - Start backend service');
+            }
+        }
+    }
+
+    displayAnswer(answer, question) {
+        // Show the question area with the current question
+        const questionArea = document.getElementById('question-area');
+        const questionText = document.getElementById('question-text');
+        if (questionArea && questionText) {
+            questionArea.style.display = 'block';
+            questionText.textContent = question;
+        }
+
+        // Display the answer in a readable format
+        const answerContent = `
+            <div style="margin-bottom: 15px; background: rgba(0, 100, 255, 0.1); padding: 8px; border-radius: 5px;">
+                <strong style="color: #0066ff;">❓ Question:</strong><br>
+                <span style="color: white; font-size: 10px;">${question}</span>
+            </div>
+            <div style="background: rgba(0, 255, 0, 0.1); padding: 10px; border-radius: 5px; border-left: 3px solid #00ff00;">
+                <strong style="color: #00ff00; font-size: 11px;">💡 Your Answer:</strong><br><br>
+                <div style="color: #00ff00; line-height: 1.6; font-size: 10px;">
+                    ${answer.replace(/\n/g, '<br>')}
+                </div>
+            </div>
+            <div style="margin-top: 15px; text-align: center; font-size: 10px; color: #666; border-top: 1px solid #333; padding-top: 8px;">
+                📋 <strong>Read this answer back to the interviewer</strong> 📋<br>
+                <small>Ready for next question...</small>
+            </div>
+        `;
+        
+        // Update main tab overlay
+        const answerArea = document.getElementById('answer-area');
+        if (answerArea) {
+            answerArea.innerHTML = answerContent;
+            answerArea.scrollTop = 0;
+        }
+        
+        // Also update offscreen window if it exists
+        if (this.offscreenWindow && !this.offscreenWindow.closed) {
+            this.offscreenWindow.postMessage({
+                type: 'ai-update-answer',
+                content: answerContent
+            }, '*');
+        }
+
+        console.log('✅ Answer displayed for question:', question);
+    }
+
+    toggleListening() {
+        if (this.isListening) {
+            this.stopListening();
+        } else {
+            this.startSpeechRecognition();
+        }
+    }
+
+    async startSpeechRecognition() {
+        if (this.recognition) {
+            try {
+                this.isListening = true;
+                this.recognition.start();
+            } catch (error) {
+                console.error('❌ Failed to start recognition:', error);
+                this.updateStatus('❌ Failed to start listening');
+            }
+        }
+    }
+
+    stopListening() {
+        if (this.recognition) {
+            this.isListening = false;
+            this.recognition.stop();
+        }
+    }
+
+    testConnection() {
+        this.processQuestion("Tell me about yourself and your experience");
+    }
+
+    async checkBackend() {
+        // Check if backend is running (with caching to avoid repeated calls)
+        try {
+            this.updateStatus('🔗 Checking AI connection...');
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+            
+            const response = await fetch('http://localhost:8084/api/health', {
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
             if (response.ok) {
                 this.updateStatus('✅ AI Connected and Ready');
-                this.loadSavedResume();
+                // Only load resume if backend is working
+                setTimeout(() => this.loadSavedResume(), 500);
             } else {
-                this.updateStatus('❌ AI Backend Offline');
+                this.updateStatus('❌ AI Backend Offline - Check console');
             }
         } catch (error) {
-            this.updateStatus('❌ Start the mentor app backend');
+            if (error.name === 'AbortError') {
+                this.updateStatus('⏱️ Backend timeout - Start mentor app');
+            } else {
+                this.updateStatus('❌ Start the mentor app backend (python start_mentor_app.py)');
+            }
+            console.log('Backend check failed:', error.message);
         }
     }
 
@@ -990,7 +1259,14 @@ class AIInterviewAssistant {
                 },
                 body: JSON.stringify({
                     question: question,
-                    interview_mode: true
+                    interview_mode: true,
+                    context: {
+                        type: 'personalized_interview_response',
+                        interview_level: 'IC6',
+                        target_company: 'Tech Company',
+                        mode: 'interview',
+                        use_profile: true
+                    }
                 })
             });
 
@@ -1316,6 +1592,11 @@ class AIInterviewAssistant {
     }
 
     updateStatus(message) {
+        // Only update if message has changed to reduce DOM operations
+        if (this.lastStatusMessage === message) return;
+        
+        this.lastStatusMessage = message;
+        
         const statusElement = document.getElementById('status');
         if (statusElement) {
             statusElement.textContent = message;

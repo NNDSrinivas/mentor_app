@@ -214,11 +214,21 @@ def ask_ai():
     try:
         data = request.get_json()
         question = data.get('question', '')
-        context = data.get('context', 'web_interface')
+        context = data.get('context', {})
         interview_mode = data.get('interview_mode', False)
         
         if not question:
             return jsonify({'error': 'Question is required'}), 400
+        
+        # Handle legacy context format (string) vs new format (dict)
+        if isinstance(context, str):
+            context = {'type': context}
+        elif not isinstance(context, dict):
+            context = {'type': 'web_interface'}
+        
+        # Add default fields if missing
+        context.setdefault('timestamp', datetime.now().isoformat())
+        context.setdefault('source', 'web_browser')
         
         # Generate AI response
         loop = asyncio.new_event_loop()
@@ -230,13 +240,9 @@ def ask_ai():
                 ai_assistant._generate_interview_response(question)
             )
         else:
-            # Use general response
+            # Use general response with proper context handling
             response = loop.run_until_complete(
-                ai_assistant._generate_ai_response(question, {
-                    'type': context,
-                    'timestamp': datetime.now().isoformat(),
-                    'source': 'web_browser'
-                })
+                ai_assistant._generate_ai_response(question, context)
             )
         
         loop.close()
