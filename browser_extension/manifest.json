@@ -42,7 +42,7 @@
     "default_title": "AI Meeting Mentor"
   },
   "web_accessible_resources": [{
-    "resources": ["extension_bridge.js", "inject.js", "offscreen.js", "offscreen.html"],
+    "resources": ["extension_bridge.js", "inject.js", "offscreen.js", "offscreen.html", "overlay_client.js"],
     "matches": ["<all_urls>"]
   }]
 }
