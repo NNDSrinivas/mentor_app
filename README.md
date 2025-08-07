@@ -1,7 +1,6 @@
-# 🤖 AI Interview Assistant - Stealth Mode Edition
+# 🤖 AI Mentor
 
-A production-ready AI-powered **interview assistant** that provides **real-time technical interview support** with **true stealth mode** that's hidden from screen sharing but always visible to you.
-
+A production-ready AI-powered Mentor
 ## 🎯 Core Features
 
 - 🕵️ **True Stealth Mode** - Hidden from screen sharing, always visible to YOU
