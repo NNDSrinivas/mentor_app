@@ -129,6 +129,9 @@ export class InterviewSessionManager {
             case 'session_ended':
                 this.endSession();
                 break;
+            case 'build_status':
+                this.handleBuildStatus(data.data);
+                break;
         }
     }
 
@@ -151,6 +154,20 @@ export class InterviewSessionManager {
 
         this.updateStatusBar('Connected', this.answers.length);
         this.onAnswersUpdated.fire(this.answers);
+    }
+
+    private handleBuildStatus(info: any) {
+        const message = `Build ${info.status} for PR #${info.pr_number}: ${info.title || ''}`;
+        vscode.window.showWarningMessage(message);
+        if (info.status && info.status.toLowerCase().includes('fail')) {
+            this.runTests();
+        }
+    }
+
+    private runTests() {
+        const terminal = vscode.window.createTerminal('CI Tests');
+        terminal.show();
+        terminal.sendText('pytest || true');
     }
 
     private showNewAnswerNotification(answer: Answer) {

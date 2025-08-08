@@ -2,10 +2,15 @@ import os, json, time, logging
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from app.realtime import get_or_create_session, push_caption, pop_event_generator, get_session_manager
+from backend.build_status_service import BuildStatusService
 
 app = Flask(__name__)
 CORS(app)
 logging.basicConfig(level=logging.INFO)
+
+# Start build status service to monitor CI systems
+build_status_service = BuildStatusService()
+build_status_service.start()
 
 @app.route('/api/health', methods=['GET'])
 def health():
