@@ -337,6 +337,24 @@ def api_draft_changelog():
         log.error(f"Error drafting changelog: {e}")
         return jsonify({"error": str(e)}), 500
 
+# --- Wave 7 Mobile Relay Endpoint ---
+@app.route("/api/relay/mobile", methods=['POST'])
+def relay_mobile():
+    """Relay messages to mobile WebSocket clients during stealth mode"""
+    try:
+        payload = request.get_json(force=True) or {}
+        # broadcast to mobile WS clients
+        notify_all({
+            "channel": "mobile",
+            "type": payload.get("type", "answer"), 
+            "text": payload.get("text", ""),
+            "meetingId": payload.get("meetingId", "")
+        })
+        return jsonify({"ok": True})
+    except Exception as e:
+        log.error(f"Error relaying to mobile: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # --- Configuration Endpoints ---
 @app.route("/api/config/dry-run", methods=['POST'])
 def set_dry_run():

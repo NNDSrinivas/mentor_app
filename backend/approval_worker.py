@@ -87,6 +87,8 @@ def on_approval_resolved(item_dict: Dict[str, Any]) -> Dict[str, Any]:
             return execute_issue_triage(payload)
         elif action == "github.pr_auto_reply":
             return execute_github_pr_auto_reply(payload)
+        elif action == "github.apply_patch":
+            return execute_github_apply_patch(payload)
         else:
             return {"error": "unknown_action", "action": action}
             
@@ -401,6 +403,38 @@ def execute_issue_triage(payload: Dict[str, Any]) -> Dict[str, Any]:
         return execute_github_comment(comment_payload)
     
     return {"success": True, "action": "no_suggestions"}
+
+def execute_github_apply_patch(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply unified diff patch with GitHub branch/commit/PR automation"""
+    from backend.patch_apply import apply_patch
+    
+    try:
+        patch_content = payload.get("patch_content", "")
+        branch_name = payload.get("branch_name", f"auto-patch-{int(time.time())}")
+        commit_message = payload.get("commit_message", "Apply automated patch changes")
+        pr_title = payload.get("pr_title", f"Automated patch: {branch_name}")
+        
+        if not patch_content:
+            return {"error": "missing_patch_content"}
+        
+        # Apply patch with GitHub automation
+        result = apply_patch(
+            patch_content=patch_content,
+            branch_name=branch_name,
+            commit_message=commit_message,
+            pr_title=pr_title
+        )
+        
+        if result.get("success"):
+            log.info(f"Applied patch successfully: {result.get('pr_url', 'No PR created')}")
+            return {"success": True, "result": result}
+        else:
+            log.error(f"Patch application failed: {result.get('error')}")
+            return {"success": False, "error": result.get("error")}
+            
+    except Exception as e:
+        log.error(f"Error in apply_patch execution: {e}")
+        return {"success": False, "error": str(e)}
 
 def start_worker_thread():
     """Start the approval worker in a background thread"""
