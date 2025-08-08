@@ -1,0 +1,118 @@
+{
+  "name": "ai-interview-assistant",
+  "displayName": "AI Interview Assistant",
+  "description": "Real-time AI assistance for technical interviews with context-aware answers",
+  "version": "1.0.0",
+  "publisher": "mentor-app",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Education"
+  ],
+  "keywords": [
+    "interview",
+    "ai",
+    "assistant",
+    "coding",
+    "technical"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiInterviewAssistant.toggle",
+        "title": "Toggle AI Interview Assistant",
+        "category": "AI Interview"
+      },
+      {
+        "command": "aiInterviewAssistant.startSession",
+        "title": "Start Interview Session",
+        "category": "AI Interview"
+      },
+      {
+        "command": "aiInterviewAssistant.endSession",
+        "title": "End Interview Session",
+        "category": "AI Interview"
+      },
+      {
+        "command": "aiInterviewAssistant.showAnswer",
+        "title": "Show Current Answer",
+        "category": "AI Interview"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "aiInterviewAssistant.toggle",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
+      },
+      {
+        "command": "aiInterviewAssistant.showAnswer",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s"
+      }
+    ],
+    "configuration": {
+      "title": "AI Interview Assistant",
+      "properties": {
+        "aiInterviewAssistant.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8080",
+          "description": "URL of the AI Interview Assistant backend server"
+        },
+        "aiInterviewAssistant.userLevel": {
+          "type": "string",
+          "enum": ["IC3", "IC4", "IC5", "IC6", "IC7"],
+          "default": "IC5",
+          "description": "Your engineering level for context-appropriate answers"
+        },
+        "aiInterviewAssistant.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start session when VS Code opens"
+        },
+        "aiInterviewAssistant.showNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications for new answers"
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "aiInterviewAssistant",
+          "name": "Interview Assistant",
+          "when": "aiInterviewAssistant.sessionActive"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiInterviewAssistant",
+          "title": "AI Interview Assistant",
+          "icon": "$(mortar-board)"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
+}
