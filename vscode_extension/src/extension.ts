@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
+import { BridgeClient } from './bridgeClient';
 
 interface JiraTask {
     key: string;
@@ -20,6 +21,8 @@ export function activate(context: vscode.ExtensionContext) {
     console.log('🤖 AI Mentor Assistant activated');
 
     const aiMentor = new AIMentorProvider(context);
+    const bridgeClient = new BridgeClient('ws://localhost:8765');
+    bridgeClient.connect();
     
     // Register commands
     const commands = [
@@ -27,7 +30,8 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('aiMentor.analyzeCode', () => aiMentor.analyzeSelectedCode()),
         vscode.commands.registerCommand('aiMentor.getJiraTasks', () => aiMentor.fetchJiraTasks()),
         vscode.commands.registerCommand('aiMentor.generateCode', (uri) => aiMentor.generateCodeForTask(uri)),
-        vscode.commands.registerCommand('aiMentor.explainError', () => aiMentor.explainError())
+        vscode.commands.registerCommand('aiMentor.explainError', () => aiMentor.explainError()),
+        vscode.commands.registerCommand('aiMentor.showTasks', () => bridgeClient.requestTasks())
     ];
 
     // Register providers

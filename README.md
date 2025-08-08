@@ -41,6 +41,16 @@ cp .env.template .env
 # Edit .env with your OpenAI API key for enhanced responses
 ```
 
+### 5. IDE Integration
+1. Ensure `websockets` dependency is installed (included in `requirements.txt`).
+2. Start the universal IDE bridge:
+   ```bash
+   python universal_ide_bridge.py  # or run `python start_mentor_app.py`
+   ```
+3. In VS Code, open `vscode_extension/` and run `npm install && npm run compile`.
+4. Use "Load Extension" (`F5`) to launch the sample extension which connects via WebSocket.
+5. Run the `AI Mentor: Show AI Tasks` command to view tasks from the bridge.
+
 ## 🕵️ Stealth Mode Features
 
 ### True Interview Stealth

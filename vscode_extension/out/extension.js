@@ -29,16 +29,20 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deactivate = exports.activate = void 0;
 const vscode = __importStar(require("vscode"));
 const axios_1 = __importDefault(require("axios"));
+const bridgeClient_1 = require("./bridgeClient");
 function activate(context) {
     console.log('🤖 AI Mentor Assistant activated');
     const aiMentor = new AIMentorProvider(context);
+    const bridgeClient = new bridgeClient_1.BridgeClient('ws://localhost:8765');
+    bridgeClient.connect();
     // Register commands
     const commands = [
         vscode.commands.registerCommand('aiMentor.askQuestion', () => aiMentor.askQuestion()),
         vscode.commands.registerCommand('aiMentor.analyzeCode', () => aiMentor.analyzeSelectedCode()),
         vscode.commands.registerCommand('aiMentor.getJiraTasks', () => aiMentor.fetchJiraTasks()),
         vscode.commands.registerCommand('aiMentor.generateCode', (uri) => aiMentor.generateCodeForTask(uri)),
-        vscode.commands.registerCommand('aiMentor.explainError', () => aiMentor.explainError())
+        vscode.commands.registerCommand('aiMentor.explainError', () => aiMentor.explainError()),
+        vscode.commands.registerCommand('aiMentor.showTasks', () => bridgeClient.requestTasks())
     ];
     // Register providers
     const taskProvider = new JiraTaskProvider(aiMentor);
