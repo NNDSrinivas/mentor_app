@@ -17,6 +17,7 @@ from chromadb.config import Settings
 from openai import OpenAI
 
 from .config import Config
+from .memory_db import MemoryDB
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class KnowledgeBase:
             raise ValueError("OpenAI API key is required for knowledge base")
         
         self.openai_client = OpenAI(api_key=Config.OPENAI_API_KEY)
-        
+
         # Initialize ChromaDB
         self.chroma_client = chromadb.PersistentClient(
             path=Config.CHROMA_PERSIST_DIR,
@@ -46,6 +47,9 @@ class KnowledgeBase:
                 metadata={"description": "AI Mentor Assistant Knowledge Base"}
             )
             logger.info("Created new knowledge base collection")
+
+        # Initialize persistence layer for summaries and tasks
+        self.db = MemoryDB()
     
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for text using OpenAI API.
@@ -177,6 +181,27 @@ class KnowledgeBase:
         except Exception as e:
             logger.error(f"Failed to delete document {doc_id}: {str(e)}")
             return False
+
+    # --- Persistence helpers ---
+    def save_meeting_summary(self, meeting_id: str, summary: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+        """Persist a meeting summary and add it to the vector store."""
+        self.db.save_meeting_summary(meeting_id, summary)
+        meta = {"type": "meeting_summary", "meeting_id": meeting_id, **(metadata or {})}
+        return self.add_document(summary, meta)
+
+    def get_meeting_summaries(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Retrieve recent meeting summaries from persistence."""
+        return self.db.get_meeting_summaries(limit)
+
+    def save_task_history(self, task_id: str, description: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+        """Persist a task entry and add it to the vector store."""
+        self.db.save_task(task_id, description)
+        meta = {"type": "task", "task_id": task_id, **(metadata or {})}
+        return self.add_document(description, meta)
+
+    def get_task_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Retrieve recent task history from persistence."""
+        return self.db.get_task_history(limit)
 
 
 def ingest_documents(docs: List[str], doc_type: str = "general") -> None:

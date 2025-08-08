@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 import PyPDF2
 import docx2txt
 from werkzeug.utils import secure_filename
+from .memory_db import MemoryDB
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class ProfileManager:
         self.data_dir = data_dir
         self.profile_file = os.path.join(data_dir, "user_profile.json")
         self.resume_dir = os.path.join(data_dir, "resumes")
+        self.db = MemoryDB()
         
         # Create directories if they don't exist
         os.makedirs(data_dir, exist_ok=True)
@@ -27,11 +29,17 @@ class ProfileManager:
         
     def load_profile(self) -> Dict[str, Any]:
         """Load existing profile or create empty one"""
+        # First try loading from persistent storage
+        db_profile = self.db.load_user_profile("default")
+        if db_profile:
+            logger.info("✅ Loaded existing user profile from database")
+            return db_profile
+
         if os.path.exists(self.profile_file):
             try:
                 with open(self.profile_file, 'r', encoding='utf-8') as f:
                     profile = json.load(f)
-                    logger.info("✅ Loaded existing user profile")
+                    logger.info("✅ Loaded existing user profile from file")
                     return profile
             except Exception as e:
                 logger.error(f"❌ Error loading profile: {e}")
@@ -82,6 +90,8 @@ class ProfileManager:
                 json.dump(profile_data, f, indent=2, ensure_ascii=False)
             
             logger.info("✅ Profile saved successfully")
+            # Persist to SQLite database for cross-device access
+            self.db.save_user_profile("default", profile_data)
             return True
         except Exception as e:
             logger.error(f"❌ Error saving profile: {e}")
@@ -90,6 +100,15 @@ class ProfileManager:
     def get_profile(self) -> Dict[str, Any]:
         """Get current profile data"""
         return self.profile_data
+
+    # --- Persistence helpers ---
+    def load_profile_from_db(self, user_id: str = "default") -> Optional[Dict[str, Any]]:
+        """Load a profile directly from the persistent database."""
+        return self.db.load_user_profile(user_id)
+
+    def save_profile_to_db(self, profile_data: Dict[str, Any], user_id: str = "default") -> None:
+        """Save a profile directly to the persistent database."""
+        self.db.save_user_profile(user_id, profile_data)
     
     def analyze_resume(self, file_path: str, original_filename: str) -> Dict[str, Any]:
         """Analyze uploaded resume and extract information"""

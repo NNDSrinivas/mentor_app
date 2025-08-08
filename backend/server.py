@@ -4,6 +4,7 @@ import websockets
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from typing import Set
+from app.memory_db import MemoryDB
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +30,15 @@ connected_clients: Set[websockets.WebSocketServerProtocol] = set()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+MEMORY_API_TOKEN = os.getenv("MEMORY_API_TOKEN", "")
+memory_db = MemoryDB()
+
+
+def _authorized(req: request) -> bool:
+    token = req.headers.get("Authorization", "").replace("Bearer ", "")
+    if MEMORY_API_TOKEN:
+        return hmac.compare_digest(token, MEMORY_API_TOKEN)
+    return True
 
 # --- Health Check ---
 @app.route('/api/health', methods=['GET'])
@@ -40,6 +50,36 @@ def health():
         'timestamp': asyncio.get_event_loop().time(),
         'integrations': status
     })
+
+
+# --- Memory API ---
+@app.route('/api/memory/meetings', methods=['GET'])
+def list_meeting_summaries():
+    if not _authorized(request):
+        return jsonify({'error': 'Unauthorized'}), 401
+    limit = int(request.args.get('limit', 20))
+    items = memory_db.get_meeting_summaries(limit)
+    return jsonify({'items': items, 'count': len(items)})
+
+
+@app.route('/api/memory/tasks', methods=['GET'])
+def list_tasks():
+    if not _authorized(request):
+        return jsonify({'error': 'Unauthorized'}), 401
+    limit = int(request.args.get('limit', 50))
+    items = memory_db.get_task_history(limit)
+    return jsonify({'items': items, 'count': len(items)})
+
+
+@app.route('/api/memory/profile', methods=['GET'])
+def get_profile_api():
+    if not _authorized(request):
+        return jsonify({'error': 'Unauthorized'}), 401
+    user_id = request.args.get('user_id', 'default')
+    profile = memory_db.load_user_profile(user_id)
+    if not profile:
+        return jsonify({'error': 'Profile not found'}), 404
+    return jsonify(profile)
 
 # --- Approvals REST API ---
 @app.route("/api/approvals", methods=['GET'])
