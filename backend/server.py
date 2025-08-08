@@ -4,6 +4,7 @@ import websockets
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from typing import Set
+from functools import wraps
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +30,21 @@ connected_clients: Set[websockets.WebSocketServerProtocol] = set()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN", "")
+
+
+def require_auth(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not API_AUTH_TOKEN:
+            return func(*args, **kwargs)
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else ""
+        if hmac.compare_digest(token, API_AUTH_TOKEN):
+            return func(*args, **kwargs)
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return wrapper
 
 # --- Health Check ---
 @app.route('/api/health', methods=['GET'])
@@ -43,6 +59,7 @@ def health():
 
 # --- Approvals REST API ---
 @app.route("/api/approvals", methods=['GET'])
+@require_auth
 def list_approvals():
     """List all pending approvals"""
     try:
@@ -53,6 +70,7 @@ def list_approvals():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/approvals/<approval_id>", methods=['GET'])
+@require_auth
 def get_approval(approval_id: str):
     """Get specific approval details"""
     try:
@@ -65,6 +83,7 @@ def get_approval(approval_id: str):
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/approvals/resolve", methods=['POST'])
+@require_auth
 def resolve_approval():
     """Resolve (approve/reject) an approval request"""
     try:
@@ -99,6 +118,7 @@ def resolve_approval():
 
 # --- GitHub Integration Endpoints ---
 @app.route("/api/github/pr", methods=['POST'])
+@require_auth
 def github_pr():
     """Submit GitHub PR creation for approval"""
     try:
@@ -122,6 +142,7 @@ def github_pr():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/github/comment", methods=['POST'])
+@require_auth
 def github_comment():
     """Submit GitHub comment for approval"""
     try:
@@ -138,6 +159,7 @@ def github_comment():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/github/issue", methods=['POST'])
+@require_auth
 def github_issue():
     """Submit GitHub issue creation for approval"""
     try:
@@ -155,6 +177,7 @@ def github_issue():
 
 # --- Jira Integration Endpoints ---
 @app.route("/api/jira/create", methods=['POST'])
+@require_auth
 def jira_create():
     """Submit Jira issue creation for approval"""
     try:
@@ -176,6 +199,7 @@ def jira_create():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/jira/update", methods=['POST'])
+@require_auth
 def jira_update():
     """Submit Jira issue update for approval"""
     try:
@@ -192,6 +216,7 @@ def jira_update():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/jira/comment", methods=['POST'])
+@require_auth
 def jira_comment():
     """Submit Jira comment for approval"""
     try:
@@ -302,6 +327,7 @@ def gh_pr_webhook():
 
 # --- Wave 6 Documentation API ---
 @app.route("/api/docs/adr", methods=['POST'])
+@require_auth
 def api_draft_adr():
     """Generate ADR (Architecture Decision Record)"""
     try:
@@ -314,6 +340,7 @@ def api_draft_adr():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/docs/runbook", methods=['POST'])
+@require_auth
 def api_draft_runbook():
     """Generate operational runbook"""
     try:
@@ -326,6 +353,7 @@ def api_draft_runbook():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/docs/changelog", methods=['POST'])
+@require_auth
 def api_draft_changelog():
     """Generate changelog from merged PRs"""
     try:
@@ -339,6 +367,7 @@ def api_draft_changelog():
 
 # --- Wave 7 Mobile Relay Endpoint ---
 @app.route("/api/relay/mobile", methods=['POST'])
+@require_auth
 def relay_mobile():
     """Relay messages to mobile WebSocket clients during stealth mode"""
     try:
@@ -357,6 +386,7 @@ def relay_mobile():
 
 # --- Configuration Endpoints ---
 @app.route("/api/config/dry-run", methods=['POST'])
+@require_auth
 def set_dry_run():
     """Enable/disable dry run mode"""
     try:
@@ -372,6 +402,7 @@ def set_dry_run():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/config/status", methods=['GET'])
+@require_auth
 def config_status():
     """Get current configuration status"""
     try:

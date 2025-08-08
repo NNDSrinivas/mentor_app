@@ -42,6 +42,7 @@ sqlite3
 # whisperx  # Commented out due to Python 3.13 compatibility issues
 pydub>=0.25.1
 webrtcvad>=2.0.10
+cryptography>=41.0.0
 
 # Additional dependencies for advanced features
 psutil>=5.9.0

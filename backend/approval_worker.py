@@ -1,5 +1,5 @@
 # backend/approval_worker.py
-import time, threading, logging
+import time, threading, logging, os
 from typing import Dict, Any, Optional
 
 log = logging.getLogger(__name__)
@@ -39,6 +39,18 @@ def run_worker(poll_interval: float = 1.0):
             log.error(f"Error in approval worker: {e}")
             time.sleep(5.0)
 
+
+def confirm_execution(action: str, payload: Dict[str, Any]) -> bool:
+    """Require explicit confirmation before executing an external action."""
+    if os.getenv("AUTO_CONFIRM", "false").lower() == "true":
+        return True
+    try:
+        response = input(f"Execute action {action} with payload {payload}? (y/N): ")
+    except EOFError:
+        log.warning("No input available for confirmation; skipping action")
+        return False
+    return response.strip().lower() == "y"
+
 def on_approval_resolved(item_dict: Dict[str, Any]) -> Dict[str, Any]:
     """
     Execute approved actions. Called after an approval is resolved.
@@ -52,6 +64,9 @@ def on_approval_resolved(item_dict: Dict[str, Any]) -> Dict[str, Any]:
     
     if status != "approved":
         return {"skipped": "rejected", "action": action}
+
+    if not confirm_execution(action, payload):
+        return {"skipped": "unconfirmed", "action": action}
 
     try:
         # Route to appropriate handler based on action

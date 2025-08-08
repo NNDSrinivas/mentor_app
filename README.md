@@ -67,6 +67,11 @@ AI Mentor is designed to be your **high-IQ, experienced, and powerful software e
 - **Secure Screen Recording** - Local storage with encryption
 - **Speaker Identification** - Advanced diarization without compromising privacy
 - **Team Context Awareness** - Understands team dynamics while maintaining confidentiality
+
+### 🔐 Security Enhancements
+- **Token-Based Authentication** - Protect backend APIs with the `API_AUTH_TOKEN` environment variable.
+- **Action Confirmation** - External actions require explicit approval unless `AUTO_CONFIRM` is set.
+- **Encrypted Memory Storage** - Provide `ENCRYPTION_KEY` to encrypt credentials and transcripts at rest.
 ## 🚀 Quick Start Guide
 
 ### **1. Complete System Setup**
