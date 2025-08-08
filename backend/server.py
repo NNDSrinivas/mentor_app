@@ -253,6 +253,90 @@ def verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
     provided_signature = signature_header[7:]  # Remove 'sha256=' prefix
     return hmac.compare_digest(expected_signature, provided_signature)
 
+# --- Wave 6 PR Auto-Reply Webhook ---
+@app.route("/webhook/github/pr", methods=['POST'])
+def gh_pr_webhook():
+    """Handle GitHub PR webhooks for auto-reply suggestions"""
+    try:
+        # Import Wave 6 components
+        from integrations.github_fetch import get_pr, get_pr_files, get_pr_comments
+        from pr_auto_reply import suggest_replies_and_patch
+        
+        event = request.headers.get("X-GitHub-Event", "unknown")
+        payload = request.get_json(force=True) or {}
+        
+        if event not in ("pull_request", "issue_comment"): 
+            return "", 204
+
+        repo_full = payload.get("repository",{}).get("full_name","")
+        owner, repo = repo_full.split("/") if "/" in repo_full else ("","")
+        pr_number = (payload.get("pull_request") or {}).get("number") or payload.get("issue",{}).get("number")
+
+        if not (owner and repo and pr_number):
+            return "", 204
+
+        pr = get_pr(owner, repo, pr_number)
+        files = get_pr_files(owner, repo, pr_number)
+        comments = get_pr_comments(owner, repo, pr_number)
+
+        suggestions = suggest_replies_and_patch(pr.get("title",""), pr.get("body","") or "", files, comments)
+        
+        # Gate via approvals before posting anything
+        item = approvals.submit("github.pr_auto_reply", {
+            "owner": owner, 
+            "repo": repo, 
+            "pr_number": pr_number, 
+            "suggestions_json": suggestions["raw"]
+        })
+        
+        # Notify WebSocket clients
+        notify_all({
+            "type": "new_approval",
+            "approval": vars(item)
+        })
+        
+        return "", 204
+    except Exception as e:
+        log.error(f"Error handling PR webhook: {e}")
+        return "", 500
+
+# --- Wave 6 Documentation API ---
+@app.route("/api/docs/adr", methods=['POST'])
+def api_draft_adr():
+    """Generate ADR (Architecture Decision Record)"""
+    try:
+        from doc_agent import draft_adr
+        d = request.get_json(force=True)
+        md = draft_adr(d["title"], d.get("context",""), d.get("options",[]), d.get("decision",""), d.get("consequences",[]))
+        return jsonify({"markdown": md})
+    except Exception as e:
+        log.error(f"Error drafting ADR: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/docs/runbook", methods=['POST'])
+def api_draft_runbook():
+    """Generate operational runbook"""
+    try:
+        from doc_agent import draft_runbook
+        d = request.get_json(force=True)
+        md = draft_runbook(d["service"], d.get("incidents",[]), d.get("commands",[]), d.get("dashboards",[]))
+        return jsonify({"markdown": md})
+    except Exception as e:
+        log.error(f"Error drafting runbook: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/docs/changelog", methods=['POST'])
+def api_draft_changelog():
+    """Generate changelog from merged PRs"""
+    try:
+        from doc_agent import draft_changelog
+        d = request.get_json(force=True)
+        md = draft_changelog(d["repo"], d.get("merged_prs",[]))
+        return jsonify({"markdown": md})
+    except Exception as e:
+        log.error(f"Error drafting changelog: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # --- Configuration Endpoints ---
 @app.route("/api/config/dry-run", methods=['POST'])
 def set_dry_run():

@@ -85,6 +85,8 @@ def on_approval_resolved(item_dict: Dict[str, Any]) -> Dict[str, Any]:
             return execute_deployment_suggest(payload)
         elif action == "issue.triage_suggestions":
             return execute_issue_triage(payload)
+        elif action == "github.pr_auto_reply":
+            return execute_github_pr_auto_reply(payload)
         else:
             return {"error": "unknown_action", "action": action}
             
@@ -171,6 +173,41 @@ def execute_github_issue(payload: Dict[str, Any]) -> Dict[str, Any]:
     
     log.info(f"Created issue: {payload['title']} on {payload['owner']}/{payload['repo']}")
     return {"success": True, "result": result}
+
+def execute_github_pr_auto_reply(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute auto-reply suggestions on GitHub PR"""
+    import json
+    
+    try:
+        data = json.loads(payload["suggestions_json"])
+        replies = data.get("replies", [])
+        posted_comments = []
+        
+        # Post each reply as a comment (limit to 10 for safety)
+        for r in replies[:10]:
+            body = r if isinstance(r, str) else r.get("body", "")
+            if not body:
+                continue
+                
+            result = github.comment_pr(
+                owner=payload["owner"],
+                repo=payload["repo"],
+                pr_number=payload["pr_number"],
+                body=body
+            )
+            posted_comments.append(result)
+        
+        log.info(f"Posted {len(posted_comments)} auto-reply comments on PR #{payload['pr_number']}")
+        
+        return {
+            "success": True,
+            "posted_comments": posted_comments,
+            "proposed_patch": data.get("proposed_patch", ""),
+            "total_replies": len(replies)
+        }
+    except Exception as e:
+        log.error(f"Error executing PR auto-reply: {e}")
+        return {"success": False, "error": str(e)}
 
 # Jira action handlers
 def execute_jira_create(payload: Dict[str, Any]) -> Dict[str, Any]:
