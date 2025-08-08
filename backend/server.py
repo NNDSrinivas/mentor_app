@@ -1,0 +1,371 @@
+# backend/server.py
+import asyncio, json, os, logging, hmac, hashlib
+import websockets
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from typing import Set
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+app = Flask(__name__)
+CORS(app)
+
+# Import functions to avoid circular imports
+def get_backend_components():
+    from backend.approvals import approvals
+    from backend.approval_worker import on_approval_resolved, start_worker_thread, set_dry_run_mode, get_integration_status
+    from backend.watchers.ci_watcher import handle_github_webhook
+    return approvals, on_approval_resolved, start_worker_thread, set_dry_run_mode, get_integration_status, handle_github_webhook
+
+approvals, on_approval_resolved, start_worker_thread, set_dry_run_mode, get_integration_status, handle_github_webhook = get_backend_components()
+
+# Start the approval worker thread
+start_worker_thread()
+
+# WebSocket connections for real-time notifications
+connected_clients: Set[websockets.WebSocketServerProtocol] = set()
+
+# GitHub webhook secret for verification
+GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+
+# --- Health Check ---
+@app.route('/api/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    status = get_integration_status()
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': asyncio.get_event_loop().time(),
+        'integrations': status
+    })
+
+# --- Approvals REST API ---
+@app.route("/api/approvals", methods=['GET'])
+def list_approvals():
+    """List all pending approvals"""
+    try:
+        items = approvals.list()
+        return jsonify({"items": items, "count": len(items)})
+    except Exception as e:
+        log.error(f"Error listing approvals: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/approvals/<approval_id>", methods=['GET'])
+def get_approval(approval_id: str):
+    """Get specific approval details"""
+    try:
+        item = approvals.get(approval_id)
+        if not item:
+            return jsonify({"error": "Approval not found"}), 404
+        return jsonify(vars(item))
+    except Exception as e:
+        log.error(f"Error getting approval {approval_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/approvals/resolve", methods=['POST'])
+def resolve_approval():
+    """Resolve (approve/reject) an approval request"""
+    try:
+        data = request.get_json(force=True)
+        item_id = data.get("id")
+        decision = data.get("decision")  # approve|reject
+        result_data = data.get("result", {})
+        
+        if not item_id or decision not in ["approve", "reject"]:
+            return jsonify({"error": "Invalid request"}), 400
+        
+        # Resolve the approval
+        resolved_item = approvals.resolve(item_id, decision, result=result_data)
+        
+        # Execute if approved
+        exec_result = on_approval_resolved(resolved_item)
+        resolved_item["exec_result"] = exec_result
+        
+        # Notify WebSocket clients
+        notify_all({
+            "type": "approval_resolved",
+            "approval": resolved_item,
+            "decision": decision
+        })
+        
+        log.info(f"Approval {item_id} {decision}d: {resolved_item.get('action')}")
+        return jsonify(resolved_item)
+        
+    except Exception as e:
+        log.error(f"Error resolving approval: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# --- GitHub Integration Endpoints ---
+@app.route("/api/github/pr", methods=['POST'])
+def github_pr():
+    """Submit GitHub PR creation for approval"""
+    try:
+        data = request.get_json(force=True)
+        required_fields = ["owner", "repo", "head", "base", "title"]
+        
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": "Missing required fields", "required": required_fields}), 400
+        
+        item = approvals.submit("github.pr", data)
+        
+        # Notify WebSocket clients
+        notify_all({
+            "type": "new_approval",
+            "approval": vars(item)
+        })
+        
+        return jsonify({"submitted": True, "approvalId": item.id})
+    except Exception as e:
+        log.error(f"Error submitting GitHub PR: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/github/comment", methods=['POST'])
+def github_comment():
+    """Submit GitHub comment for approval"""
+    try:
+        data = request.get_json(force=True)
+        item = approvals.submit("github.comment", data)
+        
+        notify_all({
+            "type": "new_approval",
+            "approval": vars(item)
+        })
+        
+        return jsonify({"submitted": True, "approvalId": item.id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/github/issue", methods=['POST'])
+def github_issue():
+    """Submit GitHub issue creation for approval"""
+    try:
+        data = request.get_json(force=True)
+        item = approvals.submit("github.issue", data)
+        
+        notify_all({
+            "type": "new_approval",
+            "approval": vars(item)
+        })
+        
+        return jsonify({"submitted": True, "approvalId": item.id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- Jira Integration Endpoints ---
+@app.route("/api/jira/create", methods=['POST'])
+def jira_create():
+    """Submit Jira issue creation for approval"""
+    try:
+        data = request.get_json(force=True)
+        required_fields = ["project_key", "summary", "description"]
+        
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": "Missing required fields", "required": required_fields}), 400
+        
+        item = approvals.submit("jira.create", data)
+        
+        notify_all({
+            "type": "new_approval",
+            "approval": vars(item)
+        })
+        
+        return jsonify({"submitted": True, "approvalId": item.id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/jira/update", methods=['POST'])
+def jira_update():
+    """Submit Jira issue update for approval"""
+    try:
+        data = request.get_json(force=True)
+        item = approvals.submit("jira.update", data)
+        
+        notify_all({
+            "type": "new_approval",
+            "approval": vars(item)
+        })
+        
+        return jsonify({"submitted": True, "approvalId": item.id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/jira/comment", methods=['POST'])
+def jira_comment():
+    """Submit Jira comment for approval"""
+    try:
+        data = request.get_json(force=True)
+        item = approvals.submit("jira.comment", data)
+        
+        notify_all({
+            "type": "new_approval",
+            "approval": vars(item)
+        })
+        
+        return jsonify({"submitted": True, "approvalId": item.id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- GitHub Webhook for CI/status events ---
+@app.route("/webhook/github", methods=['POST'])
+def gh_webhook():
+    """Handle GitHub webhooks"""
+    try:
+        # Verify webhook signature if secret is configured
+        if GITHUB_WEBHOOK_SECRET:
+            signature = request.headers.get("X-Hub-Signature-256", "")
+            if not verify_github_signature(request.data, signature):
+                log.warning("Invalid GitHub webhook signature")
+                return "Invalid signature", 401
+        
+        event = request.headers.get("X-GitHub-Event", "unknown")
+        payload = request.get_json(force=True) or {}
+        
+        log.info(f"Received GitHub webhook: {event}")
+        
+        # Handle the webhook event
+        handle_github_webhook(event, payload)
+        
+        # Notify WebSocket clients about the event
+        notify_all({
+            "type": "webhook_received",
+            "event": event,
+            "repository": payload.get("repository", {}).get("full_name", "unknown")
+        })
+        
+        return "", 204
+    except Exception as e:
+        log.error(f"Error handling GitHub webhook: {e}")
+        return "Internal error", 500
+
+def verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
+    """Verify GitHub webhook signature"""
+    if not signature_header.startswith("sha256="):
+        return False
+    
+    expected_signature = hmac.new(
+        GITHUB_WEBHOOK_SECRET.encode(),
+        payload_body,
+        hashlib.sha256
+    ).hexdigest()
+    
+    provided_signature = signature_header[7:]  # Remove 'sha256=' prefix
+    return hmac.compare_digest(expected_signature, provided_signature)
+
+# --- Configuration Endpoints ---
+@app.route("/api/config/dry-run", methods=['POST'])
+def set_dry_run():
+    """Enable/disable dry run mode"""
+    try:
+        data = request.get_json(force=True)
+        enabled = data.get("enabled", True)
+        set_dry_run_mode(enabled)
+        
+        return jsonify({
+            "dry_run_enabled": enabled,
+            "message": f"Dry run mode {'enabled' if enabled else 'disabled'}"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/config/status", methods=['GET'])
+def config_status():
+    """Get current configuration status"""
+    try:
+        return jsonify(get_integration_status())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- WebSocket Support ---
+async def ws_handler(websocket):
+    """Handle WebSocket connections"""
+    connected_clients.add(websocket)
+    log.info(f"WebSocket client connected. Total: {len(connected_clients)}")
+    
+    try:
+        # Send current pending approvals to new client
+        pending = approvals.list()
+        if pending:
+            await websocket.send(json.dumps({
+                "type": "pending_approvals",
+                "approvals": pending
+            }))
+        
+        # Keep connection alive
+        async for message in websocket:
+            # Echo back or handle client messages if needed
+            data = json.loads(message)
+            log.debug(f"Received WebSocket message: {data}")
+            
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    except Exception as e:
+        log.error(f"WebSocket error: {e}")
+    finally:
+        connected_clients.discard(websocket)
+        log.info(f"WebSocket client disconnected. Total: {len(connected_clients)}")
+
+async def ws_server():
+    """Start WebSocket server"""
+    port = int(os.getenv("WS_PORT", "8001"))
+    log.info(f"Starting WebSocket server on port {port}")
+    async with websockets.serve(ws_handler, "0.0.0.0", port):
+        await asyncio.Future()  # Run forever
+
+def notify_all(message: dict):
+    """Send message to all WebSocket clients"""
+    if not connected_clients:
+        return
+    
+    message_text = json.dumps(message)
+    asyncio.create_task(_broadcast(message_text))
+
+async def _broadcast(message_text: str):
+    """Broadcast message to all connected clients"""
+    if not connected_clients:
+        return
+    
+    dead_connections = []
+    for websocket in connected_clients:
+        try:
+            await websocket.send(message_text)
+        except Exception as e:
+            log.debug(f"Failed to send to WebSocket client: {e}")
+            dead_connections.append(websocket)
+    
+    # Remove dead connections
+    for websocket in dead_connections:
+        connected_clients.discard(websocket)
+
+# --- Server Startup ---
+def run_flask_server():
+    """Run Flask server"""
+    port = int(os.getenv("FLASK_PORT", "8081"))
+    host = os.getenv("FLASK_HOST", "0.0.0.0")
+    debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    
+    log.info(f"Starting Flask server on {host}:{port}")
+    app.run(host=host, port=port, debug=debug, threaded=True)
+
+def run_servers():
+    """Run both Flask and WebSocket servers"""
+    import threading
+    
+    # Start Flask server in background thread
+    flask_thread = threading.Thread(target=run_flask_server, daemon=True)
+    flask_thread.start()
+    
+    # Run WebSocket server in main thread
+    try:
+        asyncio.run(ws_server())
+    except KeyboardInterrupt:
+        log.info("Shutting down servers...")
+
+if __name__ == "__main__":
+    # Check for dry run mode from environment
+    dry_run = os.getenv("DRY_RUN", "true").lower() == "true"
+    set_dry_run_mode(dry_run)
+    
+    log.info(f"Starting Wave 5 servers (dry_run={dry_run})")
+    run_servers()
