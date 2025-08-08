@@ -46,14 +46,16 @@ class MeetingSession:
         try:
             self.events.put_nowait(json_dumps(obj))
         except queue.Full:
+            log.exception("Event queue full; attempting to free space and retry")
             try:
-                _ = self.events.get_nowait()
-            except Exception:
-                pass
+                self.events.get_nowait()
+            except queue.Empty:
+                log.exception("Event queue was empty while handling overflow")
             try:
                 self.events.put_nowait(json_dumps(obj))
-            except Exception:
-                pass
+            except queue.Full:
+                log.exception("Failed to publish event after retry")
+                raise
 
 def json_dumps(obj: Dict[str, Any]) -> str:
     import json
