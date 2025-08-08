@@ -216,6 +216,9 @@ class SmartOverlayClient {
             case 'keepalive':
                 // Keep connection alive
                 break;
+            case 'build_status':
+                this.showBuildStatus(data.data);
+                break;
         }
     }
 
@@ -237,6 +240,14 @@ class SmartOverlayClient {
             // Historical answer, just update counter
             this.updateAnswerCounter();
         }
+    }
+
+    showBuildStatus(info) {
+        const color = info.status === 'success' ? '#4caf50' : '#ff5555';
+        const msg = `Build ${info.status} for PR #${info.pr_number}: ${info.title || ''}`;
+        this.answerDisplay.innerHTML = `<div style="color:${color};">${this.escapeHtml(msg)}</div>`;
+        this.show();
+        this.updateStatus(`Build ${info.status}`, info.status === 'success' ? 'success' : 'error');
     }
 
     displayCurrentAnswer() {

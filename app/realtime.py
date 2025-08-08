@@ -354,6 +354,21 @@ def get_session_manager() -> RealtimeSessionManager:
     return session_manager
 
 
+def broadcast_event(event_type: str, data: Dict[str, Any]):
+    """Broadcast a custom event to all connected clients"""
+    message = {
+        'type': event_type,
+        'data': data
+    }
+
+    for session in session_manager.sessions.values():
+        for client_queue in session.client_queues.values():
+            try:
+                client_queue.put(json.dumps(message))
+            except Exception as e:
+                log.error(f"Failed to broadcast {event_type}: {e}")
+
+
 # Backward compatibility functions for existing API
 def get_or_create_session(meeting_id: str, ic_level: str = "IC6"):
     """Backward compatibility: create session using new manager"""
