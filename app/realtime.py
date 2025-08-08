@@ -7,10 +7,12 @@ import queue
 import threading
 import uuid
 from datetime import datetime
-from typing import Dict, Set, Optional, List, Any
+from typing import Dict, Optional, List, Any
 import os
 import sys
 import time
+
+from .speaker_diarization import SpeakerDiarizer
 
 # Add the backend directory to Python path
 backend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backend')
@@ -86,8 +88,9 @@ class RealtimeSession:
 
     def __init__(self, session_id: str, diarization=None, memory=None, **kwargs):
         self.session_id = session_id
-        self.diarization = diarization
         self.memory = memory
+        self.diarization = diarization  # kept for backward compatibility
+        self.speaker_diarizer = SpeakerDiarizer()
         self.last_activity = datetime.now()
         
         # Session configuration
@@ -102,6 +105,7 @@ class RealtimeSession:
         self.answers_generated = []
         self.client_queues: Dict[str, queue.Queue] = {}
         self.background_task = None
+        self.last_processed_index = 0
         
         # Start the processing loop
         self._start_background_processing()
@@ -120,28 +124,34 @@ class RealtimeSession:
         """Background loop that processes captions and generates answers"""
         while True:
             try:
-                if self.caption_buffer:
-                    # Get recent captions for processing
-                    recent_captions = self.caption_buffer[-20:]  # Last 20 captions
-                    
-                    # Run speaker diarization if available
-                    speakers = {}
-                    if self.diarization:
-                        speakers = self.diarization.identify_speakers(recent_captions)
-                    
-                    # Detect if there's a new question
-                    potential_question = self._detect_question_boundary(recent_captions, speakers)
-                    
-                    if potential_question and potential_question != self.current_question:
-                        self.current_question = potential_question
-                        log.info(f"New question detected: {potential_question[:100]}...")
-                        
-                        # Generate answer with memory context
-                        self._generate_answer_with_context(potential_question, speakers)
-                
+                if len(self.caption_buffer) > self.last_processed_index:
+                    new_captions = self.caption_buffer[self.last_processed_index:]
+                    self.last_processed_index = len(self.caption_buffer)
+
+                    for caption in new_captions:
+                        segment = caption.get('segment')
+                        if not segment:
+                            continue
+
+                        if segment.is_interviewer and segment.is_question:
+                            self.speaker_diarizer.start_new_question(segment)
+
+                        if self.speaker_diarizer.should_generate_response(segment):
+                            potential_question = self.speaker_diarizer.get_complete_question()
+
+                            if potential_question and potential_question != self.current_question:
+                                self.current_question = potential_question
+                                log.info(
+                                    f"New question detected: {potential_question[:100]}..."
+                                )
+                                speakers = {caption['id']: caption.get('speaker', 'unknown')}
+                                self._generate_answer_with_context(
+                                    potential_question, speakers
+                                )
+
                 # Sleep briefly before next iteration
                 time.sleep(2.0)
-                
+
             except Exception as e:
                 log.error(f"Error in caption processing loop: {e}")
                 time.sleep(5.0)
@@ -149,11 +159,21 @@ class RealtimeSession:
     def add_caption(self, caption_data: Dict):
         """Add a new caption to the buffer"""
         self.last_activity = datetime.now()
-        
+
         # Add timestamp if not present
         if 'timestamp' not in caption_data:
             caption_data['timestamp'] = datetime.now().isoformat()
-        
+
+        # Use speaker diarizer to assign speaker role and track question segments
+        if self.speaker_diarizer:
+            segment = self.speaker_diarizer.process_transcript_with_speakers(
+                caption_data.get('text', ''), {}
+            )
+            caption_data['speaker'] = (
+                'interviewer' if segment.is_interviewer else 'candidate'
+            )
+            caption_data['segment'] = segment
+            self.speaker_diarizer.current_segments.append(segment)
         self.caption_buffer.append(caption_data)
         
         # Keep buffer at reasonable size
@@ -171,44 +191,6 @@ class RealtimeSession:
                     'meeting_type': self.meeting_type
                 }
             )
-
-    def _detect_question_boundary(self, captions: List[Dict], speakers: Dict) -> Optional[str]:
-        """Detect when a complete question has been asked"""
-        # Look for question patterns in recent captions
-        question_text = ""
-        for caption in captions[-10:]:  # Last 10 captions
-            text = caption.get('text', '')
-            speaker = speakers.get(caption.get('id', ''), 'unknown')
-            
-            # If this is from the interviewer and contains question markers
-            if speaker == 'interviewer' and any(marker in text.lower() for marker in 
-                ['?', 'how would you', 'what would', 'can you', 'describe', 'explain']):
-                question_text += " " + text
-        
-        # Fallback: simple question detection
-        if not question_text:
-            recent_text = " ".join([c.get('text', '') for c in captions[-5:]])
-            if self._is_question(recent_text):
-                question_text = recent_text
-        
-        question_text = question_text.strip()
-        
-        # Must be substantial and end with question pattern
-        if len(question_text) > 20 and ('?' in question_text or 
-            any(pattern in question_text.lower() for pattern in 
-                ['how would', 'what would', 'can you explain', 'describe how'])):
-            return question_text
-        
-        return None
-
-    def _is_question(self, text: str) -> bool:
-        """Simple heuristic to detect if text contains a question"""
-        question_indicators = [
-            '?', 'how would you', 'what would', 'can you', 'describe', 'explain',
-            'walk me through', 'tell me about', 'what is your approach'
-        ]
-        text_lower = text.lower()
-        return any(indicator in text_lower for indicator in question_indicators) and len(text) > 20
 
     def _generate_answer_with_context(self, question: str, speakers: Dict):
         """Generate an AI answer with memory context injection"""
