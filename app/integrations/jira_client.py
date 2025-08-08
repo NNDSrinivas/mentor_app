@@ -20,3 +20,23 @@ class JiraClient:
         r = requests.post(url, headers=self._headers(), json=payload)
         r.raise_for_status()
         return r.json()
+
+    def get_issue(self, key: str) -> Dict[str, Any]:
+        """Fetch details for a Jira issue.
+
+        Returns a placeholder response when ``dry_run`` is enabled to avoid
+        making network calls during development or testing.
+        """
+        if self.dry_run:
+            return {
+                'dry_run': True,
+                'key': key,
+                'fields': {
+                    'summary': 'Dry-run summary',
+                    'description': 'Dry-run description'
+                }
+            }
+        url = f"{self.base}/rest/api/3/issue/{key}"
+        r = requests.get(url, headers=self._headers())
+        r.raise_for_status()
+        return r.json()
