@@ -2,6 +2,12 @@ import os, json, time, logging
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from app.realtime import get_or_create_session, push_caption, pop_event_generator, get_session_manager
+from app.ide_workflow import (
+    generate_code_for_jira_task,
+    run_tests,
+    commit_changes,
+    open_pull_request,
+)
 
 app = Flask(__name__)
 CORS(app)
@@ -100,6 +106,55 @@ def end_session(session_id: str):
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# --- IDE Bridge Actions ---
+@app.route('/api/ide/generate-code', methods=['POST'])
+def ide_generate_code():
+    """Generate code for a Jira task with confirmation."""
+    data = request.get_json(force=True) or {}
+    if not data.get('confirm'):
+        return jsonify({'requires_confirmation': True, 'action': 'generate_code'}), 400
+    task_key = data.get('task_key', '')
+    code = generate_code_for_jira_task(task_key)
+    return jsonify({'code': code})
+
+
+@app.route('/api/ide/run-tests', methods=['POST'])
+def ide_run_tests():
+    """Run project tests with confirmation."""
+    data = request.get_json(force=True) or {}
+    if not data.get('confirm'):
+        return jsonify({'requires_confirmation': True, 'action': 'run_tests'}), 400
+    output = run_tests()
+    return jsonify({'output': output})
+
+
+@app.route('/api/ide/commit', methods=['POST'])
+def ide_commit():
+    """Commit changes with confirmation."""
+    data = request.get_json(force=True) or {}
+    if not data.get('confirm'):
+        return jsonify({'requires_confirmation': True, 'action': 'commit'}), 400
+    message = data.get('message', 'AI commit')
+    commit_hash = commit_changes(message)
+    return jsonify({'commit': commit_hash})
+
+
+@app.route('/api/ide/open-pr', methods=['POST'])
+def ide_open_pr():
+    """Open a pull request with confirmation."""
+    data = request.get_json(force=True) or {}
+    if not data.get('confirm'):
+        return jsonify({'requires_confirmation': True, 'action': 'open_pr'}), 400
+    owner = data.get('owner')
+    repo = data.get('repo')
+    head = data.get('head')
+    base = data.get('base', 'main')
+    title = data.get('title')
+    body = data.get('body', '')
+    pr = open_pull_request(owner, repo, head, base, title, body)
+    return jsonify({'pr': pr})
 
 # Legacy API endpoints for backward compatibility
 @app.route('/api/meeting-events', methods=['POST'])
