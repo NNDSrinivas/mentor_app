@@ -1,0 +1,13 @@
+{
+  "name": "minimal-electron-client",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"No tests\" && exit 0"
+  },
+  "dependencies": {
+    "electron": "^25.0.0"
+  }
+}
