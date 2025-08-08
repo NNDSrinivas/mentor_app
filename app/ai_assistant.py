@@ -1131,9 +1131,29 @@ Provide helpful, experienced advice based on 20 years in the industry. Be practi
             # Expert-level fallback responses
             if context.get('expertise_level') == 'senior':
                 return "That's a great question. In my 20 years of engineering experience, I've learned that every technical decision involves trade-offs. Could you provide more specific context so I can give you a more targeted answer?"
-            
+
             return "I'm here to help! What would you like to know?"
-    
+
+    async def generate_code_snippet(self, task: str, language: str = "python", context: Optional[Dict[str, Any]] = None) -> str:
+        """Generate a code snippet for the given task using OpenAI."""
+        context_section = f"\nContext:\n{json.dumps(context, indent=2)}" if context else ""
+        prompt = (
+            f"Provide a concise {language} code snippet for the following task:\n"
+            f"{task}{context_section}\n"
+            "Only return the code block."
+        )
+
+        try:
+            response = self.openai_client.chat.completions.create(
+                model=Config.OPENAI_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=400,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"Code snippet generation failed: {e}")
+            return ""
+
     async def show_private_assistance(self, message: str, session_id: str):
         """Show private AI assistance during coding sessions."""
         try:
