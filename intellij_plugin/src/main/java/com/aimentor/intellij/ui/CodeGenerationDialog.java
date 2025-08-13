@@ -53,10 +53,10 @@ public class CodeGenerationDialog extends DialogWrapper {
     @Override
     protected @Nullable JComponent createCenterPanel() {
         // Task description
-        taskDescriptionArea = new JBTextArea(5, 40);
-        taskDescriptionArea.setLineWrap(true);
-        taskDescriptionArea.setWrapStyleWord(true);
-        taskDescriptionArea.setPlaceholderText("Describe what code you want to generate (e.g., 'Create a function to sort users by name', 'Add error handling to this method')");
+    taskDescriptionArea = new JBTextArea(5, 40);
+    taskDescriptionArea.setLineWrap(true);
+    taskDescriptionArea.setWrapStyleWord(true);
+    taskDescriptionArea.getEmptyText().setText("Describe what code you want to generate (e.g., 'Create a function to sort users by name', 'Add error handling to this method')");
         
         // Code style selection
         codeStyleCombo = new JComboBox<>(CODE_STYLES.toArray(new String[0]));
