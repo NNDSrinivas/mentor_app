@@ -1,30 +1,4 @@
-// Background script for AI Mentor Assistant (updated for configurable backend         chrome.action.setBadgeText({ text: '' });
-        chrome.action.setBadgeBackgroundColor({ color: '#000000' });
-        break;
-
-      // Wave 7: Stealth mode handling
-      case 'aim_stealth_mode':
-        this.stealthMode = !!message.data?.on;
-        break;
-
-      case 'aim_answer':
-        // If stealth is on, forward to WS relay (backend :8081 → mobile)
-        if (this.stealthMode) {
-          try {
-            await fetch('http://localhost:8081/api/relay/mobile', {
-              method: 'POST',
-              headers: {'Content-Type':'application/json'},
-              body: JSON.stringify({ 
-                type:'answer', 
-                text: message.data.text, 
-                meetingId: message.data.meetingId 
-              })
-            });
-          } catch(e) {
-            console.warn('Mobile relay failed:', e.message);
-          }
-        }
-        break;ffscreen audio)
+// Background script for AI Mentor Assistant (updated for configurable backend)
 console.log('🚀 AI Mentor Background Script Loading (v1.8.0)...');
 
 const DEFAULT_BACKEND = 'http://localhost:8080';
@@ -94,6 +68,29 @@ class MeetingDetector {
   async handleMessage(message, sender, sendResponse) {
     const backend = await getBackendUrl();
     switch (message.type) {
+      // Wave 7: Stealth mode toggle
+      case 'aim_stealth_mode':
+        this.stealthMode = !!(message.data && message.data.on);
+        break;
+
+      // Wave 7: Answer relay (when stealth mode is on)
+      case 'aim_answer':
+        if (this.stealthMode && message && message.data && message.data.text) {
+          try {
+            await fetch('http://localhost:8081/api/relay/mobile', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'answer',
+                text: message.data.text,
+                meetingId: message.data.meetingId || (this.currentMeeting && this.currentMeeting.id) || null
+              })
+            });
+          } catch (e) {
+            console.warn('Mobile relay failed:', e && e.message);
+          }
+        }
+        break;
       case 'meeting_started':
         this.isRecording = true;
         this.currentMeeting = {
