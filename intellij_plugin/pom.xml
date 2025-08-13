@@ -11,7 +11,6 @@
 
     <name>AI Mentor Assistant</name>
     <description>AI-powered coding assistant for IntelliJ IDEA with meeting integration and task management</description>
-    <vendor>AI Mentor</vendor>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>

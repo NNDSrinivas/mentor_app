@@ -5,7 +5,6 @@ import com.aimentor.intellij.ui.AIMentorResponseDialog;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.project.Project;
@@ -25,7 +24,11 @@ public class AskQuestionAction extends AnAction {
         Project project = e.getProject();
         if (project == null) return;
         
-        AIMentorService service = ServiceManager.getService(project, AIMentorService.class);
+        AIMentorService service = project.getService(AIMentorService.class);
+        if (service == null) {
+            Messages.showErrorDialog(project, "AI Mentor service is unavailable.", "AI Mentor Error");
+            return;
+        }
         service.setProject(project);
         
         // Get current context
@@ -67,22 +70,26 @@ public class AskQuestionAction extends AnAction {
             // Show progress and get response
             service.askQuestion(question, selectedCode, fileName)
                 .thenAccept(response -> {
-                    // Show response in dialog
-                    AIMentorResponseDialog dialog = new AIMentorResponseDialog(
-                        project, 
-                        "AI Mentor Response", 
-                        question, 
-                        response,
-                        selectedCode
-                    );
-                    dialog.show();
+                    // Ensure UI updates happen on the EDT
+                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                        AIMentorResponseDialog dialog = new AIMentorResponseDialog(
+                            project, 
+                            "AI Mentor Response", 
+                            question, 
+                            response,
+                            selectedCode
+                        );
+                        dialog.show();
+                    });
                 })
                 .exceptionally(throwable -> {
-                    Messages.showErrorDialog(
-                        project,
-                        "Failed to get response from AI Mentor: " + throwable.getMessage(),
-                        "AI Mentor Error"
-                    );
+                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                        Messages.showErrorDialog(
+                            project,
+                            "Failed to get response from AI Mentor: " + throwable.getMessage(),
+                            "AI Mentor Error"
+                        );
+                    });
                     return null;
                 });
         }

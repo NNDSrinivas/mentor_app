@@ -1,26 +1,11 @@
 """Background service for AI Mentor Assistant.
 
-This servic        while self.running:
-            try:
-                # Check for meeting applications
-                running_processes = []
-                try:
-                    import psutil
-                    running_processes = [p.name().lower() for p in psutil.process_iter(['name'])]
-                except ImportError:
-                    # Fallback without psutil
-                    import subprocess
-                    result = subprocess.run(['ps', '-eo', 'comm'], capture_output=True, text=True)
-                    running_processes = [line.strip().lower() for line in result.stdout.split('\n')[1:] if line.strip()]
-                
-                active_meeting_apps = [app for app in meeting_apps if any(app in proc for proc in running_processes)]
-                
-                if active_meeting_apps and not self.current_session:sly in the background, automatically:
-- Recording meetings when detected
-- Capturing screen during coding sessions
-- Processing audio/video in real-time
-- Building knowledge base from observations
-- Providing real-time AI assistance with conversation memory
+This service runs in the background and can automatically:
+- Record meetings when detected
+- Capture screen during coding sessions
+- Process audio/video in real time
+- Build a knowledge base from observations
+- Provide real-time AI assistance with conversation memory
 """
 
 import asyncio
@@ -28,6 +13,7 @@ import time
 import threading
 from datetime import datetime, timedelta
 import logging
+from typing import Optional, Dict, Any
 
 from .config import Config
 from . import capture, transcription, summarization, screen_record, knowledge_base
@@ -39,13 +25,13 @@ logger = logging.getLogger(__name__)
 
 class MentorService:
     """Background service that runs continuously with AI assistance."""
-    
-    def __init__(self):
-        self.running = False
-        self.current_session = None
-        self.last_activity = None
+
+    def __init__(self) -> None:
+        self.running: bool = False
+        self.current_session: Optional[Dict[str, Any]] = None
+        self.last_activity: Optional[datetime] = None
         self.ai_assistant = AIAssistant()
-        self.active_sessions = {}
+        self.active_sessions: Dict[str, Any] = {}
         
     async def start(self):
         """Start the background service with AI assistant."""
@@ -197,7 +183,9 @@ class MentorService:
             # Start recording thread
             recording_thread = threading.Thread(target=record_with_ai, daemon=True)
             recording_thread.start()
-            self.current_session['recording_thread'] = recording_thread
+            session = self.current_session
+            if session is not None:
+                session['recording_thread'] = recording_thread
             
         except Exception as e:
             logger.error(f"Error starting meeting recording: {e}")
@@ -260,28 +248,14 @@ class MentorService:
             # Start monitoring thread
             monitoring_thread = threading.Thread(target=monitor_coding, daemon=True)
             monitoring_thread.start()
-            self.current_session['monitoring_thread'] = monitoring_thread
+            session = self.current_session
+            if session is not None:
+                session['monitoring_thread'] = monitoring_thread
             
             logger.info(f"🤖 Coding AI assistant started for session: {session_id}")
             
         except Exception as e:
             logger.error(f"Error starting coding recording: {e}")
-            
-        except Exception as e:
-            logger.error(f"Failed to start meeting recording with AI: {e}")
-        
-        try:
-            # Stop audio recording
-            # (The audio recorder will stop when the thread ends)
-            
-            # Process the recording
-            if 'audio_path' in self.current_session:
-                await self.process_meeting_recording(self.current_session)
-            
-        except Exception as e:
-            logger.error(f"Error stopping meeting recording: {e}")
-        finally:
-            self.current_session = None
     
     async def start_coding_recording(self):
         """Start recording coding session."""
@@ -297,7 +271,9 @@ class MentorService:
             # Start screen recording in background
             def record_screen():
                 video_path = screen_record.record_screen(session_id)
-                self.current_session['video_path'] = video_path
+                session = self.current_session
+                if session is not None:
+                    session['video_path'] = video_path
             
             screen_thread = threading.Thread(target=record_screen)
             screen_thread.daemon = True
@@ -457,6 +433,29 @@ class MentorService:
         """Stop the background service."""
         logger.info("🛑 Stopping AI Mentor Assistant background service")
         self.running = False
+
+    async def _end_meeting_session(self):
+        """End the current meeting session and trigger processing if applicable."""
+        try:
+            if not self.current_session:
+                return
+            session = self.current_session
+            # Process the recording if available
+            if 'audio_path' in session:
+                await self.process_meeting_recording(session)
+        finally:
+            self.current_session = None
+
+    async def _end_coding_session(self):
+        """End the current coding session and trigger processing if applicable."""
+        try:
+            if not self.current_session:
+                return
+            session = self.current_session
+            if 'video_path' in session:
+                await self.process_coding_recording(session)
+        finally:
+            self.current_session = None
 
 
 # Global service instance

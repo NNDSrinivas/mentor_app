@@ -1,7 +1,6 @@
 package com.aimentor.intellij.ui;
 
 import com.aimentor.intellij.services.AIMentorService;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
@@ -16,12 +15,15 @@ public class AIMentorToolWindowFactory implements ToolWindowFactory {
     
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
-        AIMentorService service = ServiceManager.getService(project, AIMentorService.class);
+        AIMentorService service = project.getService(AIMentorService.class);
+        if (service == null) {
+            return;
+        }
         service.setProject(project);
         
         AIMentorToolWindow aiMentorToolWindow = new AIMentorToolWindow(project, service);
         
-        ContentFactory contentFactory = ContentFactory.SERVICE.getInstance();
+    ContentFactory contentFactory = ContentFactory.getInstance();
         Content content = contentFactory.createContent(aiMentorToolWindow.getPanel(), "", false);
         content.setCloseable(false);
         

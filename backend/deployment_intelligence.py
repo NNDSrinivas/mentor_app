@@ -11,18 +11,47 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 import sqlite3
 import requests
-import yaml
-from dataclasses import dataclass
-from pathlib import Path
-import docker
-import kubernetes
-from kubernetes import client, config
-import boto3
 import subprocess
 import threading
 import time
 from collections import defaultdict
 import statistics
+from dataclasses import dataclass
+from pathlib import Path
+
+# Optional cloud provider dependencies
+try:
+    import docker  # type: ignore[reportMissingImports]
+    DOCKER_AVAILABLE = True
+except ImportError:
+    logging.warning("Docker not available, Docker monitoring disabled")
+    DOCKER_AVAILABLE = False
+    docker = None  # type: ignore[assignment]
+
+try:
+    import kubernetes  # type: ignore[reportMissingImports]
+    from kubernetes import client, config  # type: ignore[reportMissingImports]
+    KUBERNETES_AVAILABLE = True
+except ImportError:
+    logging.warning("Kubernetes client not available, K8s monitoring disabled")
+    KUBERNETES_AVAILABLE = False
+    client = None  # type: ignore[assignment]
+    config = None  # type: ignore[assignment]
+
+try:
+    import boto3  # type: ignore[reportMissingImports]
+    AWS_AVAILABLE = True
+except ImportError:
+    logging.warning("boto3 not available, AWS monitoring disabled")
+    AWS_AVAILABLE = False
+    boto3 = None  # type: ignore[assignment]
+
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    logging.warning("PyYAML not available, YAML processing disabled")
+    YAML_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -86,29 +115,31 @@ class CloudProviderMonitor:
     
     def _init_clients(self):
         """Initialize cloud provider clients"""
-        try:
-            # AWS
-            if os.getenv('AWS_ACCESS_KEY_ID'):
+        # AWS
+        if AWS_AVAILABLE and boto3 is not None and os.getenv('AWS_ACCESS_KEY_ID'):
+            try:
                 self.aws_client = boto3.client('ecs')
                 logger.info("AWS ECS client initialized")
-        except Exception as e:
-            logger.warning(f"Could not initialize AWS client: {e}")
+            except Exception as e:
+                logger.warning(f"Could not initialize AWS client: {e}")
         
-        try:
-            # Kubernetes
-            if os.path.exists(os.path.expanduser("~/.kube/config")):
-                config.load_kube_config()
-                self.k8s_client = client.AppsV1Api()
-                logger.info("Kubernetes client initialized")
-        except Exception as e:
-            logger.warning(f"Could not initialize Kubernetes client: {e}")
+        # Kubernetes
+        if KUBERNETES_AVAILABLE and client is not None and config is not None:
+            try:
+                if os.path.exists(os.path.expanduser("~/.kube/config")):
+                    config.load_kube_config()
+                    self.k8s_client = client.AppsV1Api()
+                    logger.info("Kubernetes client initialized")
+            except Exception as e:
+                logger.warning(f"Could not initialize Kubernetes client: {e}")
         
-        try:
-            # Docker
-            self.docker_client = docker.from_env()
-            logger.info("Docker client initialized")
-        except Exception as e:
-            logger.warning(f"Could not initialize Docker client: {e}")
+        # Docker
+        if DOCKER_AVAILABLE and docker is not None:
+            try:
+                self.docker_client = docker.from_env()
+                logger.info("Docker client initialized")
+            except Exception as e:
+                logger.warning(f"Could not initialize Docker client: {e}")
     
     async def get_kubernetes_deployments(self) -> List[Dict[str, Any]]:
         """Get Kubernetes deployment status"""
@@ -119,9 +150,10 @@ class CloudProviderMonitor:
                 return deployments
             
             # Get all deployments
-            v1_deployments = self.k8s_client.list_deployment_for_all_namespaces()
+            assert self.k8s_client is not None
+            v1_deployments: Any = self.k8s_client.list_deployment_for_all_namespaces()  # type: ignore[reportOptionalCall]
             
-            for deployment in v1_deployments.items:
+            for deployment in getattr(v1_deployments, 'items', []) or []:
                 deployments.append({
                     'name': deployment.metadata.name,
                     'namespace': deployment.metadata.namespace,
@@ -156,20 +188,21 @@ class CloudProviderMonitor:
                 return services
             
             # List all clusters
-            clusters = self.aws_client.list_clusters()
+            assert self.aws_client is not None
+            clusters: Any = self.aws_client.list_clusters()
             
-            for cluster in clusters['clusterArns']:
+            for cluster in (clusters.get('clusterArns') or []):
                 # List services in cluster
-                cluster_services = self.aws_client.list_services(cluster=cluster)
+                cluster_services: Any = self.aws_client.list_services(cluster=cluster)
                 
                 if cluster_services['serviceArns']:
                     # Describe services
-                    service_details = self.aws_client.describe_services(
+                    service_details: Any = self.aws_client.describe_services(
                         cluster=cluster,
                         services=cluster_services['serviceArns']
                     )
                     
-                    for service in service_details['services']:
+                    for service in (service_details.get('services') or []):
                         services.append({
                             'cluster': cluster.split('/')[-1],
                             'service_name': service['serviceName'],
@@ -206,7 +239,8 @@ class CloudProviderMonitor:
             if not self.docker_client:
                 return containers
             
-            for container in self.docker_client.containers.list(all=True):
+            assert self.docker_client is not None
+            for container in self.docker_client.containers.list(all=True):  # type: ignore[reportOptionalCall]
                 containers.append({
                     'id': container.id[:12],
                     'name': container.name,

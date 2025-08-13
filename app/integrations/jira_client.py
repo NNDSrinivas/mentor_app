@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, requests
+import os, base64, requests
 from typing import Dict, Any
 
 class JiraClient:
@@ -10,7 +10,8 @@ class JiraClient:
         self.dry_run = True  # flip when approved
 
     def _headers(self):
-        return {'Authorization': f'Basic {self.user}:{self.token}', 'Content-Type': 'application/json'}
+        encoded = base64.b64encode(f"{self.user}:{self.token}".encode()).decode()
+        return {'Authorization': f'Basic {encoded}', 'Content-Type': 'application/json'}
 
     def create_issue(self, project_key: str, summary: str, description: str) -> Dict[str, Any]:
         if self.dry_run:
