@@ -6,7 +6,11 @@ features like recording, transcription, summarization, and knowledge base operat
 import argparse
 import sys
 import os
+import subprocess
+import re
 from typing import Optional
+
+import requests
 
 from .config import Config
 from . import capture, transcription, summarization, screen_record, knowledge_base
@@ -193,6 +197,98 @@ def cmd_answer(args) -> None:
         print("❌ No relevant context found in knowledge base")
 
 
+def cmd_git_create_branch(args) -> None:
+    """Create and switch to a new git branch."""
+    subprocess.run(["git", "checkout", "-b", args.branch], check=True)
+    print(f"✅ Created and switched to branch: {args.branch}")
+
+
+def cmd_git_run_tests(args) -> None:
+    """Run project tests using pytest."""
+    result = subprocess.run(["pytest"])
+    if result.returncode != 0:
+        print("❌ Tests failed. Please fix the issues before committing.")
+    else:
+        print("✅ All tests passed.")
+
+
+def cmd_git_commit(args) -> None:
+    """Commit all changes with a message."""
+    subprocess.run(["git", "add", "-A"], check=True)
+    subprocess.run(["git", "commit", "-m", args.message], check=True)
+    print("✅ Changes committed.")
+
+
+def _parse_repo() -> tuple[str, str]:
+    """Parse owner and repo from git origin url."""
+    url = subprocess.check_output(["git", "remote", "get-url", "origin"]).decode().strip()
+    match = re.search(r"github\.com[:/](.*?)/(.*?)(\.git)?$", url)
+    if not match:
+        raise RuntimeError("Unable to parse GitHub repository from origin URL")
+    return match.group(1), match.group(2)
+
+
+def _check_pr_feedback(owner: str, repo: str, pr_number: int, headers: dict) -> None:
+    """Check build status and PR comments, prompting user to fix issues."""
+    pr_resp = requests.get(
+        f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}",
+        headers=headers,
+        timeout=10,
+    )
+    if pr_resp.status_code != 200:
+        return
+
+    sha = pr_resp.json().get("head", {}).get("sha")
+    if sha:
+        status_resp = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}/status",
+            headers=headers,
+            timeout=10,
+        )
+        if status_resp.status_code == 200:
+            state = status_resp.json().get("state")
+            if state and state != "success":
+                print(f"⚠️ Latest build status: {state}. Please address the failures before merging.")
+
+    comments_resp = requests.get(
+        f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments",
+        headers=headers,
+        timeout=10,
+    )
+    if comments_resp.status_code == 200:
+        comments = comments_resp.json()
+        if comments:
+            print("💬 PR comments detected:")
+            for c in comments:
+                user = c.get("user", {}).get("login", "unknown")
+                body = c.get("body", "").replace("\n", " ")[:100]
+                print(f" - {user}: {body}")
+            print("Please address review comments before proceeding.")
+
+
+def cmd_git_open_pr(args) -> None:
+    """Open a pull request on GitHub for the current branch."""
+    owner, repo = _parse_repo()
+    branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
+    token = os.getenv("GITHUB_TOKEN")
+    if not token:
+        print("❌ GITHUB_TOKEN not set; cannot open PR.")
+        return
+
+    subprocess.run(["git", "push", "-u", "origin", branch], check=True)
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
+    data = {"title": args.title, "head": branch, "base": args.base, "body": args.body}
+    resp = requests.post(
+        f"https://api.github.com/repos/{owner}/{repo}/pulls", headers=headers, json=data, timeout=10
+    )
+    if resp.status_code == 201:
+        pr = resp.json()
+        print(f"✅ Opened PR: {pr.get('html_url')}")
+        _check_pr_feedback(owner, repo, pr.get('number'), headers)
+    else:
+        print(f"❌ Failed to open PR: {resp.status_code} {resp.text}")
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create command-line argument parser."""
     parser = argparse.ArgumentParser(
@@ -269,7 +365,21 @@ Examples:
     # Answer question command
     answer_parser = subparsers.add_parser('answer', help='Answer question using knowledge base')
     answer_parser.add_argument('question', help='Question to answer')
-    
+
+    # Git operations
+    git_branch_parser = subparsers.add_parser('git-create-branch', help='Create new git branch')
+    git_branch_parser.add_argument('branch', help='Branch name')
+
+    subparsers.add_parser('git-run-tests', help='Run project tests')
+
+    git_commit_parser = subparsers.add_parser('git-commit', help='Commit all changes')
+    git_commit_parser.add_argument('message', help='Commit message')
+
+    git_pr_parser = subparsers.add_parser('git-open-pr', help='Open pull request on GitHub')
+    git_pr_parser.add_argument('title', help='Pull request title')
+    git_pr_parser.add_argument('--body', default='', help='PR description')
+    git_pr_parser.add_argument('--base', default='main', help='Base branch for the PR')
+
     return parser
 
 
@@ -283,7 +393,7 @@ def main() -> None:
         return
     
     # Commands that don't require API key
-    local_commands = {'screenshot', 'kb-stats'}
+    local_commands = {'screenshot', 'kb-stats', 'git-create-branch', 'git-run-tests', 'git-commit', 'git-open-pr'}
     
     # Validate environment
     try:
@@ -306,7 +416,11 @@ def main() -> None:
         'kb-ingest': cmd_kb_ingest,
         'kb-search': cmd_kb_search,
         'kb-stats': cmd_kb_stats,
-        'answer': cmd_answer
+        'answer': cmd_answer,
+        'git-create-branch': cmd_git_create_branch,
+        'git-run-tests': cmd_git_run_tests,
+        'git-commit': cmd_git_commit,
+        'git-open-pr': cmd_git_open_pr
     }
     
     handler = command_handlers.get(args.command)
