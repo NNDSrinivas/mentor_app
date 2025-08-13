@@ -107,7 +107,7 @@ Edit `.env` (copied from `.env.template`):
 ## Notes
 
 - Knowledge base persists to `data/chroma_db/`. Don’t commit that directory.
-- Resume storage is in-memory; re-upload after restarting the Q&A service.
+- Resumes persist in the `resumes` table of the SQLite database.
 - Advanced features under `backend/` are imported defensively and the app runs without them.
 - `start_mentor_app.py` can start the Q&A service, but it references a bridge file not present. Prefer running the two services directly as shown above.
 

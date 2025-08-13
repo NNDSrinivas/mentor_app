@@ -52,8 +52,6 @@ if AI_ASSISTANT_AVAILABLE:
         print(f"Failed to initialize AI Assistant: {e}")
         ai_assistant = None
 
-# In-memory storage for resume (for simplicity)
-resume_storage = {}
 
 def init_db():
     """Initialize the database."""
