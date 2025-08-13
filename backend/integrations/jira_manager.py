@@ -51,7 +51,18 @@ class JiraManager:
         """Search issues (read-only, no approval needed)"""
         if self.dry_run:
             return {"dry_run": True, "jql": jql, "issues": []}
-        
+
+        params = {"jql": jql, "maxResults": max_results}
+        r = requests.get(f"{JIRA_BASE}/rest/api/3/search", headers=_auth(), params=params, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    def get_assigned_issues(self, assignee: str, max_results: int = 50) -> Dict[str, Any]:
+        """Retrieve issues assigned to a specific user."""
+        jql = f'assignee = "{assignee}"'
+        if self.dry_run:
+            return {"dry_run": True, "assignee": assignee, "issues": []}
+
         params = {"jql": jql, "maxResults": max_results}
         r = requests.get(f"{JIRA_BASE}/rest/api/3/search", headers=_auth(), params=params, timeout=30)
         r.raise_for_status()
