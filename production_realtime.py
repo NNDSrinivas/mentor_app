@@ -13,11 +13,14 @@ import threading
 import queue
 from datetime import datetime, timedelta
 from functools import wraps
-from typing import Dict
+from typing import Dict, Optional
 from flask import Flask, request, jsonify, g, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI
+
+from app import screen_record
+from app.config import Config
 
 # Import knowledge base functionality
 try:
@@ -58,6 +61,7 @@ else:
 # Session storage for real-time events
 active_sessions: Dict[str, dict] = {}
 session_queues: Dict[str, queue.Queue] = {}
+session_recordings: Dict[str, Optional[str]] = {}
 
 
 class SessionStore:
@@ -759,10 +763,20 @@ def create_session():
             'project_context': project_context
         }
         session_store.add_participant(session_id, user_id)
-        
+
         # Initialize event queue for this session
         session_queues[session_id] = queue.Queue()
-        
+        session_recordings[session_id] = None
+
+        if Config.SCREEN_RECORDING_ENABLED:
+            def _record_screen() -> None:
+                video_path = screen_record.record_screen(
+                    session_id, Config.SCREEN_RECORDING_DURATION
+                )
+                session_recordings[session_id] = video_path
+
+            threading.Thread(target=_record_screen, daemon=True).start()
+
         # Broadcast session creation (for monitoring/admin purposes)
         session_queues[session_id].put({
             'type': 'session_created',
@@ -1139,6 +1153,32 @@ def get_conversation_memory(session_id):
         
     except Exception as e:
         return jsonify({'error': f'Failed to get conversation memory: {str(e)}'}), 500
+
+
+@app.route('/api/sessions/<session_id>/recording', methods=['GET'])
+@require_auth
+def get_screen_recording(session_id):
+    """Get screen recording path or analysis for a session."""
+    try:
+        user_id = g.current_user['user_id']
+        db = get_db()
+
+        cursor = db.execute('SELECT id FROM sessions WHERE id = ? AND user_id = ?', (session_id, user_id))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Session not found or access denied'}), 404
+
+        video_path = session_recordings.get(session_id)
+        if not video_path:
+            return jsonify({'message': 'Recording in progress or unavailable'}), 202
+
+        if request.args.get('analyze') == 'true':
+            analysis = screen_record.analyze_screen_video(video_path)
+            return jsonify({'video_path': video_path, 'analysis': analysis}), 200
+
+        return jsonify({'video_path': video_path}), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to get recording: {str(e)}'}), 500
 
 @app.route('/api/knowledge/search', methods=['POST'])
 @require_auth
