@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Optional
+import uuid
 
 import requests
 
@@ -113,6 +114,16 @@ class BaseMeetingClient:
     # ------------------------------------------------------------------
     # Methods expected from subclasses
     # ------------------------------------------------------------------
+    @staticmethod
+    def generate_meeting_link(meeting_id: Optional[str] = None) -> str:
+        """Generate a meeting link for the platform.
+
+        Subclasses should override this to return a platform specific URL. The
+        base implementation simply generates a placeholder link.
+        """
+        meeting_id = meeting_id or uuid.uuid4().hex
+        return f"https://meet.example.com/{meeting_id}"
+
     def listen(self) -> None:  # pragma: no cover - placeholder for concrete clients
         """Start listening for captions from the platform.
 
