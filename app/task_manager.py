@@ -21,6 +21,7 @@ try:
         Config.JIRA_API_TOKEN = os.getenv('JIRA_API_TOKEN', 'mock-token')
         Config.GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', 'mock-token')
         Config.GITHUB_REPO = os.getenv('GITHUB_REPO', 'user/repo')
+        Config.BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')
 except ImportError:
     class Config:
         JIRA_BASE_URL = os.getenv('JIRA_BASE_URL', 'https://mock-jira.com')
@@ -29,6 +30,7 @@ except ImportError:
         JIRA_API_TOKEN = os.getenv('JIRA_API_TOKEN', 'mock-token')
         GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', 'mock-token')
         GITHUB_REPO = os.getenv('GITHUB_REPO', 'user/repo')
+        BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')
 
 logger = logging.getLogger(__name__)
 
@@ -476,7 +478,24 @@ class TaskManager:
                     'should', 'must', 'will', 'needs to', 'required to'
                 ]):
                     criteria.append(sentence)
-        
+
         return criteria
+
+    def trigger_code_generation(self, task: Task, files: Dict[str, str], base_branch: str = "main") -> Dict[str, Any]:
+        """Trigger backend code generation and PR creation for a task"""
+        payload = {
+            "task_id": task.task_id,
+            "title": task.title,
+            "description": task.description,
+            "files": files,
+            "base_branch": base_branch,
+        }
+        try:
+            response = requests.post(f"{Config.BACKEND_URL}/api/codegen", json=payload, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error triggering code generation: {e}")
+            return {"error": str(e)}
 
 # Note: TaskManager should be instantiated in the application, not here as a module-level singleton
