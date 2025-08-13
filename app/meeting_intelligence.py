@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
 from app.config import Config
+from backend.memory_service import MemoryService
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class MeetingIntelligence:
     def __init__(self):
         self.active_meetings: Dict[str, MeetingContext] = {}
         self.speaker_patterns: Dict[str, Dict] = {}
+        self.memory = MemoryService()
         
     def start_meeting(self, meeting_id: str, participants: List[str] = None) -> MeetingContext:
         """Initialize a new meeting session with intelligence tracking"""
@@ -79,13 +81,30 @@ class MeetingIntelligence:
             "urgency_level": self._assess_urgency(text),
             "speaker_analysis": self._analyze_speaker_context(text, speaker_id)
         }
-        
+
         # Update meeting context
         if analysis["action_items"]:
             context.action_items.extend(analysis["action_items"])
         if analysis["decisions"]:
             context.decisions.extend(analysis["decisions"])
-            
+
+        # Persist action items and decisions to long-term memory
+        for item in analysis["action_items"]:
+            self.memory.add_meeting_entry(
+                meeting_id,
+                item,
+                metadata={"type": "action_item", "speaker_id": speaker_id},
+            )
+        for decision in analysis["decisions"]:
+            self.memory.add_meeting_entry(
+                meeting_id,
+                decision,
+                metadata={"type": "decision", "speaker_id": speaker_id},
+            )
+
+        # Retrieve relevant historical context
+        analysis["memory_context"] = self.memory.search_meeting_context(text)
+
         return analysis
     
     def _detect_meeting_type(self, text: str, context: MeetingContext) -> str:

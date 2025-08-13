@@ -19,6 +19,7 @@ app.register_blueprint(healthz_bp)
 # Ship-It PR: Add middleware for rate limiting and cost tracking
 from backend.middleware import rate_limit, record_cost
 from backend.webhook_signatures import verify_github, verify_jira
+from backend.memory_service import MemoryService
 
 # Import functions to avoid circular imports
 def get_backend_components():
@@ -36,6 +37,9 @@ start_worker_thread()
 from typing import Any as _Any
 connected_clients: Set[_Any] = set()
 
+# Memory service for historical context
+memory = MemoryService()
+
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
@@ -49,6 +53,25 @@ def health():
         'timestamp': asyncio.get_event_loop().time(),
         'integrations': status
     })
+
+# --- Memory Search ---
+@app.route('/api/memory/search', methods=['GET'])
+def memory_search():
+    """Search stored memory for context"""
+    query = request.args.get('q', '')
+    category = request.args.get('category', 'meeting')
+    n = int(request.args.get('n', 3))
+    try:
+        if category == 'task':
+            results = memory.search_tasks(query, n)
+        elif category == 'code':
+            results = memory.search_code(query, n)
+        else:
+            results = memory.search_meeting_context(query, n)
+        return jsonify(results)
+    except Exception as e:
+        log.error(f"Error searching memory: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # --- Approvals REST API ---
 @app.route("/api/approvals", methods=['GET'])
