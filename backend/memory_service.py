@@ -2,6 +2,7 @@
 
 import os
 import json
+import sqlite3
 import chromadb
 from chromadb.config import Settings
 from datetime import datetime
@@ -30,12 +31,15 @@ class MemoryService:
         except Exception as e:
             log.warning(f"ChromaDB not available, falling back to simple storage: {e}")
             # Fallback to the original SQLite-based system
-            import sqlite3
-            import json
             self.db_path = os.getenv("MENTOR_DB_PATH", "mentor_memory.db")
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self._init_fallback_db()
             self.client = None
+
+        # Documentation database for summaries and tasks
+        self.doc_db_path = os.getenv("DOCUMENTATION_DB_PATH", "data/documentation.db")
+        self.doc_conn = sqlite3.connect(self.doc_db_path, check_same_thread=False)
+        self._init_documentation_db()
 
     def _init_fallback_db(self):
         cursor = self.conn.cursor()
@@ -49,7 +53,35 @@ class MemoryService:
         """)
         self.conn.commit()
 
-    def add_meeting_entry(self, meeting_id: str, text: str, metadata: Optional[Dict] = None):
+    def _init_documentation_db(self):
+        """Initialize tables for summaries and tasks in documentation DB."""
+        cursor = self.doc_conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                meeting_id TEXT,
+                summary TEXT,
+                metadata TEXT,
+                created_at TEXT,
+                indexed BOOLEAN DEFAULT 0
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT,
+                description TEXT,
+                metadata TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        self.doc_conn.commit()
+
+    def add_meeting_entry(self, meeting_id: str, text: str, metadata: Optional[Dict] = None, persist: bool = True):
         """Add a meeting entry to memory"""
         if self.client:
             doc_id = f"meeting_{meeting_id}_{datetime.now().isoformat()}"
@@ -65,6 +97,10 @@ class MemoryService:
                 "text": text,
                 **(metadata or {})
             })
+
+        # Persist meeting summaries to documentation DB
+        if persist:
+            self._save_summary(meeting_id, text, metadata)
 
     def search_meeting_context(self, query: str, n_results: int = 3):
         """Search for relevant meeting context"""
@@ -89,6 +125,9 @@ class MemoryService:
                 "description": description,
                 **(metadata or {})
             })
+
+        # Persist task metadata to documentation DB
+        self._save_task_metadata(task_id, description, metadata)
 
     def search_tasks(self, query: str, n_results: int = 3):
         """Search for relevant tasks"""
@@ -153,6 +192,33 @@ class MemoryService:
             rows = cursor.fetchall()
             return [{"category": r[0], "timestamp": r[1], "data": json.loads(r[2])} for r in rows]
         return []
+
+    # Documentation database helper methods
+    def _save_summary(self, meeting_id: str, summary: str, metadata: Optional[Dict] = None):
+        cursor = self.doc_conn.cursor()
+        cursor.execute(
+            "INSERT INTO summaries (meeting_id, summary, metadata, created_at) VALUES (?, ?, ?, ?)",
+            (
+                meeting_id,
+                summary,
+                json.dumps(metadata or {}),
+                datetime.now().isoformat(),
+            ),
+        )
+        self.doc_conn.commit()
+
+    def _save_task_metadata(self, task_id: str, description: str, metadata: Optional[Dict] = None):
+        cursor = self.doc_conn.cursor()
+        cursor.execute(
+            "INSERT INTO tasks (task_id, description, metadata, created_at) VALUES (?, ?, ?, ?)",
+            (
+                task_id,
+                description,
+                json.dumps(metadata or {}),
+                datetime.now().isoformat(),
+            ),
+        )
+        self.doc_conn.commit()
 
 
 if __name__ == "__main__":
