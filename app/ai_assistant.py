@@ -82,11 +82,17 @@ class MeetingSession:
 
 class ConversationMemory:
     """Persistent conversation memory system."""
-    
+
     def __init__(self):
         self.sessions: Dict[str, MeetingSession] = {}
         self.active_session: Optional[str] = None
-        self.kb = KnowledgeBase()
+        try:
+            self.kb: Optional[KnowledgeBase] = KnowledgeBase()
+        except Exception as e:
+            # If the knowledge base fails to initialize (e.g. missing API key)
+            # continue without it so the assistant can still operate.
+            logger.warning(f"Knowledge base disabled: {e}")
+            self.kb = None
         
     def start_session(self, session_id: str, context: Dict[str, Any]) -> str:
         """Start a new conversation session."""
@@ -114,16 +120,20 @@ class ConversationMemory:
         """Add conversation entry to session."""
         if session_id in self.sessions:
             self.sessions[session_id].conversations.append(entry)
-            
-            # Add to knowledge base for long-term memory
-            metadata = {
-                "type": "conversation",
-                "session_id": session_id,
-                "speaker": entry.speaker,
-                "timestamp": entry.timestamp,
-                "meeting_context": json.dumps(entry.context)
-            }
-            self.kb.add_document(entry.content, metadata)
+
+            # Add to knowledge base for long-term memory when available
+            if self.kb:
+                metadata = {
+                    "type": "conversation",
+                    "session_id": session_id,
+                    "speaker": entry.speaker,
+                    "timestamp": entry.timestamp,
+                    "meeting_context": json.dumps(entry.context)
+                }
+                try:
+                    self.kb.add_document(entry.content, metadata)
+                except Exception as e:
+                    logger.warning(f"Failed to store conversation in KB: {e}")
             
     def get_session_context(self, session_id: str) -> Dict[str, Any]:
         """Get full context for a session."""
@@ -141,6 +151,8 @@ class ConversationMemory:
     
     def search_conversation_history(self, query: str, limit: int = 5) -> List[Dict]:
         """Search all conversation history."""
+        if not self.kb:
+            return []
         return self.kb.search(query, top_k=limit, filter_metadata={"type": "conversation"})
 
 
