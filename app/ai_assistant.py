@@ -185,8 +185,11 @@ class AIAssistant:
             try:
                 flow_cls = cast(Any, InterviewFlowManager)
                 self.interview_flow = flow_cls()
-                if self.interview_flow is not None and hasattr(self.interview_flow, "register_response_callback"):
-                    self.interview_flow.register_response_callback(self._handle_interview_response)
+                if self.interview_flow is not None:
+                    if hasattr(self.interview_flow, "register_response_callback"):
+                        self.interview_flow.register_response_callback(self._handle_interview_response)
+                    if hasattr(self.interview_flow, "register_segment_callback"):
+                        self.interview_flow.register_segment_callback(self._handle_new_segment)
                 logger.info("✅ Speaker diarization initialized for interview flow")
             except Exception as e:
                 logger.warning(f"⚠️ Speaker diarization initialization failed: {e}")
@@ -659,6 +662,27 @@ class AIAssistant:
             'timestamp': datetime.now().isoformat(),
             'type': 'interview_qa'
         })
+
+    def _handle_new_segment(self, segment: Any):
+        """Store each processed speaker segment in conversation memory."""
+        session_id = "interview_session"
+        if session_id not in self.memory.sessions:
+            self.memory.start_session(session_id, {"participants": []})
+
+        entry = ConversationEntry(
+            timestamp=datetime.now().isoformat(),
+            meeting_id=session_id,
+            speaker=segment.speaker_id,
+            content=segment.transcript,
+            type="human",
+            context={
+                "is_question": segment.is_question,
+                "is_interviewer": segment.is_interviewer,
+            },
+            sentiment="neutral",
+            importance=5,
+        )
+        self.memory.add_conversation(session_id, entry)
     
     async def process_interview_speech(self, transcript: str, voice_features: Optional[Dict] = None) -> Optional[str]:
         """Process speech with speaker diarization for interview flow."""
