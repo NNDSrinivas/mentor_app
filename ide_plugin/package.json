@@ -67,7 +67,13 @@
         },
         "aiInterviewAssistant.userLevel": {
           "type": "string",
-          "enum": ["IC3", "IC4", "IC5", "IC6", "IC7"],
+          "enum": [
+            "IC3",
+            "IC4",
+            "IC5",
+            "IC6",
+            "IC7"
+          ],
           "default": "IC5",
           "description": "Your engineering level for context-appropriate answers"
         },
@@ -115,5 +121,6 @@
   },
   "dependencies": {
     "ws": "^8.14.2"
-  }
+  },
+  "license": "MIT"
 }
