@@ -1,0 +1,9 @@
+# Railway configuration for deployment
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "python production_backend.py"
+
+[env]
+NIXPACKS_PYTHON_VERSION = "3.11"

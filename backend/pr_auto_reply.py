@@ -32,6 +32,6 @@ def suggest_replies_and_patch(pr_title: str, pr_desc: str, files_changed: List[D
         temperature=0.2,
         response_format={"type":"json_object"}
     )
-    data = resp.choices[0].message.content
+    data = resp.choices[0].message.content or ""
     # let the server validate JSON before acting
     return {"raw": data}

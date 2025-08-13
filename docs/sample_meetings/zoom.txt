@@ -1,0 +1,4 @@
+Host: Welcome to the Zoom meeting.
+Guest: Thanks for having me today.
+Host: Could you explain your previous project?
+Guest: Certainly, it focused on real-time analytics.

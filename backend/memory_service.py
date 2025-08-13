@@ -1,6 +1,7 @@
 # backend/memory_service.py
 
 import os
+import json
 import chromadb
 from chromadb.config import Settings
 from datetime import datetime

@@ -1,194 +1,152 @@
-# 🤖 AI Mentor
+# AI Mentor – Interview Assistant (Practical Guide)
 
-A production-ready AI-powered Mentor
-## 🎯 Core Features
+This repo implements an AI interview assistant you can run locally across three surfaces: a Flask Q&A API, a realtime session service for meetings, and optional clients (Chrome overlay, mobile app, IDE plugins).
 
-- 🕵️ **True Stealth Mode** - Hidden from screen sharing, always visible to YOU
-- 🎤 **Real-time Interview Question Detection** (Zoom, Teams, Google Meet, WebEx)
-- 🧠 **IC6/IC7 Level AI Responses** - Senior technical interview expertise
-- 📄 **Resume-Based Personalization** - Answers tailored to your background
-- 🎯 **Universal Question Detection** - Handles all interview types (technical, behavioral, system design)
-- 🪟 **Popup Window Stealth** - Separate window invisible to screen capture
+The README has been aligned with the actual code so you can run it end-to-end today.
 
-## 🚀 Quick Start
+## Architecture at a glance
 
-### 1. Start the Application
+- Q&A + Resume API (port 8084): `simple_web.py`
+    - POST /api/ask → generates an answer using `app/ai_assistant.py`
+    - POST/GET /api/resume → store/read resume text in memory
+    - GET /api/health → service health
+- Realtime sessions API (port 8080): `web_interface.py`
+    - POST /api/sessions → create a session
+    - GET /api/sessions/{id}/answers → recent answers for polling clients
+    - GET /api/sessions/{id}/stream → Server-Sent Events (SSE) for realtime
+    - POST /api/sessions/{id}/captions → push caption chunks with speaker hints
+    - DELETE /api/sessions/{id} → end a session
+    - POST /api/meeting-events → legacy meeting event ingestion
+- Clients
+    - Chrome extension in `browser_extension/` (calls 8084 for /api/ask and /api/resume, 8080 for meeting events)
+    - Mobile client in `mobile/` (Expo/React Native)
+    - VS Code extension in `vscode_extension/` (calls 8084 /api/ask)
+
+Note: Some previously advertised utilities (e.g., universal IDE bridge, check_status.py) are not present. Follow the Quick Start below.
+
+## Quick Start
+
+1) Python environment
+
 ```bash
-# Install dependencies
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# Start all services
-python start_mentor_app.py
-```
-
-### 2. Install Chrome Extension for Interview Stealth Mode
-1. Open Chrome: `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked" 
-4. Select `browser_extension/` folder
-5. Extension provides stealth interview assistance
-
-### 3. Upload Your Resume (Optional)
-Upload your resume to `data/` folder for personalized responses:
-```bash
-# Supported formats: PDF, DOCX, TXT
-cp your_resume.pdf data/resume.pdf
-```
-### 4. Configuration
-Create `.env` file from template:
-```bash
 cp .env.template .env
-# Edit .env with your OpenAI API key for enhanced responses
+# Edit .env and set OPENAI_API_KEY
 ```
 
-## 🕵️ Stealth Mode Features
+2) Start services in two terminals
 
-### True Interview Stealth
-- **Popup Window Mode**: Opens separate window invisible to screen capture
-- **Always Visible to YOU**: Interface remains visible on your screen
-- **Screen Share Protection**: Completely hidden from Zoom/Teams/Meet screen sharing
-- **Emergency Toggle**: `Ctrl+Shift+A` to manually hide/show
-- **Voice Recognition**: Automatically detects interview questions
-- **Instant Responses**: IC6/IC7 level technical answers within seconds
-
-## 📁 Production Structure
-
-```
-mentor_app/
-├── 🚀 start_mentor_app.py          # Main interview assistant launcher
-├── 🌐 web_interface.py             # Flask API for AI responses
-├── 📄 simple_web.py                # Resume upload interface
-├── 🔗 universal_ide_bridge.py     # Universal IDE integration
-├── 📊 check_status.py              # System status checker
-├── 
-├── �️ browser_extension/           # Chrome extension with stealth mode
-│   ├── manifest.json               # Extension permissions
-│   ├── content.js                  # Stealth interview overlay
-│   ├── background.js               # Voice recognition service
-│   ├── popup.html                  # Extension popup interface
-│   └── offscreen.js                # Background processing
-├── 
-├── � app/                         # Core AI interview modules
-│   ├── main.py                     # Application orchestrator
-│   ├── ai_assistant.py             # IC6/IC7 AI response engine
-│   ├── knowledge_base.py           # Resume processing & personalization
-│   ├── transcription.py            # Voice-to-text processing
-│   ├── summarization.py            # Interview context analysis
-│   └── config.py                   # Configuration management
-├── 
-└── � data/                        # User data & knowledge base
-    ├── chroma_db/                  # Vector database for context
-    └── resume.pdf                  # Your resume (optional)
-```
-
-## 🎮 Interview Usage
-
-### During Technical Interviews
-1. **Join Interview**: Open Zoom/Teams/Meet interview
-2. **Activate Stealth**: Extension automatically detects screen sharing
-3. **Voice Recognition**: Speak or type questions for instant AI responses
-4. **Read Responses**: View IC6/IC7 level answers in stealth window
-5. **Stay Hidden**: Interviewer cannot see your AI assistant
-
-### Stealth Mode Controls
-- **Automatic**: Activates when screen sharing is detected
-- **Manual Toggle**: `Ctrl+Shift+A` for emergency hide/show
-- **Test Mode**: Click "Test Stealth Mode" button to verify invisibility
-- **Popup Window**: Separate browser window invisible to screen capture
-
-### Interview Question Types Supported
-- **Technical Coding**: Data structures, algorithms, system design
-- **Behavioral**: STAR method responses, leadership scenarios  
-- **System Design**: Scalability, architecture, trade-offs
-- **Company-Specific**: META, Google, Amazon, Microsoft style questions
-
-### System Monitoring
 ```bash
-# Check all services
-python check_status.py
+# Terminal A – Q&A service (port 8084)
+python simple_web.py
+
+# Terminal B – Realtime sessions (port 8080)
+python web_interface.py
 ```
 
-## 🔧 Supported Platforms
+3) Test APIs
 
-### Interview Platforms
-- **Zoom** - Full stealth mode support with popup windows
-- **Microsoft Teams** - Voice recognition + stealth overlay  
-- **Google Meet** - Real-time question detection
-- **WebEx** - Universal compatibility mode
-
-### AI Response Levels
-- **IC6/IC7** - Senior software engineer level responses
-- **E5-E7** - Principal/Staff engineer depth
-- **Technical Leadership** - Architecture and system design focus
-- **Behavioral** - STAR method and leadership scenarios
-
-### Resume Integration
-- **PDF Processing** - Extract skills, experience, projects
-- **Personalized Responses** - Answers based on your background
-- **Context Awareness** - Responses match your career level
-- **Skill Highlighting** - Emphasize relevant technical expertise
-
-## 🛠️ Architecture
-
-- **Web Interface** (Port 8084) - AI response API and resume upload
-- **Chrome Extension** - Stealth interview overlay with voice recognition
-- **AI Assistant** - IC6/IC7 level response generation with GPT-4
-- **Knowledge Base** - Resume processing and personalized context
-- **Stealth System** - Popup window technology invisible to screen capture
-
-## ⚡ Performance
-
-- **Response Time**: < 3 seconds for technical questions
-- **Stealth Mode**: 100% invisible to screen sharing software
-- **Voice Recognition**: Real-time question detection
-- **Resume Processing**: Instant context personalization
-- **Memory Usage**: < 100MB total system footprint
-
-## 📞 Support & Testing
-
-### Test Stealth Mode
 ```bash
-# Start the application
-python start_mentor_app.py
+# Health
+curl -s http://localhost:8084/api/health
+curl -s http://localhost:8080/api/health
 
-# Test in browser:
-# 1. Load extension in Chrome
-# 2. Go to any meeting platform
-# 3. Click "Test Stealth Mode" button
-# 4. Start screen sharing to verify invisibility
+# Ask a question (Q&A service)
+curl -s -X POST http://localhost:8084/api/ask \
+    -H 'Content-Type: application/json' \
+    -d '{"question":"Describe CAP theorem","interview_mode":true}'
+
+# Realtime session flow
+SID=$(curl -s -X POST http://localhost:8080/api/sessions -H 'Content-Type: application/json' -d '{"user_level":"IC6","user_name":"local","meeting_type":"technical_interview"}' | jq -r .session_id)
+curl -s -X POST http://localhost:8080/api/sessions/$SID/captions -H 'Content-Type: application/json' -d '{"text":"Can you explain how you would design a URL shortener?","speaker":"interviewer"}'
+curl -s http://localhost:8080/api/sessions/$SID/answers
 ```
 
-### Status Check
-```bash
-python check_status.py
-```
+## Mobile app (Expo)
 
-### Manual Question Testing
-- Type questions directly in the stealth interface
-- Test voice recognition with "Tell me about yourself"
-- Verify popup window opens during screen sharing
+- Location: `mobile/`
+- Dependencies listed in `mobile/package.json` (Expo 49, React Native 0.72). Install with npm/yarn in that folder.
+- Start with the Expo CLI, then set the Server URL field in the app to your machine IP with port 8080, e.g. `http://192.168.1.100:8080`.
+- The mobile app:
+    - POSTs /api/sessions to create a session
+    - Polls GET /api/sessions/{id}/answers every 3s
+    - Lets you view and copy answers
 
-### Troubleshooting
-- **Popup Blocked**: Allow popups for meeting platform domains
-- **Voice Recognition**: Grant microphone permissions in Chrome
-- **API Errors**: Check OpenAI API key in `.env` file
-- **Stealth Not Working**: Verify Chrome extension is loaded and active
+Tip: On the same network, push captions using the realtime API (or via the Chrome extension) so answers appear on mobile.
 
-## 🔒 Privacy & Security
+## Browser extension
 
-- **Local Processing**: All voice recognition happens locally
-- **No Data Storage**: Interview content not saved permanently
-- **Resume Privacy**: Only processed locally, not sent to external services
-- **API Security**: OpenAI API key stored securely in `.env`
-- **Stealth Technology**: Uses legitimate popup window isolation
-- **No Screenshots**: Extension cannot capture screen content
+1) Open Chrome → chrome://extensions → Enable Developer mode → Load unpacked → select `browser_extension/`.
+2) The overlay calls `http://localhost:8084/api/ask` and `http://localhost:8084/api/resume` and sends meeting events to `http://localhost:8080/api/meeting-events`.
+3) Grant microphone/screen permissions as prompted.
 
-## 📄 License
+## Configuration
 
-MIT License
+Edit `.env` (copied from `.env.template`):
+
+- OPENAI_API_KEY (required for ai responses)
+- Optional tuning in `app/config.py` (overlay, knowledge base, privacy flags). Missing advanced backends are handled gracefully.
+
+## API summary
+
+- 8084 (simple_web):
+    - POST /api/ask { question, interview_mode? }
+    - POST /api/resume { resume_text }
+    - GET /api/resume
+    - GET /api/health
+- 8080 (web_interface):
+    - POST /api/sessions { user_level, meeting_type, user_name }
+    - GET /api/sessions/{id}/answers
+    - GET /api/sessions/{id}/stream (SSE)
+    - POST /api/sessions/{id}/captions { text, speaker?, timestamp? }
+    - DELETE /api/sessions/{id}
+    - POST /api/meeting-events { action, data }
+
+## Notes
+
+- Knowledge base persists to `data/chroma_db/`. Don’t commit that directory.
+- Resume storage is in-memory; re-upload after restarting the Q&A service.
+- Advanced features under `backend/` are imported defensively and the app runs without them.
+- `start_mentor_app.py` can start the Q&A service, but it references a bridge file not present. Prefer running the two services directly as shown above.
+
+## Contributing
+
+PRs welcome. Keep endpoints backward compatible or update this README alongside any changes. Please avoid introducing heavy dependencies in the browser extension to keep the overlay lightweight.
+
+
+## Removed / Not Implemented (Accuracy Statement)
+
+Sections covering advanced diarization metrics, automated task extraction, Jira/calendar sync, build/deployment intelligence, automated PR management, smart documentation sync, enterprise security/compliance, performance SLAs, monetization strategy, and multi‑platform desktop features have been removed because the current codebase does not implement them. Some stub Python files exist under `backend/` but are not wired into running services.
+
+If you implement a feature, reintroduce documentation with concrete details: endpoints, file paths, run commands.
+
+## License
+
+MIT (add a LICENSE file if not present).
 
 ---
 
-**�️ Ready to ace your technical interviews with invisible AI assistance!**
+This README now reflects only implemented functionality to reduce ambiguity.
 
-*This tool is designed for legitimate interview preparation and practice. Use responsibly and in accordance with your organization's policies.*
+## Build & Run (scripts)
+
+If you prefer a one-command setup, use the helper scripts:
+
+```bash
+chmod +x start_services.sh stop_services.sh
+./start_services.sh
+```
+
+This will create a virtualenv (if missing), install dependencies, and start both services:
+- Q&A service on http://localhost:8084
+- Realtime service on http://localhost:8080
+
+Stop the services when done:
+
+```bash
+./stop_services.sh
+```
+
+Mock mode: If `OPENAI_API_KEY` isn’t set, the backend starts in a safe mock mode that returns placeholder answers (see `app/ai_assistant.py` and `simple_web.py` fallback). This lets you verify end-to-end flows without external credentials.

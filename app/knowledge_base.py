@@ -12,6 +12,9 @@ import hashlib
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
+# External libraries are imported unconditionally so type checkers can resolve
+# them, but the knowledge base will gracefully fall back when the OpenAI API key
+# is missing.
 import chromadb
 from chromadb.config import Settings
 from openai import OpenAI
@@ -22,30 +25,44 @@ logger = logging.getLogger(__name__)
 
 
 class KnowledgeBase:
-    """Vector-based knowledge base using ChromaDB and OpenAI embeddings."""
-    
+    """Vector-based knowledge base using ChromaDB and OpenAI embeddings.
+
+    If the OpenAI API key is not configured the class falls back to an
+    in-memory store so that the rest of the application can continue to operate
+    without vector search capabilities.
+    """
+
     def __init__(self):
-        if not Config.OPENAI_API_KEY:
-            raise ValueError("OpenAI API key is required for knowledge base")
-        
-        self.openai_client = OpenAI(api_key=Config.OPENAI_API_KEY)
-        
-        # Initialize ChromaDB
-        self.chroma_client = chromadb.PersistentClient(
-            path=Config.CHROMA_PERSIST_DIR,
-            settings=Settings(anonymized_telemetry=False)
-        )
-        
-        # Get or create collection
-        try:
-            self.collection = self.chroma_client.get_collection("knowledge_base")
-            logger.info("Loaded existing knowledge base collection")
-        except:
-            self.collection = self.chroma_client.create_collection(
-                name="knowledge_base",
-                metadata={"description": "AI Mentor Assistant Knowledge Base"}
+        if Config.OPENAI_API_KEY:
+            self.openai_client = OpenAI(api_key=Config.OPENAI_API_KEY)
+
+            # Initialize ChromaDB for persistent vector search
+            self.chroma_client = chromadb.PersistentClient(
+                path=Config.CHROMA_PERSIST_DIR,
+                settings=Settings(anonymized_telemetry=False)
             )
-            logger.info("Created new knowledge base collection")
+
+            # Get or create collection
+            try:
+                self.collection = self.chroma_client.get_collection("knowledge_base")
+                logger.info("Loaded existing knowledge base collection")
+            except Exception:
+                self.collection = self.chroma_client.create_collection(
+                    name="knowledge_base",
+                    metadata={"description": "AI Mentor Assistant Knowledge Base"}
+                )
+                logger.info("Created new knowledge base collection")
+
+            self._in_memory_store = None
+        else:
+            logger.warning(
+                "OPENAI_API_KEY not set – using in-memory knowledge base; "
+                "vector search and persistence will be unavailable"
+            )
+            self.openai_client = None
+            self.chroma_client = None
+            self.collection = None
+            self._in_memory_store: List[Dict[str, Any]] = []
     
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for text using OpenAI API.
@@ -56,13 +73,18 @@ class KnowledgeBase:
         Returns:
             Embedding vector.
         """
+        if not self.openai_client:
+            # Simple deterministic fallback: hash the text into a small vector.
+            hashed = hashlib.md5(text.encode()).hexdigest()
+            return [int(hashed[i:i+8], 16) for i in range(0, 32, 8)]
+
         try:
             response = self.openai_client.embeddings.create(
                 input=text,
                 model=Config.EMBEDDING_MODEL
             )
             return response.data[0].embedding
-            
+
         except Exception as e:
             logger.error(f"Embedding generation failed: {str(e)}")
             raise
@@ -85,16 +107,24 @@ class KnowledgeBase:
             metadata["timestamp"] = datetime.now().isoformat()
             metadata["content_length"] = len(content)
             
-            # Generate embedding
-            embedding = self.generate_embedding(content)
-            
-            # Add to collection
-            self.collection.add(
-                documents=[content],
-                metadatas=[metadata],
-                embeddings=[embedding],
-                ids=[doc_id]
-            )
+            if self.collection is not None:
+                # Generate embedding
+                embedding = self.generate_embedding(content)
+
+                # Add to collection
+                self.collection.add(
+                    documents=[content],
+                    metadatas=[metadata],
+                    embeddings=[embedding],
+                    ids=[doc_id]
+                )
+            else:
+                # Fallback to simple in-memory storage
+                self._in_memory_store.append({
+                    "content": content,
+                    "metadata": metadata,
+                    "id": doc_id
+                })
             
             logger.info(f"Added document to knowledge base: {doc_id}")
             return doc_id
@@ -114,10 +144,24 @@ class KnowledgeBase:
         Returns:
             List of search results.
         """
+        if self.collection is None:
+            # Simple substring search over the in-memory store
+            results: List[Dict[str, Any]] = []
+            q = query.lower()
+            for item in self._in_memory_store:
+                if q in item["content"].lower():
+                    results.append({
+                        "content": item["content"],
+                        "metadata": item["metadata"],
+                        "similarity_score": 1.0,
+                        "id": item["id"]
+                    })
+            return results[:top_k]
+
         try:
             # Generate query embedding
             query_embedding = self.generate_embedding(query)
-            
+
             # Search collection
             results = self.collection.query(
                 query_embeddings=[query_embedding],
@@ -125,7 +169,7 @@ class KnowledgeBase:
                 where=filter_metadata,
                 include=["documents", "metadatas", "distances"]
             )
-            
+
             # Format results
             formatted_results = []
             for i in range(len(results["documents"][0])):
@@ -135,10 +179,10 @@ class KnowledgeBase:
                     "similarity_score": 1 - results["distances"][0][i],  # Convert distance to similarity
                     "id": results["ids"][0][i] if "ids" in results else None
                 })
-            
+
             logger.info(f"Knowledge base search returned {len(formatted_results)} results")
             return formatted_results
-            
+
         except Exception as e:
             logger.error(f"Knowledge base search failed: {str(e)}")
             return []
@@ -149,6 +193,9 @@ class KnowledgeBase:
         Returns:
             Collection statistics.
         """
+        if self.collection is None:
+            return {"document_count": len(self._in_memory_store), "collection_name": "in_memory"}
+
         try:
             count = self.collection.count()
             return {
@@ -169,11 +216,16 @@ class KnowledgeBase:
         Returns:
             True if successful, False otherwise.
         """
+        if self.collection is None:
+            before = len(self._in_memory_store)
+            self._in_memory_store = [d for d in self._in_memory_store if d["id"] != doc_id]
+            return len(self._in_memory_store) < before
+
         try:
             self.collection.delete(ids=[doc_id])
             logger.info(f"Deleted document: {doc_id}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to delete document {doc_id}: {str(e)}")
             return False

@@ -4,13 +4,13 @@ import * as vscode from 'vscode';
 import { InterviewSessionManager, Answer } from './sessionManager';
 
 export class AnswerTreeProvider implements vscode.TreeDataProvider<AnswerItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<AnswerItem | undefined | null | void> = new vscode.EventEmitter<AnswerItem | undefined | null | void>();
-    readonly onDidChangeTreeData: vscode.Event<AnswerItem | undefined | null | void> = this._onDidChangeTreeData.event;
+    private _onDidChangeTreeData: vscode.EventEmitter<AnswerItem | undefined | null> = new vscode.EventEmitter<AnswerItem | undefined | null>();
+    readonly onDidChangeTreeData: vscode.Event<AnswerItem | undefined | null> = this._onDidChangeTreeData.event;
 
     constructor(private sessionManager: InterviewSessionManager) {
         // Listen to answer updates
         sessionManager.onAnswersUpdatedEvent(() => {
-            this._onDidChangeTreeData.fire();
+            this._onDidChangeTreeData.fire(undefined);
         });
     }
 
@@ -51,9 +51,9 @@ class AnswerItem extends vscode.TreeItem {
         
         // Add context indicators
         if (answer.memoryContextUsed) {
-            this.iconPath = new vscode.ThemeIcon('database');
+            this.iconPath = new (vscode as any).ThemeIcon('database');
         } else {
-            this.iconPath = new vscode.ThemeIcon('comment-discussion');
+            this.iconPath = new (vscode as any).ThemeIcon('comment-discussion');
         }
         
         // Add context menu commands
