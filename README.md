@@ -82,6 +82,11 @@ Tip: On the same network, push captions using the realtime API (or via the Chrom
 2) The overlay calls `http://localhost:8084/api/ask` and `http://localhost:8084/api/resume` and sends meeting events to `http://localhost:8080/api/meeting-events`.
 3) Grant microphone/screen permissions as prompted.
 
+## VS Code extension
+
+- Location: `vscode_extension/`
+- Before packaging the extension (e.g., with `vsce package`), run `npm run compile` to ensure `out/` has the latest build.
+
 ## Configuration
 
 Edit `.env` (copied from `.env.template`):

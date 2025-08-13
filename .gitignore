@@ -67,6 +67,9 @@ data/user_*.json
 # Node modules (for browser extension development)
 node_modules/
 
+# VS Code extension build output
+vscode_extension/out/
+
 # Temporary files
 *.tmp
 *.temp
