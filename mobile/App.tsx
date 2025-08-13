@@ -36,6 +36,7 @@ function HomeScreen({ navigation }: any) {
   const [userLevel, setUserLevel] = useState('IC5');
   const [refreshing, setRefreshing] = useState(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     // Auto-connect on app start
@@ -46,6 +47,8 @@ function HomeScreen({ navigation }: any) {
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+      syncIntervalRef.current = null;
     };
   }, []);
 
@@ -80,6 +83,7 @@ function HomeScreen({ navigation }: any) {
 
       // Start polling for answers
       startPolling(newSessionId, base);
+      startSessionSync(newSessionId, base);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Connected', 'AI Interview Assistant is ready');
@@ -142,6 +146,52 @@ function HomeScreen({ navigation }: any) {
     pollIntervalRef.current = setInterval(fetchAnswers, 3000);
   };
 
+  const startSessionSync = (sid: string, baseUrl?: string) => {
+    const base = baseUrl ?? normalizeBaseUrl(serverUrl);
+
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+      syncIntervalRef.current = null;
+    }
+
+    const fetchState = async () => {
+      try {
+        const resp = await fetch(`${base}/api/sessions/${encodeURIComponent(sid)}/sync`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (Array.isArray(data.answers)) {
+            setAnswers(data.answers.map((a: any, i: number) => normalizeAnswer(a, i)));
+          }
+        }
+      } catch (e) {
+        console.error('Sync error:', e);
+      }
+    };
+
+    fetchState();
+    syncIntervalRef.current = setInterval(fetchState, 5000);
+  };
+
+  const broadcastState = async (state: any) => {
+    if (!sessionId) return;
+    const base = normalizeBaseUrl(serverUrl);
+    try {
+      await fetch(`${base}/api/sessions/${encodeURIComponent(sessionId)}/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      });
+    } catch (e) {
+      console.error('Broadcast error:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (sessionId) {
+      broadcastState({ answers });
+    }
+  }, [answers]);
+
   const endSession = async () => {
     const base = normalizeBaseUrl(serverUrl);
     const sid = sessionId;
@@ -156,6 +206,10 @@ function HomeScreen({ navigation }: any) {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
+    }
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+      syncIntervalRef.current = null;
     }
     setSessionId(null);
     setIsConnected(false);
