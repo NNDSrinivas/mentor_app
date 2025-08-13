@@ -14,6 +14,15 @@ import requests
 
 from .config import Config
 from . import capture, transcription, summarization, screen_record, knowledge_base
+from backend.integrations.jira_manager import JiraManager
+
+
+def _confirm(prompt: str, auto_confirm: bool) -> bool:
+    """Prompt the user to confirm an action unless auto-confirmed."""
+    if auto_confirm:
+        return True
+    response = input(f"{prompt} [y/N]: ").strip().lower()
+    return response in {"y", "yes"}
 
 
 def cmd_record_audio(args) -> None:
@@ -197,6 +206,36 @@ def cmd_answer(args) -> None:
         print("❌ No relevant context found in knowledge base")
 
 
+def cmd_jira_comment(args) -> None:
+    """Add comment to a JIRA issue."""
+    if not _confirm(f"Add comment to {args.issue}?", args.yes):
+        print("❌ Operation cancelled")
+        return
+
+    manager = JiraManager()
+    try:
+        manager.add_comment(args.issue, args.comment)
+        print(f"💬 Comment added to {args.issue}")
+    except Exception as e:
+        print(f"❌ Failed to add comment: {e}")
+
+
+def cmd_jira_transition(args) -> None:
+    """Transition a JIRA issue's status."""
+    if not _confirm(
+        f"Transition issue {args.issue} with {args.transition_id}?", args.yes
+    ):
+        print("❌ Operation cancelled")
+        return
+
+    manager = JiraManager()
+    try:
+        manager.transition_issue(args.issue, args.transition_id, args.comment)
+        print(f"🔀 Issue {args.issue} transitioned")
+    except Exception as e:
+        print(f"❌ Failed to transition issue: {e}")
+
+
 def cmd_git_create_branch(args) -> None:
     """Create and switch to a new git branch."""
     subprocess.run(["git", "checkout", "-b", args.branch], check=True)
@@ -366,6 +405,31 @@ Examples:
     answer_parser = subparsers.add_parser('answer', help='Answer question using knowledge base')
     answer_parser.add_argument('question', help='Question to answer')
 
+    # JIRA comment command
+    jira_comment = subparsers.add_parser(
+        'jira-comment', help='Add comment to a JIRA issue'
+    )
+    jira_comment.add_argument('issue', help='JIRA issue key')
+    jira_comment.add_argument('comment', help='Comment text')
+    jira_comment.add_argument(
+        '--yes',
+        action='store_true',
+        help='Bypass confirmation prompt and run non-interactively',
+    )
+
+    # JIRA transition command
+    jira_transition = subparsers.add_parser(
+        'jira-transition', help='Transition a JIRA issue'
+    )
+    jira_transition.add_argument('issue', help='JIRA issue key')
+    jira_transition.add_argument('transition_id', help='Transition ID')
+    jira_transition.add_argument('--comment', help='Optional comment to add')
+    jira_transition.add_argument(
+        '--yes',
+        action='store_true',
+        help='Bypass confirmation prompt and run non-interactively',
+    )
+
     # Git operations
     git_branch_parser = subparsers.add_parser('git-create-branch', help='Create new git branch')
     git_branch_parser.add_argument('branch', help='Branch name')
@@ -393,7 +457,7 @@ def main() -> None:
         return
     
     # Commands that don't require API key
-    local_commands = {'screenshot', 'kb-stats', 'git-create-branch', 'git-run-tests', 'git-commit', 'git-open-pr'}
+    local_commands = {'screenshot', 'kb-stats', 'jira-comment', 'jira-transition', 'git-create-branch', 'git-run-tests', 'git-commit', 'git-open-pr'}
     
     # Validate environment
     try:
@@ -417,10 +481,12 @@ def main() -> None:
         'kb-search': cmd_kb_search,
         'kb-stats': cmd_kb_stats,
         'answer': cmd_answer,
+        'jira-comment': cmd_jira_comment,
+        'jira-transition': cmd_jira_transition,
         'git-create-branch': cmd_git_create_branch,
         'git-run-tests': cmd_git_run_tests,
         'git-commit': cmd_git_commit,
-        'git-open-pr': cmd_git_open_pr
+        'git-open-pr': cmd_git_open_pr,
     }
     
     handler = command_handlers.get(args.command)
