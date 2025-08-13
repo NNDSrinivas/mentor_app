@@ -275,7 +275,7 @@ class CompanyInterviewKB:
             }
         }
     
-    def get_company_questions(self, company: str, question_type: str = None) -> List[str]:
+    def get_company_questions(self, company: str, question_type: Optional[str] = None) -> List[str]:
         """Get questions for a specific company and type."""
         
         questions = []
@@ -399,7 +399,7 @@ class CompanyInterviewKB:
         self.kb.add_document(content, metadata)
         logger.info(f"✅ Added custom pattern for {pattern.company} {pattern.question_type}")
     
-    def search_similar_questions(self, question: str, company: str = None) -> List[Dict]:
+    def search_similar_questions(self, question: str, company: Optional[str] = None) -> List[Dict]:
         """Search for similar questions in the knowledge base."""
         
         # Build search query

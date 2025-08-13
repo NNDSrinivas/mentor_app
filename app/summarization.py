@@ -42,8 +42,9 @@ class SummarizationService:
                 max_tokens=500,
                 temperature=0.3
             )
-            
-            return response.choices[0].message.content.strip()
+            # content may be None per typings; guard before strip
+            content = response.choices[0].message.content or ""
+            return content.strip()
             
         except Exception as e:
             logger.error(f"Summary generation failed: {str(e)}")
@@ -76,7 +77,8 @@ class SummarizationService:
                 temperature=0.2
             )
             
-            content = response.choices[0].message.content.strip()
+            raw = response.choices[0].message.content or ""
+            content = raw.strip()
             # Parse the numbered list into individual items
             action_items = []
             for line in content.split('\n'):
@@ -120,7 +122,8 @@ class SummarizationService:
                 temperature=0.2
             )
             
-            content = response.choices[0].message.content.strip()
+            raw = response.choices[0].message.content or ""
+            content = raw.strip()
             # Parse the numbered list into individual decisions
             decisions = []
             for line in content.split('\n'):
@@ -167,7 +170,8 @@ class SummarizationService:
                 temperature=0.1
             )
             
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content or ""
+            return content.strip()
             
         except Exception as e:
             logger.error(f"Question answering failed: {str(e)}")

@@ -27,7 +27,8 @@ Return a Markdown ADR with sections: Title, Status, Context, Decision, Consequen
         temperature=0.2,
         max_tokens=800
     )
-    return resp.choices[0].message.content.strip()
+    content = resp.choices[0].message.content or ""
+    return content.strip()
 
 def draft_runbook(service: str, incidents: List[str], commands: List[str], dashboards: List[str]) -> str:
     msg = f"""
@@ -44,7 +45,8 @@ Return a Markdown runbook with sections: Overview, Symptoms, Diagnosis, Mitigati
         temperature=0.2,
         max_tokens=900
     )
-    return resp.choices[0].message.content.strip()
+    content = resp.choices[0].message.content or ""
+    return content.strip()
 
 def draft_changelog(repo: str, merged_prs: List[Dict[str,Any]]) -> str:
     lines = [f"- {pr.get('title','')} (#{pr.get('number')}) by {pr.get('user',{}).get('login','')}" for pr in merged_prs]
@@ -55,4 +57,5 @@ def draft_changelog(repo: str, merged_prs: List[Dict[str,Any]]) -> str:
         temperature=0.3,
         max_tokens=600
     )
-    return resp.choices[0].message.content.strip()
+    content = resp.choices[0].message.content or ""
+    return content.strip()

@@ -121,8 +121,8 @@ class PatchApplier:
         }
 
 
-def apply_patch(patch_content: str, branch_name: str = None, 
-               commit_message: str = None, pr_title: str = None) -> dict:
+def apply_patch(patch_content: str, branch_name: Optional[str] = None, 
+               commit_message: Optional[str] = None, pr_title: Optional[str] = None) -> dict:
     """Main entry point for patch application"""
     
     if not branch_name:

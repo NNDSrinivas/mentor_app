@@ -69,7 +69,7 @@ class JiraManager:
 
     def transition_issue(self, key: str, transition_id: str, comment: Optional[str] = None) -> Dict[str, Any]:
         """Transition issue status (move through workflow)"""
-        payload = {"transition": {"id": transition_id}}
+        payload: Dict[str, Any] = {"transition": {"id": transition_id}}
         if comment:
             payload["update"] = {"comment": [{"add": {"body": comment}}]}
         

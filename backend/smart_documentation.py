@@ -7,7 +7,7 @@ import asyncio
 import os
 import json
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, cast
 from datetime import datetime, timedelta
 import sqlite3
 import ast
@@ -15,12 +15,46 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 import difflib
-import git
-from markdown import markdown
-from bs4 import BeautifulSoup
-import openai
-from jinja2 import Template
-import yaml
+
+# Optional dependencies with graceful fallbacks
+try:
+    import git
+    GIT_AVAILABLE = True
+except ImportError:
+    logging.warning("GitPython not available, git integration disabled")
+    GIT_AVAILABLE = False
+    git = None  # type: ignore
+
+try:
+    from markdown import markdown
+    from bs4 import BeautifulSoup
+    MARKDOWN_AVAILABLE = True
+except ImportError:
+    logging.warning("Markdown/BeautifulSoup not available, using plain text fallback")
+    MARKDOWN_AVAILABLE = False
+
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    logging.warning("OpenAI not available, using template-based generation")
+    OPENAI_AVAILABLE = False
+    openai = None  # type: ignore
+
+try:
+    from jinja2 import Template
+    JINJA_AVAILABLE = True
+except ImportError:
+    logging.warning("Jinja2 not available, using simple string formatting")
+    JINJA_AVAILABLE = False
+    Template = None  # type: ignore
+
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    logging.warning("PyYAML not available, YAML processing disabled")
+    YAML_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +103,24 @@ class CodeAnalyzer:
     
     def _init_git_repo(self):
         """Initialize git repository connection"""
+        if not GIT_AVAILABLE:
+            logger.warning("Git integration not available")
+            return
+            
         try:
-            self.repo = git.Repo(search_parent_directories=True)
-            logger.info(f"Initialized git repo: {self.repo.working_dir}")
-        except git.InvalidGitRepositoryError:
-            logger.warning("No git repository found")
+            if GIT_AVAILABLE:
+                self.repo = cast(Any, git).Repo(search_parent_directories=True)
+                try:
+                    wd = getattr(self.repo, "working_dir", None)
+                    if wd:
+                        logger.info(f"Initialized git repo: {wd}")
+                except Exception:
+                    pass
+            else:
+                self.repo = None
+        except Exception as e:
+            logger.warning(f"Could not initialize git repository: {e}")
+            self.repo = None
     
     def analyze_file_changes(self, file_path: str) -> List[CodeChange]:
         """Analyze changes in a specific file"""
@@ -201,8 +248,8 @@ class DocumentationGenerator:
     
     def __init__(self, openai_api_key: Optional[str] = None):
         self.openai_api_key = openai_api_key or os.getenv('OPENAI_API_KEY')
-        if self.openai_api_key:
-            openai.api_key = self.openai_api_key
+        if self.openai_api_key and OPENAI_AVAILABLE:
+            cast(Any, openai).api_key = self.openai_api_key
     
     async def generate_function_documentation(self, 
                                             function_info: Dict[str, Any],
@@ -231,8 +278,8 @@ class DocumentationGenerator:
             Format as Markdown.
             """
             
-            if self.openai_api_key:
-                response = await openai.ChatCompletion.acreate(
+            if self.openai_api_key and OPENAI_AVAILABLE:
+                response = await cast(Any, openai).ChatCompletion.acreate(
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": "You are a technical documentation expert."},
@@ -253,7 +300,8 @@ class DocumentationGenerator:
     
     def _generate_template_documentation(self, function_info: Dict[str, Any]) -> str:
         """Generate documentation using templates when AI is not available"""
-        template = Template("""
+        if JINJA_AVAILABLE and Template is not None:
+            template = Template("""
 ## {{ function_name }}
 
 {{ description }}
@@ -273,13 +321,37 @@ result = {{ function_name }}({{ args|join(', ') }})
 
 ### Notes
 Additional notes and considerations.
-        """)
-        
-        return template.render(
-            function_name=function_info.get('name', 'Unknown'),
-            description=function_info.get('docstring', 'Function description needed'),
-            args=function_info.get('args', [])
-        )
+            """)
+            return template.render(
+                function_name=function_info.get('name', 'Unknown'),
+                description=function_info.get('docstring', 'Function description needed'),
+                args=function_info.get('args', [])
+            )
+        else:
+            # Simple string format fallback
+            fn = function_info.get('name', 'Unknown')
+            desc = function_info.get('docstring', 'Function description needed')
+            args = function_info.get('args', [])
+            params = "\n".join([f"- `{a}`: Description needed" for a in args])
+            return f"""
+## {fn}
+
+{desc}
+
+### Parameters
+{params}
+
+### Returns
+Return value description needed
+
+### Example
+```python
+result = {fn}({', '.join(args)})
+```
+
+### Notes
+Additional notes and considerations.
+"""
     
     async def update_documentation_with_meeting_insights(self, 
                                                         original_content: str,
@@ -313,7 +385,9 @@ Additional notes and considerations.
             Return the updated documentation in the same format.
             """
             
-            response = await openai.ChatCompletion.acreate(
+            if not (self.openai_api_key and OPENAI_AVAILABLE):
+                return self._manual_insight_integration(original_content, insights)
+            response = await cast(Any, openai).ChatCompletion.acreate(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a technical documentation expert helping maintain accurate and up-to-date documentation."},
@@ -764,3 +838,6 @@ if __name__ == "__main__":
     
     # Run test
     asyncio.run(test_documentation())
+
+# Alias for compatibility
+SmartDocumentationSystem = DocumentationManager

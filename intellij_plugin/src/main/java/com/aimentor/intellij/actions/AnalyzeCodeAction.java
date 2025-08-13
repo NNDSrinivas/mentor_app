@@ -5,7 +5,7 @@ import com.aimentor.intellij.ui.AIMentorResponseDialog;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
@@ -22,7 +22,11 @@ public class AnalyzeCodeAction extends AnAction {
         Project project = e.getProject();
         if (project == null) return;
         
-        AIMentorService service = ServiceManager.getService(project, AIMentorService.class);
+        AIMentorService service = project.getService(AIMentorService.class);
+        if (service == null) {
+            Messages.showErrorDialog(project, "AI Mentor service is unavailable.", "AI Mentor Error");
+            return;
+        }
         service.setProject(project);
         
         Editor editor = e.getData(CommonDataKeys.EDITOR);
@@ -30,11 +34,14 @@ public class AnalyzeCodeAction extends AnAction {
         
         String codeToAnalyze = null;
         String fileName = null;
-        String fileType = null;
+    String fileType = null;
         
         if (editor != null && editor.getSelectionModel().hasSelection()) {
             // Analyze selected code
             codeToAnalyze = editor.getSelectionModel().getSelectedText();
+            if (codeToAnalyze == null) {
+                codeToAnalyze = ""; // guard null
+            }
         } else if (editor != null && psiFile != null) {
             // Analyze entire file
             codeToAnalyze = editor.getDocument().getText();
@@ -54,24 +61,31 @@ public class AnalyzeCodeAction extends AnAction {
             return;
         }
         
-        // Perform code analysis
-        service.analyzeCode(codeToAnalyze, fileName, fileType)
+    // Ensure language hint is non-null (fallback to 'plaintext')
+    String language = fileType != null ? fileType : "plaintext";
+
+    // Perform code analysis
+    service.analyzeCode(codeToAnalyze, language, fileName)
             .thenAccept(analysis -> {
-                AIMentorResponseDialog dialog = new AIMentorResponseDialog(
-                    project,
-                    "Code Analysis Results",
-                    "Analysis for: " + (fileName != null ? fileName : "Selected Code"),
-                    analysis,
-                    codeToAnalyze
-                );
-                dialog.show();
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    AIMentorResponseDialog dialog = new AIMentorResponseDialog(
+                        project,
+                        "Code Analysis Results",
+                        "Analysis for: " + (fileName != null ? fileName : "Selected Code"),
+                        analysis,
+                        codeToAnalyze
+                    );
+                    dialog.show();
+                });
             })
             .exceptionally(throwable -> {
-                Messages.showErrorDialog(
-                    project,
-                    "Failed to analyze code: " + throwable.getMessage(),
-                    "AI Mentor Error"
-                );
+                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                    Messages.showErrorDialog(
+                        project,
+                        "Failed to analyze code: " + throwable.getMessage(),
+                        "AI Mentor Error"
+                    );
+                });
                 return null;
             });
     }

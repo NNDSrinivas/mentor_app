@@ -12,6 +12,14 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
+# Ship-It PR: Add healthz blueprint
+from backend.healthz import bp as healthz_bp
+app.register_blueprint(healthz_bp)
+
+# Ship-It PR: Add middleware for rate limiting and cost tracking
+from backend.middleware import rate_limit, record_cost
+from backend.webhook_signatures import verify_github, verify_jira
+
 # Import functions to avoid circular imports
 def get_backend_components():
     from backend.approvals import approvals
@@ -25,7 +33,8 @@ approvals, on_approval_resolved, start_worker_thread, set_dry_run_mode, get_inte
 start_worker_thread()
 
 # WebSocket connections for real-time notifications
-connected_clients: Set[websockets.WebSocketServerProtocol] = set()
+from typing import Any as _Any
+connected_clients: Set[_Any] = set()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -212,12 +221,12 @@ def jira_comment():
 def gh_webhook():
     """Handle GitHub webhooks"""
     try:
-        # Verify webhook signature if secret is configured
-        if GITHUB_WEBHOOK_SECRET:
-            signature = request.headers.get("X-Hub-Signature-256", "")
-            if not verify_github_signature(request.data, signature):
-                log.warning("Invalid GitHub webhook signature")
-                return "Invalid signature", 401
+        # Ship-It PR: Use new webhook signature verification
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        body = request.get_data()
+        if not verify_github(signature, body):
+            log.warning("Invalid GitHub webhook signature")
+            return "", 401
         
         event = request.headers.get("X-GitHub-Event", "unknown")
         payload = request.get_json(force=True) or {}
@@ -258,6 +267,12 @@ def verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
 def gh_pr_webhook():
     """Handle GitHub PR webhooks for auto-reply suggestions"""
     try:
+        # Ship-It PR: Add webhook signature verification
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        body = request.get_data()
+        if not verify_github(signature, body):
+            return "", 401
+            
         # Import Wave 6 components
         from integrations.github_fetch import get_pr, get_pr_files, get_pr_comments
         from pr_auto_reply import suggest_replies_and_patch
@@ -305,7 +320,8 @@ def gh_pr_webhook():
 def api_draft_adr():
     """Generate ADR (Architecture Decision Record)"""
     try:
-        from doc_agent import draft_adr
+        # Use explicit package path for editor/type checker compatibility
+        from backend.doc_agent import draft_adr
         d = request.get_json(force=True)
         md = draft_adr(d["title"], d.get("context",""), d.get("options",[]), d.get("decision",""), d.get("consequences",[]))
         return jsonify({"markdown": md})
@@ -317,7 +333,7 @@ def api_draft_adr():
 def api_draft_runbook():
     """Generate operational runbook"""
     try:
-        from doc_agent import draft_runbook
+        from backend.doc_agent import draft_runbook
         d = request.get_json(force=True)
         md = draft_runbook(d["service"], d.get("incidents",[]), d.get("commands",[]), d.get("dashboards",[]))
         return jsonify({"markdown": md})
@@ -329,7 +345,7 @@ def api_draft_runbook():
 def api_draft_changelog():
     """Generate changelog from merged PRs"""
     try:
-        from doc_agent import draft_changelog
+        from backend.doc_agent import draft_changelog
         d = request.get_json(force=True)
         md = draft_changelog(d["repo"], d.get("merged_prs",[]))
         return jsonify({"markdown": md})
@@ -339,10 +355,14 @@ def api_draft_changelog():
 
 # --- Wave 7 Mobile Relay Endpoint ---
 @app.route("/api/relay/mobile", methods=['POST'])
+@rate_limit('meeting')
 def relay_mobile():
     """Relay messages to mobile WebSocket clients during stealth mode"""
     try:
         payload = request.get_json(force=True) or {}
+        # Ship-It PR: Record cost for mobile relay
+        record_cost(tokens=100)  # Estimate for mobile relay
+        
         # broadcast to mobile WS clients
         notify_all({
             "channel": "mobile",

@@ -1,6 +1,6 @@
 // mobile/App.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -20,10 +20,10 @@ import * as Haptics from 'expo-haptics';
 const Stack = createStackNavigator();
 
 interface Answer {
-  id: string;
+  id?: string;
   question: string;
   answer: string;
-  timestamp: string;
+  timestamp?: string; // allow missing timestamp safely
   userLevel: string;
   memoryContextUsed?: boolean;
 }
@@ -35,17 +35,31 @@ function HomeScreen({ navigation }: any) {
   const [serverUrl, setServerUrl] = useState('http://192.168.1.100:8080'); // Default local IP
   const [userLevel, setUserLevel] = useState('IC5');
   const [refreshing, setRefreshing] = useState(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     // Auto-connect on app start
     if (!sessionId) {
       startSession();
     }
+    // Cleanup on unmount
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    };
   }, []);
+
+  // Helper to normalize and guard base URL
+  const normalizeBaseUrl = (url: string) => {
+    const trimmed = url.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(trimmed)) return `http://${trimmed}`;
+    return trimmed;
+  };
 
   const startSession = async () => {
     try {
-      const response = await fetch(`${serverUrl}/api/sessions`, {
+      const base = normalizeBaseUrl(serverUrl);
+      const response = await fetch(`${base}/api/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -55,45 +69,93 @@ function HomeScreen({ navigation }: any) {
         })
       });
 
-      if (!response.ok) throw new Error('Failed to create session');
+      if (!response.ok) throw new Error(`Failed to create session (${response.status})`);
 
       const data = await response.json();
-      setSessionId(data.session_id);
+      const newSessionId = data.session_id || data.id || data.sessionId;
+      if (!newSessionId) throw new Error('Server did not return a session id');
+
+      setSessionId(newSessionId);
       setIsConnected(true);
-      
+
       // Start polling for answers
-      startPolling(data.session_id);
-      
+      startPolling(newSessionId, base);
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Connected', 'AI Interview Assistant is ready');
-      
+
     } catch (error) {
       console.error('Failed to start session:', error);
+      setIsConnected(false);
       Alert.alert('Connection Failed', 'Please check your server URL and try again');
     }
   };
 
-  const startPolling = (sessionId: string) => {
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`${serverUrl}/api/sessions/${sessionId}/answers`);
-        if (response.ok) {
-          const data = await response.json();
-          setAnswers(data.answers || []);
-        }
-      } catch (error) {
-        console.error('Polling error:', error);
-        // Continue polling despite errors
-      }
-    }, 3000); // Poll every 3 seconds
+  // Normalize backend answer shape (snake_case) to app's camelCase Answer
+  const normalizeAnswer = useCallback((raw: any, idx: number): Answer => {
+    const userLevel = raw?.userLevel || raw?.user_level || 'IC5';
+    const memoryContextUsed =
+      typeof raw?.memoryContextUsed !== 'undefined'
+        ? !!raw.memoryContextUsed
+        : !!raw?.memory_context_used;
+    const id = raw?.id || `${idx}-${raw?.timestamp || Date.now()}`;
+    return {
+      id,
+      question: raw?.question || '',
+      answer: raw?.answer || '',
+      timestamp: raw?.timestamp,
+      userLevel,
+      memoryContextUsed,
+    };
+  }, []);
 
-    // Store interval for cleanup
-    (global as any).pollInterval = pollInterval;
+  const startPolling = (sid: string, baseUrl?: string) => {
+    const base = baseUrl ?? normalizeBaseUrl(serverUrl);
+
+    // Clear any existing poller
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
+    // Immediate fetch then interval
+    const fetchAnswers = async () => {
+      try {
+        const resp = await fetch(`${base}/api/sessions/${encodeURIComponent(sid)}/answers`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (Array.isArray(data.answers)) {
+            setAnswers(data.answers.map((a: any, i: number) => normalizeAnswer(a, i)));
+          }
+        } else {
+          // If server doesn’t have this endpoint, avoid spamming errors
+          if (resp.status === 404) {
+            console.warn('Answers endpoint not found. Consider using SSE stream per backend docs.');
+          }
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    };
+
+    fetchAnswers();
+    pollIntervalRef.current = setInterval(fetchAnswers, 3000);
   };
 
-  const endSession = () => {
-    if ((global as any).pollInterval) {
-      clearInterval((global as any).pollInterval);
+  const endSession = async () => {
+    const base = normalizeBaseUrl(serverUrl);
+    const sid = sessionId;
+    if (sid) {
+      try {
+        await fetch(`${base}/api/sessions/${encodeURIComponent(sid)}`, { method: 'DELETE' });
+      } catch (e) {
+        // Non-fatal; proceed with local cleanup
+        console.warn('Failed to notify server to end session', e);
+      }
+    }
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
     }
     setSessionId(null);
     setIsConnected(false);
@@ -105,10 +167,11 @@ function HomeScreen({ navigation }: any) {
     setRefreshing(true);
     if (sessionId) {
       try {
-        const response = await fetch(`${serverUrl}/api/sessions/${sessionId}/answers`);
+        const base = normalizeBaseUrl(serverUrl);
+        const response = await fetch(`${base}/api/sessions/${encodeURIComponent(sessionId)}/answers`);
         if (response.ok) {
           const data = await response.json();
-          setAnswers(data.answers || []);
+          setAnswers(Array.isArray(data.answers) ? data.answers.map((a: any, i: number) => normalizeAnswer(a, i)) : []);
         }
       } catch (error) {
         console.error('Refresh error:', error);
@@ -122,6 +185,16 @@ function HomeScreen({ navigation }: any) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert('Copied', 'Answer copied to clipboard');
   };
+
+  const safeTime = useCallback((ts?: string) => {
+    try {
+      if (!ts) return '';
+      const d = new Date(ts);
+      return isNaN(d.getTime()) ? '' : d.toLocaleTimeString();
+    } catch {
+      return '';
+    }
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -210,7 +283,7 @@ function HomeScreen({ navigation }: any) {
                 {answer.answer}
               </Text>
               <Text style={styles.answerTime}>
-                {new Date(answer.timestamp).toLocaleTimeString()}
+                {safeTime(answer.timestamp)}
               </Text>
             </TouchableOpacity>
           ))
@@ -235,13 +308,23 @@ function AnswerDetailScreen({ route }: any) {
     Alert.alert('Copied', 'Answer copied to clipboard');
   };
 
+  const detailTime = (() => {
+    try {
+      if (!answer.timestamp) return '';
+      const d = new Date(answer.timestamp);
+      return isNaN(d.getTime()) ? '' : d.toLocaleString();
+    } catch {
+      return '';
+    }
+  })();
+
   return (
     <View style={styles.container}>
       <ScrollView style={styles.detailContainer}>
         <View style={styles.detailHeader}>
           <Text style={styles.detailLevel}>{answer.userLevel}</Text>
           <Text style={styles.detailTime}>
-            {new Date(answer.timestamp).toLocaleString()}
+            {detailTime}
           </Text>
           {answer.memoryContextUsed && (
             <Text style={styles.contextIndicator}>📚 Context-aware</Text>

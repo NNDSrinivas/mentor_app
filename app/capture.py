@@ -13,9 +13,52 @@ import threading
 from datetime import datetime
 from typing import Any, Tuple, Optional
 
-import sounddevice as sd
-import scipy.io.wavfile as wav
-import numpy as np
+# Optional audio processing imports
+try:
+    import sounddevice as sd
+    import scipy.io.wavfile as wav
+    import numpy as np
+    AUDIO_AVAILABLE = True
+except ImportError:
+    AUDIO_AVAILABLE = False
+    # Mock modules for when audio libs not available
+    class MockSoundDevice:
+        def __init__(self): pass
+        def rec(self, *args, **kwargs): return []
+        def wait(self): pass
+        def stop(self, *args): pass
+        class InputStream:
+            def __init__(self, *args, **kwargs): pass
+            def start(self): pass
+            def stop(self): pass
+            def close(self): pass
+        InputStream = InputStream
+        @property
+        def default(self): return MockDevice()
+        
+    class MockDevice:
+        @property  
+        def device(self): return 0
+        @property
+        def channels(self): return 1
+        @property
+        def samplerate(self): return 44100
+        
+    class MockWav:
+        @staticmethod
+        def write(filename, rate, data): pass
+        
+    class MockNumpy:
+        @staticmethod
+        def zeros(*args, **kwargs): return []
+        @staticmethod
+        def concatenate(seq, axis=0): return []
+        float32 = float
+        int16 = int
+        
+    sd = MockSoundDevice()
+    wav = MockWav()
+    np = MockNumpy()
 
 from .config import Config
 
