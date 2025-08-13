@@ -88,7 +88,8 @@
         {
           "id": "aiInterviewAssistant",
           "name": "Interview Assistant",
-          "when": "aiInterviewAssistant.sessionActive"
+          "when": "aiInterviewAssistant.sessionActive",
+          "icon": "$(mortar-board)"
         }
       ]
     },
