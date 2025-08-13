@@ -385,7 +385,8 @@ def ask_question():
         })
         
     except Exception as e:
-        print(f"Error generating response: {e}")
+        if not interview_mode:
+            print(f"Error generating response: {e}")
         return jsonify({'error': 'Failed to generate response'}), 500
 
 @app.route('/api/resume', methods=['POST'])

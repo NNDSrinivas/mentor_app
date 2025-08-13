@@ -11,11 +11,13 @@ import {
   StatusBar,
   TextInput,
   RefreshControl,
+  Switch,
 } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import * as ScreenCapture from 'expo-screen-capture';
 
 const Stack = createStackNavigator();
 
@@ -35,6 +37,7 @@ function HomeScreen({ navigation }: any) {
   const [serverUrl, setServerUrl] = useState('http://192.168.1.100:8080'); // Default local IP
   const [userLevel, setUserLevel] = useState('IC5');
   const [refreshing, setRefreshing] = useState(false);
+  const [interviewMode, setInterviewMode] = useState(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -48,6 +51,14 @@ function HomeScreen({ navigation }: any) {
       pollIntervalRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (interviewMode) {
+      ScreenCapture.preventScreenCaptureAsync().catch(() => {});
+    } else {
+      ScreenCapture.allowScreenCaptureAsync().catch(() => {});
+    }
+  }, [interviewMode]);
 
   // Helper to normalize and guard base URL
   const normalizeBaseUrl = (url: string) => {
@@ -65,7 +76,8 @@ function HomeScreen({ navigation }: any) {
         body: JSON.stringify({
           user_level: userLevel,
           meeting_type: 'technical_interview',
-          user_name: 'mobile_user'
+          user_name: 'mobile_user',
+          interview_mode: interviewMode
         })
       });
 
@@ -229,6 +241,10 @@ function HomeScreen({ navigation }: any) {
                 </Text>
               </TouchableOpacity>
             ))}
+          </View>
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleLabel}>Interview Mode</Text>
+            <Switch value={interviewMode} onValueChange={setInterviewMode} />
           </View>
           <TouchableOpacity style={styles.connectButton} onPress={startSession}>
             <Text style={styles.connectButtonText}>Connect</Text>
@@ -426,6 +442,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  toggleLabel: {
+    color: '#fff',
+    fontSize: 16,
   },
   levelButton: {
     flex: 1,
