@@ -1,20 +1,6 @@
 # AI Mentor – Interview Assistant (Practical Guide)
 
-This repo implements an AI interview assistant you can r## Not- K- - K- Knowledge base persists to `data/chroma_db/`. Don't commit that directory.
-- Resume storage persists in a local SQLite database; your resume survives backend restarts.
-- Advanced features under `backend/` are imported defensively and the app runs without them.edge base persists to `data/chroma_db/`. Don't commit that directory.
-- Resume storage persists in a local SQLite database; your resume survives backend restarts.
-- Advanced features under `backend/` are imported defensively and the app runs without them.
-- `start_mentor_app.py` can start the Q&A service, but it references a bridge file not present. Prefer running the two services directly as shown above.e base persists to `data/chroma_db/`. Don't commit that directory.
-- Resume storage persists in a local SQLite database; your resume survives backend restarts.
-- Advanced features under `backend/` are imported defensively and the app runs without them.e base persists to `data/chroma_db/`. Don't commit that directory.
-- Resume storage persists in a local SQLite database; your resume survives backend restarts.
-- Advanced features under `backend/` are imported defensively and the app runs without them.
-- `start_mentor_app.py` can start the Q&A service, but it references a bridge file not present. Prefer running the two services directly as shown above.dge base persists to `data/chroma_db/`. Don't commit that directory.
-- Resume storage persists in a local SQLite database; your resume survives backend restarts.
-- Advanced features under `backend/` are imported defensively and the app runs without them.nowledge base persists to `data/chroma_db/`. Don't commit that directory.
-- Resume storage persists in a local SQLite database; your resume survives backend restarts.
-- Advanced features under `backend/` are imported defensively and the app runs without them.y across three surfaces: a Flask Q&A API, a realtime session service for meetings, and optional clients (Chrome overlay, mobile app, IDE plugins).
+This repo implements an AI interview assistant you can run locally across three surfaces: a Flask Q&A API, a realtime session service for meetings, and optional clients (Chrome overlay, mobile app, IDE plugins).
 
 The README has been aligned with the actual code so you can run it end-to-end today.
 
@@ -124,7 +110,6 @@ Edit `.env` (copied from `.env.template`):
 ## Notes
 
 - Knowledge base persists to `data/chroma_db/`. Don’t commit that directory.
-- Resumes persist in the `resumes` table of the SQLite database.
 - Resume storage persists in a local SQLite database; your resume survives backend restarts.
 - Advanced features under `backend/` are imported defensively and the app runs without them.
 - `start_mentor_app.py` can start the Q&A service, but it references a bridge file not present. Prefer running the two services directly as shown above.
