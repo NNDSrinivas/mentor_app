@@ -9,7 +9,10 @@ class ExtensionBridge {
         this.codingContext = null;
         this.isInMeeting = false;
         this.isPairProgramming = false;
+        this.sharedState = {};
+        this.syncInterval = null;
         this.init();
+        this.startSessionSync();
     }
 
     generateSessionId() {
@@ -188,6 +191,34 @@ class ExtensionBridge {
     // CONTEXT SYNCHRONIZATION
     // ===========================================
 
+    startSessionSync() {
+        const syncUrl = `${this.serviceUrl}/api/sessions/${this.sessionId}/sync`;
+        const fetchState = async () => {
+            try {
+                const resp = await fetch(syncUrl);
+                if (resp.ok) {
+                    this.sharedState = await resp.json();
+                }
+            } catch (e) {
+                console.error('Session sync failed:', e);
+            }
+        };
+        fetchState();
+        this.syncInterval = setInterval(fetchState, 5000);
+    }
+
+    async broadcastState() {
+        try {
+            await fetch(`${this.serviceUrl}/api/sessions/${this.sessionId}/sync`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.sharedState)
+            });
+        } catch (e) {
+            console.error('Failed to broadcast session state:', e);
+        }
+    }
+
     async syncContextToService() {
         const fullContext = {
             sessionId: this.sessionId,
@@ -197,6 +228,7 @@ class ExtensionBridge {
             isPairProgramming: this.isPairProgramming,
             timestamp: new Date().toISOString()
         };
+        this.sharedState = { ...this.sharedState, ...fullContext };
 
         try {
             await fetch(`${this.serviceUrl}/api/sync-context`, {
@@ -204,6 +236,7 @@ class ExtensionBridge {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(fullContext)
             });
+            await this.broadcastState();
         } catch (error) {
             console.error('Failed to sync context:', error);
         }

@@ -11,6 +11,7 @@ import uuid
 import time
 import threading
 import queue
+import redis
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Dict
@@ -26,7 +27,6 @@ try:
 except ImportError as e:
     print(f"Knowledge base not available: {e}")
     KNOWLEDGE_BASE_AVAILABLE = False
-import threading
 from queue import Queue
 from typing import Dict, List, Optional
 
@@ -58,6 +58,28 @@ else:
 # Session storage for real-time events
 active_sessions: Dict[str, dict] = {}
 session_queues: Dict[str, queue.Queue] = {}
+redis_client = redis.Redis.from_url(
+    os.getenv('REDIS_URL', 'redis://localhost:6379/0'), decode_responses=True
+)
+
+
+def get_session_state(session_id: str) -> dict:
+    """Retrieve session state from Redis"""
+    try:
+        data = redis_client.get(f'session:{session_id}')
+        if not data:
+            return {}
+        return json.loads(data)
+    except Exception:
+        return {}
+
+
+def set_session_state(session_id: str, state: dict) -> None:
+    """Store session state in Redis"""
+    try:
+        redis_client.set(f'session:{session_id}', json.dumps(state))
+    except Exception as e:
+        print(f"Failed to set session state: {e}")
 
 def init_db():
     """Initialize the database with required tables"""
@@ -969,6 +991,35 @@ def get_session_answers(session_id):
     except Exception as e:
         return jsonify({'error': f'Failed to get answers: {str(e)}'}), 500
 
+
+@app.route('/api/sessions/<session_id>/sync', methods=['GET', 'POST'])
+@token_required
+def sync_session_state(session_id):
+    """Push or pull shared session state"""
+    try:
+        if request.method == 'GET':
+            state = get_session_state(session_id)
+            return jsonify(state), 200
+
+        data = request.get_json(force=True, silent=True) or {}
+        current = get_session_state(session_id)
+        current.update(data)
+        set_session_state(session_id, current)
+
+        event = {
+            'type': 'session_sync',
+            'session_id': session_id,
+            'state': current,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        if session_id not in session_queues:
+            session_queues[session_id] = queue.Queue()
+        session_queues[session_id].put(event)
+        return jsonify({'status': 'ok', 'state': current}), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to sync session: {str(e)}'}), 500
+
 @app.route('/api/sessions/<session_id>/memory', methods=['GET'])
 @require_auth
 def get_conversation_memory(session_id):
@@ -1172,12 +1223,13 @@ def stream_session_events(session_id):
         def event_stream():
             """Generator function for SSE events"""
             # Send initial connection event
-            yield f"data: {json.dumps({
+            initial_event = {
                 'type': 'connected',
                 'session_id': session_id,
                 'timestamp': datetime.utcnow().isoformat(),
                 'message': 'Connected to real-time stream'
-            })}\\n\\n"
+            }
+            yield f"data: {json.dumps(initial_event)}\\n\\n"
             
             # Create a queue for this client if session doesn't exist
             if session_id not in session_queues:
@@ -1193,17 +1245,19 @@ def stream_session_events(session_id):
                         yield f"data: {json.dumps(event)}\\n\\n"
                     except queue.Empty:
                         # Send heartbeat to keep connection alive
-                        yield f"data: {json.dumps({
+                        heartbeat = {
                             'type': 'heartbeat',
                             'timestamp': datetime.utcnow().isoformat()
-                        })}\\n\\n"
+                        }
+                        yield f"data: {json.dumps(heartbeat)}\\n\\n"
                     except Exception as e:
                         # Send error event and break
-                        yield f"data: {json.dumps({
+                        error_event = {
                             'type': 'error',
                             'message': str(e),
                             'timestamp': datetime.utcnow().isoformat()
-                        })}\\n\\n"
+                        }
+                        yield f"data: {json.dumps(error_event)}\\n\\n"
                         break
             except GeneratorExit:
                 # Client disconnected

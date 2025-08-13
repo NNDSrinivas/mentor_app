@@ -53,10 +53,14 @@ class AIMentorProvider {
         this.currentTask = null;
         this.meetingContext = null;
         this.isPairProgramming = false;
+        this.sharedState = {};
+        this.syncInterval = null;
         this.context = context;
         this.jiraClient = new JiraClient();
         this.statusBarItem = this.createStatusBar();
         this.extensionBridge = new ExtensionBridge(this);
+        this.sessionId = `vscode_${Date.now()}`;
+        this.startSessionSync();
     }
     createStatusBar() {
         const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -65,6 +69,31 @@ class AIMentorProvider {
         statusBarItem.command = 'aiMentor.askQuestion';
         statusBarItem.show();
         return statusBarItem;
+    }
+    startSessionSync() {
+        const serviceUrl = this.extensionBridge.getServiceUrl();
+        const syncUrl = `${serviceUrl}/api/sessions/${this.sessionId}/sync`;
+        const fetchState = async () => {
+            try {
+                const resp = await axios_1.default.get(syncUrl);
+                this.sharedState = resp.data;
+            }
+            catch (e) {
+                console.error('Session sync failed', e);
+            }
+        };
+        fetchState();
+        this.syncInterval = setInterval(fetchState, 5000);
+    }
+    async broadcastState() {
+        const serviceUrl = this.extensionBridge.getServiceUrl();
+        const syncUrl = `${serviceUrl}/api/sessions/${this.sessionId}/sync`;
+        try {
+            await axios_1.default.post(syncUrl, this.sharedState);
+        }
+        catch (e) {
+            console.error('Failed to broadcast state', e);
+        }
     }
     async startCodingSessionMonitoring() {
         // Monitor file changes, errors, and coding patterns
@@ -263,7 +292,17 @@ class AIMentorProvider {
                 question: prompt,
                 context: context
             });
-            return response.data.response;
+            const answer = response.data.response;
+            if (!this.sharedState.answers) {
+                this.sharedState.answers = [];
+            }
+            this.sharedState.answers.push({
+                question: prompt,
+                answer: answer,
+                timestamp: new Date().toISOString()
+            });
+            await this.broadcastState();
+            return answer;
         }
         catch (error) {
             console.error('AI Mentor error:', error);
@@ -494,6 +533,9 @@ class ExtensionBridge {
         this.aiMentor = aiMentor;
         const config = vscode.workspace.getConfiguration('aiMentor');
         this.serviceUrl = config.get('mentorServiceUrl', 'http://localhost:8080');
+    }
+    getServiceUrl() {
+        return this.serviceUrl;
     }
     startListening() {
         // Poll for messages from browser extension every 2 seconds
