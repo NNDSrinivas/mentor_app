@@ -21,5 +21,8 @@ gunicorn==21.2.0
 # File processing
 PyPDF2==3.0.1
 
+# Payments
+stripe==5.0.0
+
 # Database (SQLite built-in to Python)
 # No additional database dependencies needed

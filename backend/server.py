@@ -21,6 +21,7 @@ app.register_blueprint(healthz_bp)
 # Ship-It PR: Add middleware for rate limiting and cost tracking
 from backend.middleware import rate_limit, record_cost
 from backend.webhook_signatures import verify_github, verify_jira
+from backend.payments import subscription_required, handle_webhook as handle_stripe_webhook
 
 # Import functions to avoid circular imports
 def get_backend_components():
@@ -57,6 +58,7 @@ def health():
 
 # --- Approvals REST API ---
 @app.route("/api/approvals", methods=['GET'])
+@subscription_required
 def list_approvals():
     """List all pending approvals"""
     try:
@@ -67,6 +69,7 @@ def list_approvals():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/approvals/<approval_id>", methods=['GET'])
+@subscription_required
 def get_approval(approval_id: str):
     """Get specific approval details"""
     try:
@@ -79,6 +82,7 @@ def get_approval(approval_id: str):
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/approvals/resolve", methods=['POST'])
+@subscription_required
 def resolve_approval():
     """Resolve (approve/reject) an approval request"""
     try:
@@ -113,6 +117,7 @@ def resolve_approval():
 
 # --- GitHub Integration Endpoints ---
 @app.route("/api/github/pr", methods=['POST'])
+@subscription_required
 def github_pr():
     """Submit GitHub PR creation for approval"""
     try:
@@ -136,6 +141,7 @@ def github_pr():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/github/comment", methods=['POST'])
+@subscription_required
 def github_comment():
     """Submit GitHub comment for approval"""
     try:
@@ -152,6 +158,7 @@ def github_comment():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/github/issue", methods=['POST'])
+@subscription_required
 def github_issue():
     """Submit GitHub issue creation for approval"""
     try:
@@ -169,6 +176,7 @@ def github_issue():
 
 # --- Jira Integration Endpoints ---
 @app.route("/api/jira/create", methods=['POST'])
+@subscription_required
 def jira_create():
     """Submit Jira issue creation for approval"""
     try:
@@ -190,6 +198,7 @@ def jira_create():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/jira/update", methods=['POST'])
+@subscription_required
 def jira_update():
     """Submit Jira issue update for approval"""
     try:
@@ -206,6 +215,7 @@ def jira_update():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/jira/comment", methods=['POST'])
+@subscription_required
 def jira_comment():
     """Submit Jira comment for approval"""
     try:
@@ -223,6 +233,7 @@ def jira_comment():
 
 # --- Code Generation Endpoint ---
 @app.route("/api/codegen", methods=["POST"])
+@subscription_required
 def codegen():
     """Generate code for a task and open a PR"""
     try:
@@ -329,6 +340,19 @@ def verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
     provided_signature = signature_header[7:]  # Remove 'sha256=' prefix
     return hmac.compare_digest(expected_signature, provided_signature)
 
+# --- Stripe Webhook ---
+@app.route("/webhook/stripe", methods=['POST'])
+def stripe_webhook():
+    """Handle Stripe subscription and invoice webhooks"""
+    payload = request.get_data()
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        handle_stripe_webhook(payload, sig)
+    except Exception as e:
+        log.error(f"Error handling Stripe webhook: {e}")
+        return "", 400
+    return "", 204
+
 # --- Wave 6 PR Auto-Reply Webhook ---
 @app.route("/webhook/github/pr", methods=['POST'])
 def gh_pr_webhook():
@@ -384,6 +408,7 @@ def gh_pr_webhook():
 
 # --- Wave 6 Documentation API ---
 @app.route("/api/docs/adr", methods=['POST'])
+@subscription_required
 def api_draft_adr():
     """Generate ADR (Architecture Decision Record)"""
     try:
@@ -397,6 +422,7 @@ def api_draft_adr():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/docs/runbook", methods=['POST'])
+@subscription_required
 def api_draft_runbook():
     """Generate operational runbook"""
     try:
@@ -409,6 +435,7 @@ def api_draft_runbook():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/docs/changelog", methods=['POST'])
+@subscription_required
 def api_draft_changelog():
     """Generate changelog from merged PRs"""
     try:
@@ -422,6 +449,7 @@ def api_draft_changelog():
 
 # --- Wave 7 Mobile Relay Endpoint ---
 @app.route("/api/relay/mobile", methods=['POST'])
+@subscription_required
 @rate_limit('meeting')
 def relay_mobile():
     """Relay messages to mobile WebSocket clients during stealth mode"""
