@@ -6,7 +6,6 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.command.WriteCommandAction;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -24,7 +23,11 @@ public class GenerateCodeAction extends AnAction {
         Project project = e.getProject();
         if (project == null) return;
         
-        AIMentorService service = ServiceManager.getService(project, AIMentorService.class);
+        AIMentorService service = project.getService(AIMentorService.class);
+        if (service == null) {
+            Messages.showErrorDialog(project, "AI Mentor service is unavailable.", "AI Mentor Error");
+            return;
+        }
         service.setProject(project);
         
         Editor editor = e.getData(CommonDataKeys.EDITOR);
@@ -58,44 +61,48 @@ public class GenerateCodeAction extends AnAction {
             // Generate code
             service.generateCodeForTask(taskDescription, fileName, fileType, existingCode, codeStyle, includeTests)
                 .thenAccept(generatedCode -> {
-                    if (generatedCode != null && !generatedCode.trim().isEmpty()) {
-                        if (editor != null && replaceSelection) {
-                            // Insert/replace code in editor
-                            WriteCommandAction.runWriteCommandAction(project, () -> {
-                                Document document = editor.getDocument();
-                                if (editor.getSelectionModel().hasSelection()) {
-                                    // Replace selection
-                                    int start = editor.getSelectionModel().getSelectionStart();
-                                    int end = editor.getSelectionModel().getSelectionEnd();
-                                    document.replaceString(start, end, generatedCode);
-                                } else {
-                                    // Insert at cursor
-                                    int offset = editor.getCaretModel().getOffset();
-                                    document.insertString(offset, generatedCode);
-                                }
-                            });
+                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                        if (generatedCode != null && !generatedCode.trim().isEmpty()) {
+                            if (editor != null && replaceSelection) {
+                                // Insert/replace code in editor
+                                WriteCommandAction.runWriteCommandAction(project, () -> {
+                                    Document document = editor.getDocument();
+                                    if (editor.getSelectionModel().hasSelection()) {
+                                        // Replace selection
+                                        int start = editor.getSelectionModel().getSelectionStart();
+                                        int end = editor.getSelectionModel().getSelectionEnd();
+                                        document.replaceString(start, end, generatedCode);
+                                    } else {
+                                        // Insert at cursor
+                                        int offset = editor.getCaretModel().getOffset();
+                                        document.insertString(offset, generatedCode);
+                                    }
+                                });
+                            } else {
+                                // Show generated code in dialog for review
+                                Messages.showInfoMessage(
+                                    project,
+                                    "Generated code:\n\n" + generatedCode,
+                                    "Generated Code"
+                                );
+                            }
                         } else {
-                            // Show generated code in dialog for review
-                            Messages.showInfoMessage(
+                            Messages.showWarningDialog(
                                 project,
-                                "Generated code:\n\n" + generatedCode,
-                                "Generated Code"
+                                "No code was generated. Please try with a more specific task description.",
+                                "Code Generation"
                             );
                         }
-                    } else {
-                        Messages.showWarningDialog(
-                            project,
-                            "No code was generated. Please try with a more specific task description.",
-                            "Code Generation"
-                        );
-                    }
+                    });
                 })
                 .exceptionally(throwable -> {
-                    Messages.showErrorDialog(
-                        project,
-                        "Failed to generate code: " + throwable.getMessage(),
-                        "AI Mentor Error"
-                    );
+                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                        Messages.showErrorDialog(
+                            project,
+                            "Failed to generate code: " + throwable.getMessage(),
+                            "AI Mentor Error"
+                        );
+                    });
                     return null;
                 });
         }

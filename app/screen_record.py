@@ -11,12 +11,107 @@ import os
 import time
 import threading
 from datetime import datetime
-from typing import List, Any, Dict, Optional, Tuple
+from typing import List, Any, Dict, Optional, Tuple, cast
 
-import cv2
-import numpy as np
-from PIL import Image, ImageGrab
-import pytesseract
+# Optional computer vision imports
+try:
+    import cv2
+    import numpy as np
+    from PIL import Image, ImageGrab
+    import pytesseract
+    CV2_AVAILABLE = True
+    PIL_AVAILABLE = True
+    OCR_AVAILABLE = True
+    NUMPY_AVAILABLE = True
+    
+    # Real numpy types for type hints
+    from numpy.typing import NDArray
+    from typing import Union, Any
+    ArrayType = Union[NDArray, list]  # Proper type union
+    
+except ImportError:
+    # Create proper type unions for when dependencies are missing
+    from typing import List, Union, Any
+    ArrayType = Union[List[Any], Any]  # Use proper type for annotations
+    
+    # Determine which modules are missing
+    try:
+        import cv2
+        CV2_AVAILABLE = True
+    except ImportError:
+        CV2_AVAILABLE = False
+        # Mock cv2 for when OpenCV not available
+        class MockCv2:
+            def __init__(self):
+                self.INTER_AREA = 0
+                self.COLOR_BGR2RGB = 0
+                self.COLOR_RGB2BGR = 0
+                self.COLOR_BGR2GRAY = 0
+                self.RETR_EXTERNAL = 0
+                self.CHAIN_APPROX_SIMPLE = 0
+            def resize(self, *args, **kwargs): return []
+            def cvtColor(self, *args, **kwargs): return []
+            def VideoWriter(self, *args, **kwargs): return MockVideoWriter()
+            def VideoWriter_fourcc(self, *args): return 0
+            def Canny(self, *args, **kwargs): return []
+            def findContours(self, *args, **kwargs): return ([], None)
+            def contourArea(self, *args, **kwargs): return 0
+            def boundingRect(self, *args, **kwargs): return (0, 0, 0, 0)
+            def VideoCapture(self, *args, **kwargs): return MockVideoCapture()
+            CAP_PROP_FRAME_COUNT = 0
+            CAP_PROP_FPS = 0
+        cv2 = MockCv2()
+        
+        class MockVideoWriter:
+            def write(self, *args): pass
+            def release(self): pass
+        class MockVideoCapture:
+            def __init__(self, *args, **kwargs): pass
+            def get(self, *args, **kwargs): return 0
+            def read(self): return (False, [])
+            def release(self): pass
+
+    try:
+        import numpy as np
+        NUMPY_AVAILABLE = True
+    except ImportError:
+        NUMPY_AVAILABLE = False
+        class MockNumpy:
+            @staticmethod
+            def array(*args, **kwargs): return []
+            uint8 = int
+        np = MockNumpy()
+
+    try:
+        from PIL import Image, ImageGrab
+        PIL_AVAILABLE = True
+    except ImportError:
+        PIL_AVAILABLE = False
+        class MockImage:
+            @staticmethod
+            def fromarray(*args, **kwargs): return MockPILImage()
+            @staticmethod
+            def open(*args, **kwargs): return MockPILImage()
+        class MockImageGrab:
+            @staticmethod
+            def grab(*args, **kwargs): return MockPILImage()
+        class MockPILImage:
+            def save(self, *args, **kwargs): pass
+            @property
+            def size(self): return (1920, 1080)
+            def __array__(self, *args, **kwargs): return []
+        Image = MockImage()
+        ImageGrab = MockImageGrab()
+
+    try:
+        import pytesseract
+        OCR_AVAILABLE = True
+    except ImportError:
+        OCR_AVAILABLE = False
+        class MockPytesseract:
+            @staticmethod
+            def image_to_string(*args, **kwargs): return "OCR not available"
+        pytesseract = MockPytesseract()
 
 from .config import Config
 
@@ -71,7 +166,8 @@ class ScreenRecorder:
             try:
                 # Capture screenshot
                 screenshot = ImageGrab.grab()
-                frame = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+                # Casts help Pylance when mocks are used
+                frame = cast(Any, cv2).cvtColor(cast(Any, np).array(screenshot), cast(Any, cv2).COLOR_RGB2BGR)
                 self.frames.append(frame)
                 
                 # Wait for next frame
@@ -88,15 +184,15 @@ class ScreenRecorder:
             
         # Get frame dimensions
         height, width, _ = self.frames[0].shape
-        
+
         # Define codec and create VideoWriter
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(self.output_path, fourcc, self.fps, (width, height))
-        
+        fourcc = getattr(cv2, "VideoWriter_fourcc", lambda *a, **k: 0)(*'mp4v')
+        out = cast(Any, cv2).VideoWriter(self.output_path, fourcc, self.fps, (width, height))
+
         # Write frames
         for frame in self.frames:
             out.write(frame)
-        
+
         out.release()
 
 
@@ -126,7 +222,7 @@ class ScreenAnalyzer:
             logger.error(f"OCR failed for {image_path}: {str(e)}")
             return f"OCR failed: {str(e)}"
     
-    def extract_text_from_frame(self, frame: np.ndarray) -> str:
+    def extract_text_from_frame(self, frame: Any) -> str:
         """Extract text from video frame.
         
         Args:
@@ -137,8 +233,8 @@ class ScreenAnalyzer:
         """
         try:
             # Convert BGR to RGB for PIL
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            image = Image.fromarray(rgb_frame)
+            rgb_frame = cast(Any, cv2).cvtColor(frame, cast(Any, cv2).COLOR_BGR2RGB)
+            image = cast(Any, Image).fromarray(rgb_frame)
             text = pytesseract.image_to_string(image)
             return text.strip()
             
@@ -205,7 +301,7 @@ class ScreenAnalyzer:
             logger.error(f"Video analysis failed for {video_path}: {str(e)}")
             return {"error": str(e)}
     
-    def detect_ui_elements(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+    def detect_ui_elements(self, frame: Any) -> List[Dict[str, Any]]:
         """Detect UI elements in a frame (basic implementation).
         
         Args:
@@ -218,13 +314,13 @@ class ScreenAnalyzer:
         
         try:
             # Convert to grayscale for processing
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = cast(Any, cv2).cvtColor(frame, cast(Any, cv2).COLOR_BGR2GRAY)
             
             # Simple edge detection
-            edges = cv2.Canny(gray, 50, 150)
+            edges = cast(Any, cv2).Canny(gray, 50, 150)
             
             # Find contours (basic button/window detection)
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cast(Any, cv2).findContours(edges, cast(Any, cv2).RETR_EXTERNAL, cast(Any, cv2).CHAIN_APPROX_SIMPLE)
             
             for contour in contours:
                 area = cv2.contourArea(contour)

@@ -3,19 +3,21 @@
 import os
 import tempfile
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, cast
 
 try:
     import torch
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
+    torch = None  # type: ignore
 
 try:
     import whisper
     WHISPER_AVAILABLE = True
 except ImportError:
     WHISPER_AVAILABLE = False
+    whisper = None  # type: ignore
 
 log = logging.getLogger(__name__)
 
@@ -28,18 +30,19 @@ class DiarizationService:
     For production, consider using WhisperX when it supports Python 3.13.
     """
 
-    def __init__(self, device: str = None, hf_token: str = None):
-        self.device = device or ("cuda" if TORCH_AVAILABLE and torch.cuda.is_available() else "cpu")
+    def __init__(self, device: Optional[str] = None, hf_token: Optional[str] = None):
+        self.device = device or ("cuda" if TORCH_AVAILABLE and cast(Any, torch).cuda.is_available() else "cpu")
         self.hf_token = hf_token or os.getenv("HUGGINGFACE_TOKEN")
         
         # For now, use a simple speaker assignment strategy
         # In production, this would be replaced with proper diarization
         self.known_speakers = ["interviewer", "candidate", "team_member"]
         self.current_speaker_index = 0
-        
+
+        # Initialize whisper model if available
         if WHISPER_AVAILABLE:
             try:
-                self.model = whisper.load_model("base")
+                self.model = cast(Any, whisper).load_model("base")
                 log.info(f"Loaded Whisper model on {self.device}")
             except Exception as e:
                 log.warning(f"Failed to load Whisper model: {e}")
@@ -75,18 +78,19 @@ class DiarizationService:
         
         try:
             # Transcribe with Whisper
-            result = self.model.transcribe(audio_path)
+            result = cast(Any, self.model).transcribe(audio_path)
             
             # Simple speaker assignment (alternating)
             # In production, this would use proper diarization
             segments = []
-            for i, segment in enumerate(result["segments"]):
+            for i, segment in enumerate(cast(Any, result)["segments"]):
+                seg = cast(Dict[str, Any], segment)
                 speaker = self.known_speakers[i % len(self.known_speakers)]
                 segments.append({
                     "speaker": speaker,
-                    "text": segment["text"].strip(),
-                    "start": segment["start"],
-                    "end": segment["end"]
+                    "text": cast(str, seg.get("text", "")).strip(),
+                    "start": cast(Any, seg.get("start", 0.0)),
+                    "end": cast(Any, seg.get("end", 0.0))
                 })
             
             return segments

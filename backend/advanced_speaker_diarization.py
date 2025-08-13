@@ -4,24 +4,123 @@ AI-powered speaker identification and voice separation for enhanced meeting tran
 """
 
 import asyncio
-import numpy as np
-import librosa
-import torch
-import torch.nn as nn
-from typing import List, Dict, Tuple, Optional, Any
 import json
 import logging
-from dataclasses import dataclass
-from datetime import datetime, timedelta
 import sqlite3
 import wave
 import pickle
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.metrics.pairwise import cosine_similarity
-from transformers import Wav2Vec2Processor, Wav2Vec2Model
 import threading
 import queue
 import time
+from typing import List, Dict, Tuple, Optional, Any
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+# Optional ML dependencies with graceful fallbacks
+try:
+    import numpy as np
+    import librosa  # type: ignore[reportMissingImports]
+    import torch  # type: ignore[reportMissingImports]
+    import torch.nn as nn  # type: ignore[reportMissingImports]
+    from sklearn.cluster import AgglomerativeClustering  # type: ignore[reportMissingImports]
+    from sklearn.metrics.pairwise import cosine_similarity as _real_cosine_similarity  # type: ignore[reportMissingImports]
+    from transformers import Wav2Vec2Processor, Wav2Vec2Model  # type: ignore[reportMissingImports]
+    ML_AVAILABLE = True
+    
+    # Real numpy types for type hints
+    from numpy.typing import NDArray
+    from typing import Union
+    ArrayType = Union[NDArray, list]  # Proper type union
+    
+except ImportError as e:
+    logging.warning(f"Machine learning dependencies not available: {e}")
+    ML_AVAILABLE = False
+    
+    # Create mock classes for graceful degradation
+    from typing import List, Union, Any
+    ArrayType = Union[List[Any], Any]  # Use proper type for annotations
+    
+    class MockNumpy:
+        ndarray = list  # Use list as mock ndarray type
+        class random:
+            @staticmethod
+            def randn(n): return [0.0] * n
+        class _dtypes:
+            float32 = float
+        float32 = _dtypes.float32
+        
+        @staticmethod
+        def array(data): return data
+        @staticmethod
+        def zeros(shape): return [0] * (shape if isinstance(shape, int) else shape[0])
+        @staticmethod
+        def mean(data): return sum(data) / len(data) if data else 0
+        @staticmethod
+        def vstack(arrays): return arrays
+        @staticmethod
+        def unique(data, return_counts=False): 
+            unique_vals = list(set(data))
+            if return_counts:
+                counts = [data.count(val) for val in unique_vals]
+                return unique_vals, counts
+            return unique_vals
+        @staticmethod
+        def argmax(arr):
+            return max(range(len(arr)), key=lambda i: arr[i]) if arr else 0
+        @staticmethod
+        def frombuffer(buf, dtype=float):
+            return list(buf)
+    
+    np = MockNumpy()  # Assign the mock class
+    
+    # Create other mock classes
+    class MockLibrosa:
+        @staticmethod
+        def load(file_path, sr=None): return [0] * 1000, 16000
+        @staticmethod
+        def to_mono(y): return y
+        @staticmethod
+        def resample(y, orig_sr=None, target_sr=None): return y
+        class feature:
+            @staticmethod
+            def mfcc(y, sr, n_mfcc=13): return [[0] * 13] * 100
+        
+    librosa = MockLibrosa()
+    
+    # Mock other ML classes
+    class MockTorch:
+        @staticmethod
+        def no_grad():
+            return MockContextManager()
+        
+    class MockContextManager:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        
+    torch = MockTorch()
+    
+    class MockModel:
+        def __init__(self, *args, **kwargs): pass
+        def __call__(self, *args, **kwargs): return MockModelOutput()
+        
+    class MockModelOutput:
+        last_hidden_state = [[0] * 768] * 100
+        
+    class MockProcessor:
+        def __init__(self, *args, **kwargs): pass
+        def __call__(self, *args, **kwargs): return {"input_values": [[0] * 1000]}
+        
+    Wav2Vec2Model = MockModel
+    Wav2Vec2Processor = MockProcessor
+    
+    class MockClustering:
+        def __init__(self, *args, **kwargs): pass
+        def fit_predict(self, data): return [0] * len(data)
+        
+    AgglomerativeClustering = MockClustering
+    
+    def _mock_cosine_similarity(a, b): return [[0.8]]
+    _real_cosine_similarity = _mock_cosine_similarity  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +133,14 @@ class SpeakerSegment:
     speaker_name: Optional[str]
     confidence: float
     text: Optional[str] = None
-    audio_features: Optional[np.ndarray] = None
+    audio_features: Optional[Any] = None
 
 @dataclass
 class VoiceProfile:
     """Voice profile for speaker identification"""
     speaker_id: str
     speaker_name: Optional[str]
-    voice_embedding: np.ndarray
+    voice_embedding: Any  # Array-like data structure
     sample_count: int
     last_updated: datetime
     confidence_scores: List[float]
@@ -50,15 +149,31 @@ class VoiceEmbeddingExtractor:
     """Extract voice embeddings using Wav2Vec2 model"""
     
     def __init__(self):
-        self.processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
-        self.model = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-base-960h")
-        self.model.eval()
+        if not ML_AVAILABLE:
+            logger.warning("ML dependencies not available, using mock embedding extractor")
+            self.processor = None
+            self.model = None
+            return
+            
+        try:
+            from transformers import Wav2Vec2Processor, Wav2Vec2Model
+            self.processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
+            self.model = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-base-960h")
+            self.model.eval()
+        except Exception as e:
+            logger.error(f"Failed to load Wav2Vec2 model: {e}")
+            self.processor = None
+            self.model = None
     
-    def extract_embedding(self, audio_segment: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
+    def extract_embedding(self, audio_segment, sample_rate: int = 16000):
         """Extract voice embedding from audio segment"""
+        if not ML_AVAILABLE or self.model is None or self.processor is None:
+            # Return mock embedding
+            return np.zeros(768)
+            
         try:
             # Resample if necessary
-            if len(audio_segment.shape) > 1:
+            if hasattr(audio_segment, 'shape') and len(audio_segment.shape) > 1:
                 audio_segment = librosa.to_mono(audio_segment.T)
             
             if sample_rate != 16000:
@@ -85,33 +200,42 @@ class SpeakerClustering:
         self.distance_threshold = distance_threshold
         self.clustering_model = None
     
-    def cluster_speakers(self, embeddings: List[np.ndarray], 
+    def cluster_speakers(self, embeddings: List, 
                         time_segments: List[Tuple[float, float]]) -> List[int]:
         """Cluster embeddings into speaker groups"""
+        if not ML_AVAILABLE:
+            # Return simple sequential speaker IDs when ML is not available
+            return list(range(len(embeddings)))
+            
         if len(embeddings) < 2:
             return [0] * len(embeddings)
         
-        # Convert to numpy array
-        embedding_matrix = np.vstack(embeddings)
-        
-        # Use Agglomerative Clustering with cosine distance
-        clustering = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=self.distance_threshold,
-            linkage='average',
-            metric='cosine'
-        )
-        
-        speaker_labels = clustering.fit_predict(embedding_matrix)
-        
-        # Post-process to handle temporal consistency
-        speaker_labels = self._temporal_smoothing(speaker_labels, time_segments)
-        
-        return speaker_labels.tolist()
+        try:
+            # Convert to numpy array
+            embedding_matrix = np.vstack(embeddings)
+            
+            # Use Agglomerative Clustering with cosine distance
+            from sklearn.cluster import AgglomerativeClustering
+            clustering = AgglomerativeClustering(
+                n_clusters=None,
+                distance_threshold=self.distance_threshold,
+                linkage='average',
+                metric='cosine'
+            )
+            
+            speaker_labels = clustering.fit_predict(embedding_matrix)
+            
+            # Post-process to handle temporal consistency
+            speaker_labels = self._temporal_smoothing(speaker_labels, time_segments)
+            
+            return speaker_labels.tolist()
+        except Exception as e:
+            logger.error(f"Error in speaker clustering: {e}")
+            return list(range(len(embeddings)))
     
-    def _temporal_smoothing(self, labels: np.ndarray, 
+    def _temporal_smoothing(self, labels: Any, 
                            time_segments: List[Tuple[float, float]],
-                           window_size: float = 2.0) -> np.ndarray:
+                           window_size: float = 2.0) -> Any:
         """Apply temporal smoothing to reduce speaker switching noise"""
         smoothed_labels = labels.copy()
         
@@ -230,7 +354,7 @@ class VoiceProfileManager:
         except Exception as e:
             logger.error(f"Error saving voice profile: {e}")
     
-    def identify_speaker(self, embedding: np.ndarray, 
+    def identify_speaker(self, embedding: Any, 
                         threshold: float = 0.8) -> Tuple[Optional[str], float]:
         """Identify speaker from voice embedding"""
         if not self.profiles:
@@ -240,7 +364,7 @@ class VoiceProfileManager:
         best_similarity = 0.0
         
         for speaker_id, profile in self.profiles.items():
-            similarity = cosine_similarity(
+            similarity = _real_cosine_similarity(
                 embedding.reshape(1, -1),
                 profile.voice_embedding.reshape(1, -1)
             )[0][0]
@@ -254,7 +378,7 @@ class VoiceProfileManager:
         
         return None, best_similarity
     
-    def update_profile(self, speaker_id: str, new_embedding: np.ndarray, confidence: float):
+    def update_profile(self, speaker_id: str, new_embedding: Any, confidence: float):
         """Update existing voice profile with new sample"""
         if speaker_id in self.profiles:
             profile = self.profiles[speaker_id]
@@ -276,7 +400,7 @@ class VoiceProfileManager:
             
             self.save_profile(profile)
     
-    def create_new_profile(self, embedding: np.ndarray, 
+    def create_new_profile(self, embedding: Any, 
                           speaker_name: Optional[str] = None) -> str:
         """Create new voice profile for unknown speaker"""
         speaker_id = f"speaker_{len(self.profiles) + 1}_{int(time.time())}"
@@ -324,7 +448,7 @@ class RealTimeSpeakerDiarization:
             self.processing_thread.join()
         logger.info("Stopped real-time speaker diarization")
     
-    def add_audio_chunk(self, audio_chunk: np.ndarray, timestamp: float):
+    def add_audio_chunk(self, audio_chunk: Any, timestamp: float):
         """Add audio chunk for processing"""
         self.audio_buffer.put((audio_chunk, timestamp))
     
@@ -362,7 +486,7 @@ class RealTimeSpeakerDiarization:
                 logger.error(f"Error in processing loop: {e}")
                 time.sleep(0.1)
     
-    def _process_audio_batch(self, audio_segments: List[Tuple[np.ndarray, float]]):
+    def _process_audio_batch(self, audio_segments: List[Tuple[Any, float]]):
         """Process batch of audio segments"""
         try:
             segments = []
@@ -451,7 +575,9 @@ class AdvancedSpeakerDiarization:
         """Process incoming audio stream"""
         try:
             # Convert bytes to numpy array
-            audio_array = np.frombuffer(audio_data, dtype=np.float32)
+            # Use a basic dtype for mock numpy to satisfy type checkers
+            dtype = getattr(np, 'float32', float)
+            audio_array = np.frombuffer(audio_data, dtype=dtype)
             
             # Add to real-time processor
             self.realtime_diarization.add_audio_chunk(audio_array, timestamp)

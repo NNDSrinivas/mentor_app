@@ -1,6 +1,6 @@
 # backend/approval_worker.py
-import time, threading, logging
-from typing import Dict, Any, Optional
+import time, threading, logging, os, subprocess, tempfile
+from typing import Dict, Any, Optional, List, Set
 
 log = logging.getLogger(__name__)
 
@@ -13,6 +13,124 @@ def get_managers():
 
 # Initialize managers (dry_run=True by default for safety)
 github, jira, approvals = get_managers()
+
+# Track processed review comments to avoid duplicate handling
+processed_review_comments: Set[int] = set()
+
+
+def is_actionable_comment(body: str) -> bool:
+    """Basic heuristic to determine if a review comment needs action"""
+    body_lower = body.lower()
+    return "```suggestion" in body_lower or "```patch" in body_lower
+
+
+def extract_comment_threads(comments: List[Dict[str, Any]]) -> Dict[int, List[Dict[str, Any]]]:
+    """Group review comments into threads by their root comment"""
+    threads: Dict[int, List[Dict[str, Any]]] = {}
+    for c in comments:
+        thread_id = c.get("in_reply_to_id") or c.get("id")
+        if thread_id is None:
+            continue
+        threads.setdefault(thread_id, []).append(c)
+    return threads
+
+
+def apply_patch_to_repo(patch_content: str, commit_message: str) -> bool:
+    """Apply a unified diff patch to the local repository and commit"""
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".patch", delete=False) as f:
+            f.write(patch_content)
+            patch_file = f.name
+        subprocess.run(["git", "apply", patch_file], check=True)
+        subprocess.run(["git", "commit", "-am", commit_message], check=True)
+        subprocess.run(["git", "push"], check=True)
+        return True
+    except Exception as e:
+        log.error(f"Failed to apply patch: {e}")
+        return False
+    finally:
+        try:
+            os.unlink(patch_file)
+        except Exception:
+            pass
+
+
+def notify_comment_summary(handled: List[int], pending: List[int]) -> None:
+    """Send summary notification about processed review comments"""
+    try:
+        from backend.server import notify_all
+        notify_all({
+            "type": "review_comment_summary",
+            "handled": handled,
+            "pending": pending,
+        })
+    except Exception as e:
+        log.debug(f"Notification failed: {e}")
+
+
+def poll_review_comments(owner: str, repo: str, pr_number: int) -> None:
+    """Fetch review comments from GitHub and apply actionable patches"""
+    try:
+        from app.integrations.github_client import GitHubClient
+        from backend.codegen import generate_patch
+    except Exception as e:
+        log.error(f"Missing dependencies for review polling: {e}")
+        return
+
+    client = GitHubClient(dry_run=github.dry_run)
+    try:
+        data = client.get_review_comments(owner, repo, pr_number)
+    except Exception as e:
+        log.error(f"Failed to fetch review comments: {e}")
+        return
+
+    comments = data.get("comments") if isinstance(data, dict) else data
+    if not comments:
+        return
+
+    threads = extract_comment_threads(comments)
+    handled: List[int] = []
+    pending: List[int] = []
+
+    for thread_id, thread_comments in threads.items():
+        root_comment = thread_comments[0]
+        comment_id = root_comment.get("id")
+        if comment_id in processed_review_comments:
+            continue
+
+        body = root_comment.get("body", "")
+        if is_actionable_comment(body):
+            patch = generate_patch(root_comment)
+            if patch and not github.dry_run:
+                if apply_patch_to_repo(patch, f"Apply review comment {comment_id}"):
+                    processed_review_comments.add(comment_id)
+                    handled.append(comment_id)
+                    try:
+                        github.comment_pr(owner=owner, repo=repo, pr_number=pr_number,
+                                          body=f"Automated fix applied for comment {comment_id}.")
+                    except Exception as ge:
+                        log.debug(f"Failed to comment on PR: {ge}")
+                else:
+                    pending.append(comment_id)
+            else:
+                pending.append(comment_id)
+        else:
+            pending.append(comment_id)
+
+    if handled or pending:
+        notify_comment_summary(handled, pending)
+
+
+def poll_review_comments_if_configured() -> None:
+    """Check environment variables for review polling configuration"""
+    owner = os.getenv("REVIEW_OWNER")
+    repo = os.getenv("REVIEW_REPO")
+    pr_number = os.getenv("REVIEW_PR_NUMBER")
+    if owner and repo and pr_number:
+        try:
+            poll_review_comments(owner, repo, int(pr_number))
+        except Exception as e:
+            log.error(f"Review polling failed: {e}")
 
 def run_worker(poll_interval: float = 1.0):
     """
@@ -34,6 +152,9 @@ def run_worker(poll_interval: float = 1.0):
                     if age_minutes > 30:  # 30 minutes old
                         log.warning(f"Approval {item['id']} has been pending for {age_minutes:.1f} minutes")
             
+            # Poll GitHub reviews if configured
+            poll_review_comments_if_configured()
+
             time.sleep(poll_interval)
         except Exception as e:
             log.error(f"Error in approval worker: {e}")

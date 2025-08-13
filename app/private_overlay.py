@@ -20,6 +20,9 @@ try:
     TKINTER_AVAILABLE = True
 except ImportError:
     TKINTER_AVAILABLE = False
+    # Ensure names exist for type checkers/runtime guards
+    tk = None  # type: ignore[assignment]
+    ttk = None  # type: ignore[assignment]
 
 from .config import Config
 
@@ -40,7 +43,7 @@ class PrivateOverlay:
     def initialize(self):
         """Initialize the overlay system."""
         try:
-            if TKINTER_AVAILABLE:
+            if TKINTER_AVAILABLE and tk is not None:
                 # Create root window (hidden)
                 self.root = tk.Tk()
                 self.root.withdraw()  # Hide the main window
@@ -106,38 +109,38 @@ class PrivateOverlay:
     
     def _create_overlay_window(self):
         """Create the overlay window."""
-        if not TKINTER_AVAILABLE or self.fallback_mode:
+        if not TKINTER_AVAILABLE or self.fallback_mode or tk is None or ttk is None:
             return
-            
+
         if self.overlay_window:
             self.overlay_window.destroy()
-            
+
         self.overlay_window = tk.Toplevel(self.root)
-        
+
         # Window configuration
         self.overlay_window.overrideredirect(True)  # Remove window decorations
         self.overlay_window.attributes('-topmost', True)  # Always on top
         self.overlay_window.attributes('-alpha', 0.9)  # Slightly transparent
-        
+
         # Make window stay on top even during screen sharing
         try:
             # macOS specific
             self.overlay_window.attributes('-transparentcolor', '')
-        except:
+        except Exception:
             pass
-            
+
         # Configure style
         style = ttk.Style()
         style.configure('Overlay.TFrame', background='#2b2b2b', relief='solid', borderwidth=1)
-        style.configure('OverlayTitle.TLabel', background='#2b2b2b', foreground='#00ff88', 
-                       font=('SF Pro Display', 12, 'bold'))
+        style.configure('OverlayTitle.TLabel', background='#2b2b2b', foreground='#00ff88',
+                        font=('SF Pro Display', 12, 'bold'))
         style.configure('OverlayContent.TLabel', background='#2b2b2b', foreground='#ffffff',
-                       font=('SF Pro Display', 10), wraplength=350)
-        
+                        font=('SF Pro Display', 10), wraplength=350)
+
         # Create main frame
         self.main_frame = ttk.Frame(self.overlay_window, style='Overlay.TFrame', padding=10)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         # Add close button
         self.close_button = tk.Button(
             self.main_frame, text="✕", command=self.hide_overlay,
@@ -148,14 +151,14 @@ class PrivateOverlay:
     
     def _update_content(self, content: str, content_type: str):
         """Update overlay content."""
-        if not TKINTER_AVAILABLE or self.fallback_mode or not self.overlay_window:
+        if not TKINTER_AVAILABLE or self.fallback_mode or not self.overlay_window or ttk is None or tk is None:
             return
-            
+
         # Clear existing content
         for widget in self.main_frame.winfo_children():
             if isinstance(widget, ttk.Label):
                 widget.destroy()
-        
+
         # Title based on content type
         if content_type == "response":
             title = "🤖 AI Assistant"
@@ -166,21 +169,21 @@ class PrivateOverlay:
         else:
             title = "💭 AI Note"
             title_color = '#88aaff'
-        
+
         # Add title
         title_label = ttk.Label(
             self.main_frame, text=title,
             style='OverlayTitle.TLabel'
         )
         title_label.pack(anchor=tk.W, pady=(0, 5))
-        
+
         # Add content
         content_label = ttk.Label(
             self.main_frame, text=content,
             style='OverlayContent.TLabel'
         )
         content_label.pack(anchor=tk.W, fill=tk.X)
-        
+
         # Add timestamp
         timestamp = datetime.now().strftime("%H:%M:%S")
         time_label = ttk.Label(
@@ -189,7 +192,7 @@ class PrivateOverlay:
             font=('SF Pro Display', 8)
         )
         time_label.pack(anchor=tk.E, pady=(5, 0))
-        
+
         self.current_content = content
     
     def _position_window(self):
