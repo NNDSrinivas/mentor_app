@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from typing import Iterable, Tuple, Optional
+import uuid
 
 from .base import BaseMeetingClient
 
@@ -21,3 +22,8 @@ class TeamsClient(BaseMeetingClient):
             if text:
                 self.process_caption(text, speaker)
                 log.debug("Teams caption forwarded: %s", text)
+
+    @staticmethod
+    def generate_meeting_link(meeting_id: Optional[str] = None) -> str:
+        meeting_id = meeting_id or uuid.uuid4().hex
+        return f"https://teams.microsoft.com/l/meetup-join/{meeting_id}"

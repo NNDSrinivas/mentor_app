@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from typing import Iterable, Tuple, Optional
+import uuid
 
 from .base import BaseMeetingClient
 
@@ -22,3 +23,8 @@ class ZoomClient(BaseMeetingClient):
             if text:
                 self.process_caption(text, speaker)
                 log.debug("Zoom caption forwarded: %s", text)
+
+    @staticmethod
+    def generate_meeting_link(meeting_id: Optional[str] = None) -> str:
+        meeting_id = meeting_id or uuid.uuid4().hex[:10]
+        return f"https://zoom.us/j/{meeting_id}"

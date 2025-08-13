@@ -13,8 +13,20 @@ from datetime import datetime, timedelta
 import requests
 from dataclasses import dataclass
 import re
+import uuid
+
+from .meeting_clients import ZoomClient, TeamsClient, GoogleMeetClient
 
 log = logging.getLogger(__name__)
+
+MEETING_PLATFORM_PATTERNS = [
+    "zoom.us",
+    "teams.microsoft.com",
+    "meet.google.com",
+    "webex.com",
+    "gotomeeting.com",
+    "bluejeans.com",
+]
 
 @dataclass
 class CalendarEvent:
@@ -33,6 +45,271 @@ class CalendarEvent:
     role: Optional[str] = None
     interviewer: Optional[str] = None
 
+
+class BaseCalendarAdapter:
+    """Simple adapter interface for calendar providers."""
+
+    def get_events(self, days_ahead: int) -> List[CalendarEvent]:
+        return []
+
+    def create_event(self, event: CalendarEvent) -> Optional[str]:
+        return None
+
+
+class GoogleCalendarAdapter(BaseCalendarAdapter):
+    def __init__(self, credentials: Dict[str, str]):
+        self.credentials = credentials
+
+    def get_events(self, days_ahead: int) -> List[CalendarEvent]:
+        if not self.credentials.get("access_token"):
+            log.warning("Google Calendar access token not available")
+            return []
+
+        headers = {
+            "Authorization": f"Bearer {self.credentials['access_token']}",
+            "Accept": "application/json",
+        }
+
+        time_min = datetime.now().isoformat() + "Z"
+        time_max = (datetime.now() + timedelta(days=days_ahead)).isoformat() + "Z"
+
+        url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        params = {
+            "timeMin": time_min,
+            "timeMax": time_max,
+            "singleEvents": True,
+            "orderBy": "startTime",
+        }
+
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            events_data = response.json()
+            events: List[CalendarEvent] = []
+            for item in events_data.get("items", []):
+                event = self._parse_event(item)
+                if event:
+                    events.append(event)
+            return events
+        except requests.RequestException as e:  # pragma: no cover - network failures
+            log.error(f"Failed to fetch Google Calendar events: {e}")
+            return []
+
+    def create_event(self, event: CalendarEvent) -> Optional[str]:
+        if not self.credentials.get("access_token"):
+            return None
+
+        headers = {
+            "Authorization": f"Bearer {self.credentials['access_token']}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "summary": event.title,
+            "description": (event.description or "") + f"\n{event.meeting_url or ''}",
+            "start": {"dateTime": event.start_time.isoformat()},
+            "end": {"dateTime": event.end_time.isoformat()},
+            "attendees": [{"email": a} for a in event.attendees],
+            "location": event.location,
+        }
+        try:
+            response = requests.post(
+                "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+                headers=headers,
+                json=body,
+            )
+            response.raise_for_status()
+            return response.json().get("id")
+        except requests.RequestException as e:  # pragma: no cover - network failures
+            log.error(f"Failed to create Google Calendar event: {e}")
+            return None
+
+    def _parse_event(self, item: Dict[str, Any]) -> Optional[CalendarEvent]:
+        try:
+            start_time = datetime.fromisoformat(
+                item["start"].get("dateTime", "").replace("Z", "+00:00")
+            )
+            end_time = datetime.fromisoformat(
+                item["end"].get("dateTime", "").replace("Z", "+00:00")
+            )
+            attendees = []
+            if "attendees" in item:
+                attendees = [att.get("email", "") for att in item["attendees"]]
+
+            meeting_url = None
+            description = item.get("description", "")
+            for pattern in MEETING_PLATFORM_PATTERNS:
+                if pattern in description:
+                    url_match = re.search(r"https?://[^\s]+", description)
+                    if url_match:
+                        meeting_url = url_match.group(0)
+                    break
+            return CalendarEvent(
+                id=item.get("id", ""),
+                title=item.get("summary", ""),
+                description=description,
+                start_time=start_time,
+                end_time=end_time,
+                attendees=attendees,
+                location=item.get("location", ""),
+                meeting_url=meeting_url,
+            )
+        except Exception as e:  # pragma: no cover - best effort parsing
+            log.warning(f"Failed to parse Google Calendar event: {e}")
+            return None
+
+
+class OutlookCalendarAdapter(BaseCalendarAdapter):
+    def __init__(self, credentials: Dict[str, str]):
+        self.credentials = credentials
+
+    def get_events(self, days_ahead: int) -> List[CalendarEvent]:
+        if not self.credentials.get("access_token"):
+            log.warning("Outlook Calendar access token not available")
+            return []
+
+        headers = {
+            "Authorization": f"Bearer {self.credentials['access_token']}",
+            "Accept": "application/json",
+        }
+        start_time = datetime.now().isoformat()
+        end_time = (datetime.now() + timedelta(days=days_ahead)).isoformat()
+        url = "https://graph.microsoft.com/v1.0/me/events"
+        params = {
+            "startDateTime": start_time,
+            "endDateTime": end_time,
+            "$orderby": "start/dateTime",
+        }
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            events_data = response.json()
+            events: List[CalendarEvent] = []
+            for item in events_data.get("value", []):
+                event = self._parse_event(item)
+                if event:
+                    events.append(event)
+            return events
+        except requests.RequestException as e:  # pragma: no cover
+            log.error(f"Failed to fetch Outlook Calendar events: {e}")
+            return []
+
+    def create_event(self, event: CalendarEvent) -> Optional[str]:
+        if not self.credentials.get("access_token"):
+            return None
+
+        headers = {
+            "Authorization": f"Bearer {self.credentials['access_token']}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "subject": event.title,
+            "body": {"contentType": "HTML", "content": (event.description or "") + f"\n{event.meeting_url or ''}"},
+            "start": {"dateTime": event.start_time.isoformat(), "timeZone": "UTC"},
+            "end": {"dateTime": event.end_time.isoformat(), "timeZone": "UTC"},
+            "location": {"displayName": event.location},
+            "attendees": [{"emailAddress": {"address": a}} for a in event.attendees],
+        }
+        try:
+            response = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=body)
+            response.raise_for_status()
+            return response.json().get("id")
+        except requests.RequestException as e:  # pragma: no cover
+            log.error(f"Failed to create Outlook Calendar event: {e}")
+            return None
+
+    def _parse_event(self, item: Dict[str, Any]) -> Optional[CalendarEvent]:
+        try:
+            start_time = datetime.fromisoformat(item["start"]["dateTime"])
+            end_time = datetime.fromisoformat(item["end"]["dateTime"])
+            attendees = []
+            if "attendees" in item:
+                attendees = [a["emailAddress"]["address"] for a in item["attendees"]]
+            meeting_url = None
+            if "onlineMeeting" in item and item["onlineMeeting"]:
+                meeting_url = item["onlineMeeting"].get("joinUrl", "")
+            return CalendarEvent(
+                id=item.get("id", ""),
+                title=item.get("subject", ""),
+                description=item.get("body", {}).get("content", ""),
+                start_time=start_time,
+                end_time=end_time,
+                attendees=attendees,
+                location=item.get("location", {}).get("displayName", ""),
+                meeting_url=meeting_url,
+            )
+        except Exception as e:  # pragma: no cover
+            log.warning(f"Failed to parse Outlook Calendar event: {e}")
+            return None
+
+
+class ICSCalendarAdapter(BaseCalendarAdapter):
+    def __init__(self, path: str):
+        self.path = path
+
+    def get_events(self, days_ahead: int) -> List[CalendarEvent]:
+        if not os.path.exists(self.path):
+            return []
+        with open(self.path, "r", encoding="utf-8") as f:
+            content = f.read()
+        events: List[CalendarEvent] = []
+        for block in content.split("BEGIN:VEVENT")[1:]:
+            if "END:VEVENT" not in block:
+                continue
+            vevent = block.split("END:VEVENT")[0]
+
+            def _get(field: str) -> str:
+                m = re.search(rf"{field}:([^\n\r]+)", vevent)
+                return m.group(1).strip() if m else ""
+
+            uid = _get("UID") or str(uuid.uuid4())
+            summary = _get("SUMMARY")
+            description = _get("DESCRIPTION")
+            location = _get("LOCATION")
+            dtstart = _get("DTSTART")
+            dtend = _get("DTEND")
+
+            def _parse(dt: str) -> datetime:
+                try:
+                    if dt.endswith("Z"):
+                        return datetime.strptime(dt, "%Y%m%dT%H%M%SZ")
+                    return datetime.strptime(dt, "%Y%m%dT%H%M%S")
+                except Exception:
+                    return datetime.now()
+
+            start_time = _parse(dtstart)
+            end_time = _parse(dtend)
+            events.append(
+                CalendarEvent(
+                    id=uid,
+                    title=summary,
+                    description=description,
+                    start_time=start_time,
+                    end_time=end_time,
+                    attendees=[],
+                    location=location,
+                )
+            )
+        return events
+
+    def create_event(self, event: CalendarEvent) -> Optional[str]:
+        uid = event.id or str(uuid.uuid4())
+        lines = [
+            "BEGIN:VEVENT",
+            f"UID:{uid}",
+            f"SUMMARY:{event.title}",
+            f"DTSTART:{event.start_time.strftime('%Y%m%dT%H%M%S')}",
+            f"DTEND:{event.end_time.strftime('%Y%m%dT%H%M%S')}",
+            f"DESCRIPTION:{event.description}",
+            f"LOCATION:{event.location}",
+            f"URL:{event.meeting_url}",
+            "END:VEVENT",
+        ]
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        return uid
+
 class CalendarIntegration:
     """Integrates with calendar systems to detect interviews and meetings"""
     
@@ -40,6 +317,14 @@ class CalendarIntegration:
         self.google_credentials = self._load_google_credentials()
         self.outlook_credentials = self._load_outlook_credentials()
         self.interview_patterns = self._load_interview_patterns()
+        self.adapters: List[BaseCalendarAdapter] = []
+        if self.google_credentials.get("access_token"):
+            self.adapters.append(GoogleCalendarAdapter(self.google_credentials))
+        if self.outlook_credentials.get("access_token"):
+            self.adapters.append(OutlookCalendarAdapter(self.outlook_credentials))
+        ics_path = os.getenv("ICS_CALENDAR_PATH")
+        if ics_path:
+            self.adapters.append(ICSCalendarAdapter(ics_path))
         
     def _load_google_credentials(self) -> Dict[str, str]:
         """Load Google Calendar API credentials"""
@@ -75,10 +360,7 @@ class CalendarIntegration:
                 "coding", "technical", "system design", "algorithm",
                 "data structures", "leetcode", "whiteboard", "live coding"
             ],
-            "meeting_platforms": [
-                "zoom.us", "teams.microsoft.com", "meet.google.com",
-                "webex.com", "gotomeeting.com", "bluejeans.com"
-            ]
+            "meeting_platforms": MEETING_PLATFORM_PATTERNS
         }
     
     def analyze_event_for_interview(self, event: CalendarEvent) -> Tuple[bool, Dict[str, Any]]:
@@ -263,167 +545,57 @@ class CalendarIntegration:
     def get_upcoming_events(self, days_ahead: int = 7) -> List[CalendarEvent]:
         """Get upcoming calendar events for analysis"""
         events = []
-        
-        # Try Google Calendar first
-        if self.google_credentials.get("access_token"):
-            google_events = self._fetch_google_events(days_ahead)
-            events.extend(google_events)
-        
-        # Try Outlook Calendar
-        if self.outlook_credentials.get("access_token"):
-            outlook_events = self._fetch_outlook_events(days_ahead)
-            events.extend(outlook_events)
-        
+        for adapter in self.adapters:
+            try:
+                events.extend(adapter.get_events(days_ahead))
+            except Exception as e:  # pragma: no cover - best effort
+                log.error(f"Failed to fetch events via {adapter}: {e}")
         return events
-    
-    def _fetch_google_events(self, days_ahead: int) -> List[CalendarEvent]:
-        """Fetch events from Google Calendar"""
-        if not self.google_credentials.get("access_token"):
-            log.warning("Google Calendar access token not available")
-            return []
-        
-        headers = {
-            "Authorization": f"Bearer {self.google_credentials['access_token']}",
-            "Accept": "application/json"
-        }
-        
-        # Calculate time range
-        time_min = datetime.now().isoformat() + "Z"
-        time_max = (datetime.now() + timedelta(days=days_ahead)).isoformat() + "Z"
-        
-        url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
-        params = {
-            "timeMin": time_min,
-            "timeMax": time_max,
-            "singleEvents": True,
-            "orderBy": "startTime"
-        }
-        
-        try:
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            
-            events_data = response.json()
-            events = []
-            
-            for item in events_data.get("items", []):
-                event = self._parse_google_event(item)
-                if event:
-                    events.append(event)
-            
-            return events
-            
-        except requests.RequestException as e:
-            log.error(f"Failed to fetch Google Calendar events: {e}")
-            return []
-    
-    def _fetch_outlook_events(self, days_ahead: int) -> List[CalendarEvent]:
-        """Fetch events from Outlook Calendar"""
-        if not self.outlook_credentials.get("access_token"):
-            log.warning("Outlook Calendar access token not available")
-            return []
-        
-        headers = {
-            "Authorization": f"Bearer {self.outlook_credentials['access_token']}",
-            "Accept": "application/json"
-        }
-        
-        # Calculate time range
-        start_time = datetime.now().isoformat()
-        end_time = (datetime.now() + timedelta(days=days_ahead)).isoformat()
-        
-        url = "https://graph.microsoft.com/v1.0/me/events"
-        params = {
-            "startDateTime": start_time,
-            "endDateTime": end_time,
-            "$orderby": "start/dateTime"
-        }
-        
-        try:
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            
-            events_data = response.json()
-            events = []
-            
-            for item in events_data.get("value", []):
-                event = self._parse_outlook_event(item)
-                if event:
-                    events.append(event)
-            
-            return events
-            
-        except requests.RequestException as e:
-            log.error(f"Failed to fetch Outlook Calendar events: {e}")
-            return []
-    
-    def _parse_google_event(self, item: Dict[str, Any]) -> Optional[CalendarEvent]:
-        """Parse Google Calendar event data"""
-        try:
-            start_time = datetime.fromisoformat(item["start"].get("dateTime", "").replace("Z", "+00:00"))
-            end_time = datetime.fromisoformat(item["end"].get("dateTime", "").replace("Z", "+00:00"))
-            
-            attendees = []
-            if "attendees" in item:
-                attendees = [attendee.get("email", "") for attendee in item["attendees"]]
-            
-            meeting_url = None
-            description = item.get("description", "")
-            
-            # Extract meeting URL from description
-            url_patterns = self.interview_patterns["meeting_platforms"]
-            for pattern in url_patterns:
-                if pattern in description:
-                    # Extract the full URL
-                    import re
-                    url_match = re.search(r"https?://[^\s]+", description)
-                    if url_match:
-                        meeting_url = url_match.group(0)
+
+    def schedule_event(
+        self,
+        title: str,
+        start_time: datetime,
+        end_time: datetime,
+        attendees: List[str],
+        platform: str = "zoom",
+        description: str = "",
+        location: str = "",
+    ) -> CalendarEvent:
+        """Create a calendar event with a generated meeting link."""
+
+        meeting_url = self._create_meeting_link(platform)
+        event = CalendarEvent(
+            id="",
+            title=title,
+            description=description,
+            start_time=start_time,
+            end_time=end_time,
+            attendees=attendees,
+            location=location,
+            meeting_url=meeting_url,
+        )
+
+        for adapter in self.adapters:
+            try:
+                event_id = adapter.create_event(event)
+                if event_id:
+                    event.id = event_id
                     break
-            
-            return CalendarEvent(
-                id=item["id"],
-                title=item.get("summary", ""),
-                description=description,
-                start_time=start_time,
-                end_time=end_time,
-                attendees=attendees,
-                location=item.get("location", ""),
-                meeting_url=meeting_url
-            )
-            
-        except (KeyError, ValueError) as e:
-            log.warning(f"Failed to parse Google Calendar event: {e}")
-            return None
+            except Exception as e:  # pragma: no cover
+                log.error(f"Failed to create event via {adapter}: {e}")
+        return event
+
+    def _create_meeting_link(self, platform: str) -> str:
+        platform = platform.lower()
+        if platform in ("zoom",):
+            return ZoomClient.generate_meeting_link()
+        if platform in ("google", "google_meet", "meet"):
+            return GoogleMeetClient.generate_meeting_link()
+        if platform in ("teams", "microsoft_teams"):
+            return TeamsClient.generate_meeting_link()
+        return f"https://meet.example.com/{uuid.uuid4().hex}"
     
-    def _parse_outlook_event(self, item: Dict[str, Any]) -> Optional[CalendarEvent]:
-        """Parse Outlook Calendar event data"""
-        try:
-            start_time = datetime.fromisoformat(item["start"]["dateTime"])
-            end_time = datetime.fromisoformat(item["end"]["dateTime"])
-            
-            attendees = []
-            if "attendees" in item:
-                attendees = [attendee["emailAddress"]["address"] for attendee in item["attendees"]]
-            
-            meeting_url = None
-            if "onlineMeeting" in item and item["onlineMeeting"]:
-                meeting_url = item["onlineMeeting"].get("joinUrl", "")
-            
-            return CalendarEvent(
-                id=item["id"],
-                title=item.get("subject", ""),
-                description=item.get("body", {}).get("content", ""),
-                start_time=start_time,
-                end_time=end_time,
-                attendees=attendees,
-                location=item.get("location", {}).get("displayName", ""),
-                meeting_url=meeting_url
-            )
-            
-        except (KeyError, ValueError) as e:
-            log.warning(f"Failed to parse Outlook Calendar event: {e}")
-            return None
     
     def monitor_upcoming_interviews(self) -> List[Dict[str, Any]]:
         """Monitor and analyze upcoming interviews"""
