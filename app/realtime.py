@@ -291,6 +291,25 @@ class RealtimeSession:
         recent_chunks = self.caption_buffer[-20:]  # Last 20 chunks
         return " ".join([chunk.get('text', '') for chunk in recent_chunks])
 
+    def _publish(self, client_queue: queue.Queue, message: str):
+        """Publish a message to a client's queue with retry on overflow."""
+        try:
+            client_queue.put_nowait(message)
+        except queue.Full:
+            log.exception("Client queue full; attempting to free space and retry")
+            try:
+                client_queue.get_nowait()
+            except queue.Empty:
+                log.exception("Client queue empty while handling overflow")
+            try:
+                client_queue.put_nowait(message)
+            except queue.Full:
+                log.exception("Client queue still full after retry")
+                raise
+        except Exception:
+            log.exception("Unexpected error publishing message")
+            raise
+
     def _broadcast_answer(self, qa_entry: Dict):
         """Broadcast answer to all connected clients (overlay, mobile, IDE)"""
         message = {
@@ -298,13 +317,18 @@ class RealtimeSession:
             'session_id': self.session_id,
             'data': qa_entry
         }
-        
+
         # Send to all client queues
+        failed_clients = []
         for client_id, client_queue in self.client_queues.items():
             try:
-                client_queue.put(json.dumps(message))
-            except Exception as e:
-                log.error(f"Failed to send to client {client_id}: {e}")
+                self._publish(client_queue, json.dumps(message))
+            except Exception:
+                log.exception(f"Failed to send to client {client_id}")
+                failed_clients.append(client_id)
+
+        if failed_clients:
+            raise RuntimeError(f"Failed to publish to clients: {', '.join(failed_clients)}")
 
     def add_client_queue(self, client_id: str) -> queue.Queue:
         """Add a client queue for real-time updates"""
