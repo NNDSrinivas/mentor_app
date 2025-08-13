@@ -9,6 +9,7 @@ import json
 import os
 import threading
 import time
+import sys
 from datetime import datetime
 from typing import Dict, Any, Optional
 import logging
@@ -39,6 +40,8 @@ class PrivateOverlay:
         self.current_content = ""
         self.auto_hide_timer = None
         self.fallback_mode = not TKINTER_AVAILABLE
+        # Requires explicit user activation
+        self.interview_mode = False
         
     def initialize(self):
         """Initialize the overlay system."""
@@ -61,9 +64,9 @@ class PrivateOverlay:
                 logger.info("Private overlay system initialized with file-based fallback")
             
         except Exception as e:
-            logger.error(f"Failed to initialize overlay system: {e}")
+                logger.error(f"Failed to initialize overlay system: {e}")
             self.fallback_mode = True
-    
+
     def show_ai_response(self, content: str, response_type: str = "response"):
         """Show AI response in private overlay."""
         try:
@@ -82,6 +85,60 @@ class PrivateOverlay:
             logger.error(f"Failed to show AI response: {e}")
             # Fallback to console output
             print(f"\n🤖 AI {response_type.upper()}: {content}\n")
+
+    def set_interview_mode(self, enabled: bool):
+        """Explicitly enable or disable interview mode."""
+        self.interview_mode = enabled
+        if self.overlay_window:
+            if enabled:
+                self._apply_privacy_filter()
+            else:
+                self._remove_privacy_filter()
+
+    def _toggle_interview_mode(self):
+        if hasattr(self, 'interview_var'):
+            self.set_interview_mode(self.interview_var.get())
+
+    def _apply_privacy_filter(self):
+        """Use platform APIs to keep window out of screen captures."""
+        if not self.overlay_window:
+            return
+        try:
+            if sys.platform.startswith("win"):
+                import ctypes
+                hwnd = self.overlay_window.winfo_id()
+                WDA_EXCLUDEFROMCAPTURE = 0x11
+                ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+            elif sys.platform == "darwin":
+                try:
+                    from Cocoa import NSApp
+                    ns_window = NSApp.windows()[0]
+                    ns_window.setSharingType_(2)  # NSWindowSharingNone
+                except Exception:
+                    pass
+            else:
+                # As a fallback, move drawing to offscreen canvas
+                self.overlay_window.attributes('-alpha', 0.9)
+        except Exception as e:
+            logger.warning(f"Privacy filter failed: {e}")
+
+    def _remove_privacy_filter(self):
+        if not self.overlay_window:
+            return
+        try:
+            if sys.platform.startswith("win"):
+                import ctypes
+                hwnd = self.overlay_window.winfo_id()
+                ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0)
+            elif sys.platform == "darwin":
+                try:
+                    from Cocoa import NSApp
+                    ns_window = NSApp.windows()[0]
+                    ns_window.setSharingType_(0)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Removing privacy filter failed: {e}")
     
     def _show_fallback_response(self, content: str, response_type: str):
         """Show response using console output as fallback."""
@@ -148,6 +205,19 @@ class PrivateOverlay:
             relief='flat', width=2, height=1
         )
         self.close_button.pack(side=tk.RIGHT, anchor=tk.NE)
+
+        # Interview mode toggle
+        self.interview_var = tk.BooleanVar(value=self.interview_mode)
+        self.mode_toggle = ttk.Checkbutton(
+            self.main_frame,
+            text="Interview Mode",
+            variable=self.interview_var,
+            command=self._toggle_interview_mode
+        )
+        self.mode_toggle.pack(side=tk.LEFT, anchor=tk.NW)
+
+        if self.interview_mode:
+            self._apply_privacy_filter()
     
     def _update_content(self, content: str, content_type: str):
         """Update overlay content."""
@@ -357,6 +427,11 @@ class OverlayManager:
         if not self.initialized:
             self.initialize()
         self.overlay.show_ai_questions(questions)
+
+    def set_interview_mode(self, enabled: bool):
+        if not self.initialized:
+            self.initialize()
+        self.overlay.set_interview_mode(enabled)
     
     def start_background_thread(self):
         """Start overlay in background thread."""
@@ -379,6 +454,11 @@ def show_ai_response(content: str, response_type: str = "response"):
 def show_ai_questions(questions: str):
     """Show AI questions in private overlay."""
     overlay_manager.show_questions(questions)
+
+
+def set_interview_mode(enabled: bool):
+    """Enable or disable interview mode for overlays."""
+    overlay_manager.set_interview_mode(enabled)
 
 
 def initialize_overlay_system():

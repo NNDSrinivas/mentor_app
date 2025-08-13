@@ -19,7 +19,8 @@
     "@react-navigation/stack": "^6.3.17",
     "expo-clipboard": "~4.3.0",
     "expo-haptics": "~12.4.0",
-    "expo-notifications": "~0.20.1"
+    "expo-notifications": "~0.20.1",
+    "expo-screen-capture": "~7.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

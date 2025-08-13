@@ -59,6 +59,18 @@ else:
 active_sessions: Dict[str, dict] = {}
 session_queues: Dict[str, queue.Queue] = {}
 
+
+def is_interview_mode(session_id: str) -> bool:
+    """Check if a session is in interview mode."""
+    return active_sessions.get(session_id, {}).get('interview_mode', False)
+
+
+def log_safe(message: str, session_id: str | None = None):
+    """Avoid logging sensitive data when in interview mode."""
+    if session_id and is_interview_mode(session_id):
+        return
+    print(message)
+
 def init_db():
     """Initialize the database with required tables"""
     conn = sqlite3.connect(app.config['DATABASE'])
@@ -650,7 +662,7 @@ Keep responses under 300 words and be practical and actionable. If this question
         return ai_answer
         
     except Exception as e:
-        print(f"Error generating AI response: {e}")
+        log_safe(f"Error generating AI response: {e}", session_id)
         return f"I encountered an error while processing your question: {str(e)}"
 
 # API Endpoints
@@ -681,6 +693,7 @@ def create_session():
         user_level = data.get('user_level', 'IC5')
         meeting_type = data.get('meeting_type', 'technical_interview')
         project_context = data.get('project_context', '')
+        interview_mode = bool(data.get('interview_mode', False))
         
         # Store in database
         db = get_db()
@@ -697,28 +710,31 @@ def create_session():
             'created_at': datetime.utcnow().isoformat(),
             'user_level': user_level,
             'meeting_type': meeting_type,
-            'project_context': project_context
+            'project_context': project_context,
+            'interview_mode': interview_mode
         }
-        
+
         # Initialize event queue for this session
         session_queues[session_id] = queue.Queue()
-        
+
         # Broadcast session creation (for monitoring/admin purposes)
-        session_queues[session_id].put({
-            'type': 'session_created',
-            'data': {
-                'session_id': session_id,
-                'user_level': user_level,
-                'meeting_type': meeting_type,
-                'project_context': project_context
-            },
-            'timestamp': datetime.utcnow().isoformat()
-        })
+        if not interview_mode:
+            session_queues[session_id].put({
+                'type': 'session_created',
+                'data': {
+                    'session_id': session_id,
+                    'user_level': user_level,
+                    'meeting_type': meeting_type,
+                    'project_context': project_context
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            })
         
         return jsonify({
             'session_id': session_id,
             'user_level': user_level,
             'meeting_type': meeting_type,
+            'interview_mode': interview_mode,
             'status': 'created'
         }), 201
         
@@ -787,7 +803,7 @@ def end_session(session_id):
         db.commit()
         
         # Broadcast session end to connected clients
-        if session_id in session_queues:
+        if session_id in session_queues and not is_interview_mode(session_id):
             session_queues[session_id].put({
                 'type': 'session_ended',
                 'data': {
@@ -866,7 +882,7 @@ def add_caption(session_id):
         )
         
         # Broadcast caption to connected SSE clients with enhanced question analysis
-        if session_id in session_queues:
+        if session_id in session_queues and not is_interview_mode(session_id):
             session_queues[session_id].put({
                 'type': 'new_caption',
                 'data': {
@@ -907,7 +923,7 @@ def add_caption(session_id):
                 }
                 
                 # Add to session queue for real-time updates (future SSE implementation)
-                if session_id in session_queues:
+                if session_id in session_queues and not is_interview_mode(session_id):
                     session_queues[session_id].put({
                         'type': 'new_answer',
                         'data': response_data['ai_response'],
@@ -915,7 +931,7 @@ def add_caption(session_id):
                     })
                 
             except Exception as e:
-                print(f"Error generating AI response: {e}")
+                log_safe(f"Error generating AI response: {e}", session_id)
                 response_data['ai_response_error'] = str(e)
         
         return jsonify(response_data), 200
