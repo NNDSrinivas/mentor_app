@@ -11,6 +11,10 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from dataclasses import dataclass, asdict
 
+from backend.integrations.jira_manager import JiraManager
+from backend.integrations.github_manager import GitHubManager
+from backend.approvals import request_pr_auto_reply, sync_jira_pr_status
+
 # Config with graceful fallbacks
 try:
     from app.config import Config
@@ -21,6 +25,7 @@ try:
         Config.JIRA_API_TOKEN = os.getenv('JIRA_API_TOKEN', 'mock-token')
         Config.GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', 'mock-token')
         Config.GITHUB_REPO = os.getenv('GITHUB_REPO', 'user/repo')
+        Config.BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')
 except ImportError:
     class Config:
         JIRA_BASE_URL = os.getenv('JIRA_BASE_URL', 'https://mock-jira.com')
@@ -29,6 +34,7 @@ except ImportError:
         JIRA_API_TOKEN = os.getenv('JIRA_API_TOKEN', 'mock-token')
         GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', 'mock-token')
         GITHUB_REPO = os.getenv('GITHUB_REPO', 'user/repo')
+        BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +329,9 @@ class JiraIntegration:
 class TaskManager:
     def __init__(self):
         self.jira = JiraIntegration()
+        # Managers exposed for cross-service integrations
+        self.jira_manager = JiraManager(dry_run=True)
+        self.github_manager = GitHubManager(dry_run=True)
         self.active_tasks: Dict[str, Task] = {}
         
     def get_user_current_tasks(self, user_email: str) -> List[Task]:
@@ -334,6 +343,14 @@ class TaskManager:
             self.active_tasks[task.task_id] = task
             
         return tasks
+
+    def auto_reply_to_pr(self, owner: str, repo: str, pr_number: int, jira_issue: Optional[str] = None):
+        """Use LLM to suggest fixes for PR comments and queue for approval."""
+        return request_pr_auto_reply(owner, repo, pr_number, jira_issue)
+
+    def sync_pr_status_to_jira(self, owner: str, repo: str, pr_number: int, jira_issue: str):
+        """Trigger a Jira update reflecting the latest PR status."""
+        return sync_jira_pr_status(owner, repo, pr_number, jira_issue)
     
     def extract_tasks_from_meeting(self, meeting_summary: Dict) -> List[str]:
         """Extract potential tasks from meeting content"""
@@ -476,7 +493,24 @@ class TaskManager:
                     'should', 'must', 'will', 'needs to', 'required to'
                 ]):
                     criteria.append(sentence)
-        
+
         return criteria
+
+    def trigger_code_generation(self, task: Task, files: Dict[str, str], base_branch: str = "main") -> Dict[str, Any]:
+        """Trigger backend code generation and PR creation for a task"""
+        payload = {
+            "task_id": task.task_id,
+            "title": task.title,
+            "description": task.description,
+            "files": files,
+            "base_branch": base_branch,
+        }
+        try:
+            response = requests.post(f"{Config.BACKEND_URL}/api/codegen", json=payload, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error triggering code generation: {e}")
+            return {"error": str(e)}
 
 # Note: TaskManager should be instantiated in the application, not here as a module-level singleton

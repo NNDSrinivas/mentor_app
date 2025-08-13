@@ -36,6 +36,8 @@ function HomeScreen({ navigation }: any) {
   const [userLevel, setUserLevel] = useState('IC5');
   const [refreshing, setRefreshing] = useState(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const [participants, setParticipants] = useState<number[]>([]);
 
   useEffect(() => {
     // Auto-connect on app start
@@ -78,8 +80,9 @@ function HomeScreen({ navigation }: any) {
       setSessionId(newSessionId);
       setIsConnected(true);
 
-      // Start polling for answers
+      // Start polling and real-time stream
       startPolling(newSessionId, base);
+      startEventStream(newSessionId, base);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Connected', 'AI Interview Assistant is ready');
@@ -142,6 +145,39 @@ function HomeScreen({ navigation }: any) {
     pollIntervalRef.current = setInterval(fetchAnswers, 3000);
   };
 
+  const startEventStream = (sid: string, baseUrl?: string) => {
+    const base = baseUrl ?? normalizeBaseUrl(serverUrl);
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+    const es = new EventSource(`${base}/api/sessions/${encodeURIComponent(sid)}/stream`);
+    es.onmessage = (ev) => {
+      try {
+        const evt = JSON.parse(ev.data);
+        if (evt.type === 'participant_joined' || evt.type === 'participant_left' || evt.type === 'connected') {
+          const list = evt.data?.participants || evt.participants || [];
+          setParticipants(Array.isArray(list) ? list : []);
+        }
+        if (evt.type === 'new_answer' && evt.data) {
+          setAnswers(prev => [
+            ...prev,
+            normalizeAnswer({
+              question: evt.data.question || '',
+              answer: evt.data.answer || '',
+              timestamp: evt.timestamp,
+              user_level: userLevel,
+              memory_context_used: evt.data.memoryContextUsed,
+            }, prev.length)
+          ]);
+        }
+      } catch (err) {
+        console.error('SSE parse error', err);
+      }
+    };
+    es.onerror = (err) => console.error('SSE connection error', err);
+    eventSourceRef.current = es;
+  };
+
   const endSession = async () => {
     const base = normalizeBaseUrl(serverUrl);
     const sid = sessionId;
@@ -156,6 +192,10 @@ function HomeScreen({ navigation }: any) {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
+    }
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
     setSessionId(null);
     setIsConnected(false);
@@ -205,6 +245,10 @@ function HomeScreen({ navigation }: any) {
         <Text style={styles.title}>AI Interview Assistant</Text>
         <View style={[styles.statusIndicator, { backgroundColor: isConnected ? '#4ade80' : '#ef4444' }]} />
       </View>
+
+      {isConnected && (
+        <Text style={styles.participantText}>Participants: {participants.length}</Text>
+      )}
 
       {/* Connection Settings */}
       {!isConnected && (
@@ -401,6 +445,11 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
+  },
+  participantText: {
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginVertical: 8,
   },
   settingsSection: {
     padding: 20,

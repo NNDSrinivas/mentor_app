@@ -82,11 +82,17 @@ class MeetingSession:
 
 class ConversationMemory:
     """Persistent conversation memory system."""
-    
+
     def __init__(self):
         self.sessions: Dict[str, MeetingSession] = {}
         self.active_session: Optional[str] = None
-        self.kb = KnowledgeBase()
+        try:
+            self.kb: Optional[KnowledgeBase] = KnowledgeBase()
+        except Exception as e:
+            # If the knowledge base fails to initialize (e.g. missing API key)
+            # continue without it so the assistant can still operate.
+            logger.warning(f"Knowledge base disabled: {e}")
+            self.kb = None
         
     def start_session(self, session_id: str, context: Dict[str, Any]) -> str:
         """Start a new conversation session."""
@@ -114,16 +120,20 @@ class ConversationMemory:
         """Add conversation entry to session."""
         if session_id in self.sessions:
             self.sessions[session_id].conversations.append(entry)
-            
-            # Add to knowledge base for long-term memory
-            metadata = {
-                "type": "conversation",
-                "session_id": session_id,
-                "speaker": entry.speaker,
-                "timestamp": entry.timestamp,
-                "meeting_context": json.dumps(entry.context)
-            }
-            self.kb.add_document(entry.content, metadata)
+
+            # Add to knowledge base for long-term memory when available
+            if self.kb:
+                metadata = {
+                    "type": "conversation",
+                    "session_id": session_id,
+                    "speaker": entry.speaker,
+                    "timestamp": entry.timestamp,
+                    "meeting_context": json.dumps(entry.context)
+                }
+                try:
+                    self.kb.add_document(entry.content, metadata)
+                except Exception as e:
+                    logger.warning(f"Failed to store conversation in KB: {e}")
             
     def get_session_context(self, session_id: str) -> Dict[str, Any]:
         """Get full context for a session."""
@@ -141,6 +151,8 @@ class ConversationMemory:
     
     def search_conversation_history(self, query: str, limit: int = 5) -> List[Dict]:
         """Search all conversation history."""
+        if not self.kb:
+            return []
         return self.kb.search(query, top_k=limit, filter_metadata={"type": "conversation"})
 
 
@@ -185,8 +197,11 @@ class AIAssistant:
             try:
                 flow_cls = cast(Any, InterviewFlowManager)
                 self.interview_flow = flow_cls()
-                if self.interview_flow is not None and hasattr(self.interview_flow, "register_response_callback"):
-                    self.interview_flow.register_response_callback(self._handle_interview_response)
+                if self.interview_flow is not None:
+                    if hasattr(self.interview_flow, "register_response_callback"):
+                        self.interview_flow.register_response_callback(self._handle_interview_response)
+                    if hasattr(self.interview_flow, "register_segment_callback"):
+                        self.interview_flow.register_segment_callback(self._handle_new_segment)
                 logger.info("✅ Speaker diarization initialized for interview flow")
             except Exception as e:
                 logger.warning(f"⚠️ Speaker diarization initialization failed: {e}")
@@ -659,6 +674,27 @@ class AIAssistant:
             'timestamp': datetime.now().isoformat(),
             'type': 'interview_qa'
         })
+
+    def _handle_new_segment(self, segment: Any):
+        """Store each processed speaker segment in conversation memory."""
+        session_id = "interview_session"
+        if session_id not in self.memory.sessions:
+            self.memory.start_session(session_id, {"participants": []})
+
+        entry = ConversationEntry(
+            timestamp=datetime.now().isoformat(),
+            meeting_id=session_id,
+            speaker=segment.speaker_id,
+            content=segment.transcript,
+            type="human",
+            context={
+                "is_question": segment.is_question,
+                "is_interviewer": segment.is_interviewer,
+            },
+            sentiment="neutral",
+            importance=5,
+        )
+        self.memory.add_conversation(session_id, entry)
     
     async def process_interview_speech(self, transcript: str, voice_features: Optional[Dict] = None) -> Optional[str]:
         """Process speech with speaker diarization for interview flow."""

@@ -4,6 +4,8 @@ import websockets
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from typing import Set
+from backend.integrations.github_manager import GitHubManager
+from app.task_manager import Task, TaskManager
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -35,6 +37,9 @@ start_worker_thread()
 # WebSocket connections for real-time notifications
 from typing import Any as _Any
 connected_clients: Set[_Any] = set()
+
+# Task manager instance for task operations
+task_manager = TaskManager()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -214,6 +219,68 @@ def jira_comment():
         
         return jsonify({"submitted": True, "approvalId": item.id})
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- Code Generation Endpoint ---
+@app.route("/api/codegen", methods=["POST"])
+def codegen():
+    """Generate code for a task and open a PR"""
+    try:
+        data = request.get_json(force=True)
+        required_fields = ["task_id", "title", "description", "files"]
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": "Missing required fields", "required": required_fields}), 400
+
+        task = Task(
+            task_id=data["task_id"],
+            title=data["title"],
+            description=data["description"],
+            status=data.get("status", "in_progress"),
+            assignee=data.get("assignee"),
+        )
+        task_manager.active_tasks[task.task_id] = task
+
+        files = data["files"]
+        base_branch = data.get("base_branch", "main")
+        branch_name = data.get("branch", f"task-{task.task_id}")
+
+        repo_full = data.get("repo") or os.getenv("GITHUB_REPO", "")
+        if "/" in repo_full:
+            owner, repo = repo_full.split("/", 1)
+        else:
+            owner, repo = repo_full, ""
+
+        gh = GitHubManager(dry_run=os.getenv("GITHUB_DRY_RUN", "true").lower() == "true")
+
+        gh.create_branch(owner, repo, base_branch, branch_name)
+        for path, content in files.items():
+            gh.commit_file(owner, repo, branch_name, path, content.encode("utf-8"), f"Add {path} for {task.title}")
+        pr = gh.create_pr(owner, repo, head=branch_name, base=base_branch, title=data.get("pr_title", task.title), body=data.get("pr_body", task.description))
+
+        pr_number = pr.get("number")
+        status = gh.get_pr(owner, repo, pr_number) if pr_number else pr
+        comments = gh.get_pr_comments(owner, repo, pr_number) if pr_number else {"comments": []}
+
+        # Update JIRA task status and comment
+        try:
+            task_manager.jira.update_task_status(task.task_id, "review")
+            pr_url = pr.get("html_url", "")
+            if pr_url:
+                task_manager.jira.add_comment(task.task_id, f"PR created: {pr_url}")
+        except Exception as jira_err:
+            log.debug(f"JIRA update failed: {jira_err}")
+
+        notify_all({
+            "type": "codegen_pr",
+            "task_id": task.task_id,
+            "pr": pr,
+            "status": status,
+            "comments": comments,
+        })
+
+        return jsonify({"pr": pr, "status": status, "comments": comments})
+    except Exception as e:
+        log.error(f"Error generating code: {e}")
         return jsonify({"error": str(e)}), 500
 
 # --- GitHub Webhook for CI/status events ---

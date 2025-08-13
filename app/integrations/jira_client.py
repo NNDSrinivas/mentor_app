@@ -1,10 +1,10 @@
 from __future__ import annotations
 import os
+import base64
 import time
 import logging
-from typing import Dict, Any
-
 import requests
+from typing import Dict, Any
 from requests import RequestException
 
 log = logging.getLogger(__name__)
@@ -17,7 +17,8 @@ class JiraClient:
         self.dry_run = True  # flip when approved
 
     def _headers(self):
-        return {'Authorization': f'Basic {self.user}:{self.token}', 'Content-Type': 'application/json'}
+        encoded = base64.b64encode(f"{self.user}:{self.token}".encode()).decode()
+        return {'Authorization': f'Basic {encoded}', 'Content-Type': 'application/json'}
 
     def _request(self, method: str, url: str, retries: int = 3, **kwargs) -> requests.Response:
         """Perform HTTP request with simple retries and error handling."""
