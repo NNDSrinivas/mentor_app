@@ -104,8 +104,20 @@ class GitHubManager:
         """Get PR comments (read-only)"""
         if self.dry_run:
             return {"dry_run": True, "pr": pr_number, "comments": []}
-        
+
         r = requests.get(f"{GITHUB_API}/repos/{owner}/{repo}/issues/{pr_number}/comments", headers=_h())
+        r.raise_for_status()
+        return r.json()
+
+    def get_review_comments(self, owner: str, repo: str, pr_number: int) -> Dict[str, Any]:
+        """Get code review comments for a PR (read-only)"""
+        if self.dry_run:
+            return {"dry_run": True, "pr": pr_number, "comments": []}
+
+        r = requests.get(
+            f"{GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_number}/comments",
+            headers=_h(),
+        )
         r.raise_for_status()
         return r.json()
 
