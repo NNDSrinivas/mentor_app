@@ -1,0 +1,4 @@
+Teacher: Today we discuss distributed systems.
+Student: Sounds interesting!
+Teacher: What questions do you have?
+Student: How do we ensure consistency?
