@@ -1,8 +1,8 @@
 from __future__ import annotations
 import json, os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-def load_profile(path: str = None) -> Dict[str, Any]:
+def load_profile(path: Optional[str] = None) -> Dict[str, Any]:
     """Load the user's parsed profile/resume JSON."""
     candidates = [path] if path else [
         os.getenv("PROFILE_JSON"),

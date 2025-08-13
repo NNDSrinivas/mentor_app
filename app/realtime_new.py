@@ -17,13 +17,15 @@ backend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 sys.path.insert(0, backend_dir)
 
 try:
-    from diarization_service import DiarizationService
-    from memory_service import MemoryService
+    from backend.diarization_service import DiarizationService
+    from backend.memory_service import MemoryService
     ADVANCED_FEATURES = True
 except ImportError:
     log = logging.getLogger(__name__)
     log.warning("Advanced features (diarization/memory) not available, using basic mode")
     ADVANCED_FEATURES = False
+    DiarizationService = None  # type: ignore[assignment]
+    MemoryService = None  # type: ignore[assignment]
 
 log = logging.getLogger(__name__)
 
@@ -41,8 +43,8 @@ class RealtimeSessionManager:
     def __init__(self):
         self.sessions: Dict[str, 'RealtimeSession'] = {}
         if ADVANCED_FEATURES:
-            self.diarization = DiarizationService()
-            self.memory = MemoryService()
+            self.diarization = DiarizationService()  # type: ignore[operator]
+            self.memory = MemoryService()  # type: ignore[operator]
         else:
             self.diarization = None
             self.memory = None
@@ -245,16 +247,9 @@ class RealtimeSession:
             
             # Import LLM service for answer generation
             try:
-                from app.llm import LLMService
-                llm = LLMService()
-                
-                # Generate answer
-                answer = llm.generate_answer(
-                    question=question,
-                    user_level=self.user_level,
-                    context=memory_context,
-                    project_context=self.project_context
-                )
+                from app.llm import generate_answer as _gen_answer
+                prompt = f"Level: {self.user_level}\nContext: {memory_context}\nQuestion: {question}\nAnswer:"
+                answer = _gen_answer(prompt)
             except ImportError:
                 # Fallback to basic answer generation
                 answer = f"[{self.user_level}] For this question: '{question[:100]}...', consider the system design patterns, scalability concerns, and implementation details appropriate for your level."
@@ -418,7 +413,8 @@ if __name__ == "__main__":
     ]
     
     for caption in test_captions:
-        session.add_caption(caption)
+        if session:
+            session.add_caption(caption)
         time.sleep(1)
     
     # Wait a bit for processing
@@ -426,9 +422,10 @@ if __name__ == "__main__":
     
     # Check results
     print("Recent answers:")
-    for answer in session.get_recent_answers():
-        print(f"Q: {answer['question']}")
-        print(f"A: {answer['answer'][:100]}...")
-        print()
+    if session:
+        for answer in session.get_recent_answers():
+            print(f"Q: {answer['question']}")
+            print(f"A: {answer['answer'][:100]}...")
+            print()
     
     manager.end_session(session_id)

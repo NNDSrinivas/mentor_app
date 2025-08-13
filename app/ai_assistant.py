@@ -14,7 +14,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, cast
 from dataclasses import dataclass, asdict
 
 from openai import OpenAI
@@ -82,11 +82,17 @@ class MeetingSession:
 
 class ConversationMemory:
     """Persistent conversation memory system."""
-    
+
     def __init__(self):
         self.sessions: Dict[str, MeetingSession] = {}
         self.active_session: Optional[str] = None
-        self.kb = KnowledgeBase()
+        try:
+            self.kb: Optional[KnowledgeBase] = KnowledgeBase()
+        except Exception as e:
+            # If the knowledge base fails to initialize (e.g. missing API key)
+            # continue without it so the assistant can still operate.
+            logger.warning(f"Knowledge base disabled: {e}")
+            self.kb = None
         
     def start_session(self, session_id: str, context: Dict[str, Any]) -> str:
         """Start a new conversation session."""
@@ -114,16 +120,20 @@ class ConversationMemory:
         """Add conversation entry to session."""
         if session_id in self.sessions:
             self.sessions[session_id].conversations.append(entry)
-            
-            # Add to knowledge base for long-term memory
-            metadata = {
-                "type": "conversation",
-                "session_id": session_id,
-                "speaker": entry.speaker,
-                "timestamp": entry.timestamp,
-                "meeting_context": json.dumps(entry.context)
-            }
-            self.kb.add_document(entry.content, metadata)
+
+            # Add to knowledge base for long-term memory when available
+            if self.kb:
+                metadata = {
+                    "type": "conversation",
+                    "session_id": session_id,
+                    "speaker": entry.speaker,
+                    "timestamp": entry.timestamp,
+                    "meeting_context": json.dumps(entry.context)
+                }
+                try:
+                    self.kb.add_document(entry.content, metadata)
+                except Exception as e:
+                    logger.warning(f"Failed to store conversation in KB: {e}")
             
     def get_session_context(self, session_id: str) -> Dict[str, Any]:
         """Get full context for a session."""
@@ -141,6 +151,8 @@ class ConversationMemory:
     
     def search_conversation_history(self, query: str, limit: int = 5) -> List[Dict]:
         """Search all conversation history."""
+        if not self.kb:
+            return []
         return self.kb.search(query, top_k=limit, filter_metadata={"type": "conversation"})
 
 
@@ -148,38 +160,48 @@ class AIAssistant:
     """AI Assistant with real-time interaction capabilities."""
     
     def __init__(self):
+        self.mock_mode = False
         if not Config.OPENAI_API_KEY:
-            raise ValueError("OpenAI API key required for AI Assistant")
-            
-        self.openai_client = OpenAI(api_key=Config.OPENAI_API_KEY)
+            # Enter mock mode so the app can still start locally
+            self.mock_mode = True
+            logger.warning("⚠️ OPENAI_API_KEY missing – starting in mock mode (deterministic placeholder answers)")
+        else:
+            self.openai_client = OpenAI(api_key=Config.OPENAI_API_KEY)
         self.memory = ConversationMemory()
         self.transcription = TranscriptionService()
         self.summarization = SummarizationService()
         
         # Initialize ProfileManager for resume context
-        self.profile_manager = None
-        if PROFILE_MANAGER_AVAILABLE:
+        self.profile_manager: Optional[Any] = None
+        if PROFILE_MANAGER_AVAILABLE and ProfileManager is not None:
             try:
-                self.profile_manager = ProfileManager()
+                pm_cls = cast(Any, ProfileManager)
+                self.profile_manager = pm_cls()
                 logger.info("✅ ProfileManager initialized for resume context")
             except Exception as e:
                 logger.warning(f"⚠️ ProfileManager initialization failed: {e}")
-        
+
         # Initialize company interview knowledge base
-        self.company_kb = None
-        if COMPANY_KB_AVAILABLE:
+        self.company_kb: Optional[Any] = None
+        if COMPANY_KB_AVAILABLE and CompanyInterviewKB is not None:
             try:
-                self.company_kb = CompanyInterviewKB(self.memory.kb)
+                kb_cls = cast(Any, CompanyInterviewKB)
+                self.company_kb = kb_cls(self.memory.kb)
                 logger.info("✅ Company interview knowledge base initialized")
             except Exception as e:
                 logger.warning(f"⚠️ Company KB initialization failed: {e}")
-        
+
         # Initialize speaker diarization for interview flow
-        self.interview_flow = None
-        if DIARIZATION_AVAILABLE:
+        self.interview_flow: Optional[Any] = None
+        if DIARIZATION_AVAILABLE and InterviewFlowManager is not None:
             try:
-                self.interview_flow = InterviewFlowManager()
-                self.interview_flow.register_response_callback(self._handle_interview_response)
+                flow_cls = cast(Any, InterviewFlowManager)
+                self.interview_flow = flow_cls()
+                if self.interview_flow is not None:
+                    if hasattr(self.interview_flow, "register_response_callback"):
+                        self.interview_flow.register_response_callback(self._handle_interview_response)
+                    if hasattr(self.interview_flow, "register_segment_callback"):
+                        self.interview_flow.register_segment_callback(self._handle_new_segment)
                 logger.info("✅ Speaker diarization initialized for interview flow")
             except Exception as e:
                 logger.warning(f"⚠️ Speaker diarization initialization failed: {e}")
@@ -241,40 +263,13 @@ class AIAssistant:
         # Load existing resume if available
         self._load_resume_from_file()
         
-    async def process_real_time_audio(self, audio_data: bytes, session_id: str):
-        """Process real-time audio and respond if needed."""
+    async def process_real_time_audio_initial(self, audio_data: bytes, session_id: str):
+        """Initial real-time audio handler (stubbed when async transcription unavailable)."""
         try:
-            # Transcribe audio chunk
-            transcript = await self.transcription.transcribe_audio_async(audio_data)
-            
-            if not transcript or len(transcript.strip()) < 10:
-                return
-                
-            # Create conversation entry
-            entry = ConversationEntry(
-                timestamp=datetime.now().isoformat(),
-                meeting_id=session_id,
-                speaker="human",
-                content=transcript,
-                type="human",
-                context=await self._get_current_context(),
-                sentiment=self._analyze_sentiment(transcript),
-                importance=self._calculate_importance(transcript)
-            )
-            
-            # Add to memory
-            self.memory.add_conversation(session_id, entry)
-            
-            # Check if AI should respond
-            should_respond = await self._should_respond(transcript, session_id)
-            if should_respond:
-                await self._generate_response(transcript, session_id)
-                
-            # Check if AI should ask questions
-            await self._check_for_questions(transcript, session_id)
-            
+            logger.debug("process_real_time_audio_initial called; real-time transcription not implemented.")
+            return
         except Exception as e:
-            logger.error(f"Error processing real-time audio: {e}")
+            logger.error(f"Error in process_real_time_audio_initial: {e}")
     
     async def _should_respond(self, transcript: str, session_id: str) -> bool:
         """Determine if AI should respond to the conversation."""
@@ -310,14 +305,17 @@ class AIAssistant:
         """
         
         try:
-            response = self.openai_client.chat.completions.create(
-                model=Config.OPENAI_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=50
-            )
-            
-            result = response.choices[0].message.content.strip()
-            return result.upper().startswith("YES")
+            if self.mock_mode:
+                # Simple heuristic in mock mode
+                return any(q in text_lower for q in ["?", "how", "what", "why"])
+            else:
+                response = self.openai_client.chat.completions.create(
+                    model=Config.OPENAI_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=50
+                )
+                result = (response.choices[0].message.content or "").strip()
+                return result.upper().startswith("YES")
             
         except Exception as e:
             logger.error(f"Error determining response need: {e}")
@@ -336,16 +334,18 @@ class AIAssistant:
             prompt = self._build_response_prompt(transcript, context, relevant_docs)
             
             # Generate response
-            response = self.openai_client.chat.completions.create(
-                model=Config.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": self._get_system_prompt()},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=300
-            )
-            
-            ai_response = response.choices[0].message.content.strip()
+            if self.mock_mode:
+                ai_response = f"(mock) Based on the recent discussion: '{transcript[:60]}...' I'd suggest focusing on clarity and next steps."
+            else:
+                response = self.openai_client.chat.completions.create(
+                    model=Config.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": self._get_system_prompt()},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=300
+                )
+                ai_response = (response.choices[0].message.content or "").strip()
             
             # Create AI conversation entry
             ai_entry = ConversationEntry(
@@ -382,13 +382,15 @@ class AIAssistant:
             If yes, provide 1-2 brief, relevant questions. If no, respond with "NO_QUESTIONS".
             """
             
-            response = self.openai_client.chat.completions.create(
-                model=Config.OPENAI_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=150
-            )
-            
-            questions = response.choices[0].message.content.strip()
+            if self.mock_mode:
+                questions = "NO_QUESTIONS"
+            else:
+                response = self.openai_client.chat.completions.create(
+                    model=Config.OPENAI_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=150
+                )
+                questions = (response.choices[0].message.content or "").strip()
             
             if questions != "NO_QUESTIONS" and questions:
                 # Store questions for private display
@@ -672,8 +674,29 @@ class AIAssistant:
             'timestamp': datetime.now().isoformat(),
             'type': 'interview_qa'
         })
+
+    def _handle_new_segment(self, segment: Any):
+        """Store each processed speaker segment in conversation memory."""
+        session_id = "interview_session"
+        if session_id not in self.memory.sessions:
+            self.memory.start_session(session_id, {"participants": []})
+
+        entry = ConversationEntry(
+            timestamp=datetime.now().isoformat(),
+            meeting_id=session_id,
+            speaker=segment.speaker_id,
+            content=segment.transcript,
+            type="human",
+            context={
+                "is_question": segment.is_question,
+                "is_interviewer": segment.is_interviewer,
+            },
+            sentiment="neutral",
+            importance=5,
+        )
+        self.memory.add_conversation(session_id, entry)
     
-    async def process_interview_speech(self, transcript: str, voice_features: Dict = None) -> Optional[str]:
+    async def process_interview_speech(self, transcript: str, voice_features: Optional[Dict] = None) -> Optional[str]:
         """Process speech with speaker diarization for interview flow."""
         
         if not self.interview_flow:
@@ -729,17 +752,19 @@ class AIAssistant:
             prompt = self._build_interview_prompt(question, profile_context)
             
             # Generate response with interview-specific settings
-            response = self.openai_client.chat.completions.create(
-                model=Config.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": self._get_system_prompt()},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=2000,  # Increased for comprehensive resume-based responses
-                temperature=0.7,  # Balanced creativity and consistency
-            )
-            
-            ai_response = response.choices[0].message.content.strip()
+            if self.mock_mode:
+                ai_response = f"(mock interview answer) For the question: '{question[:80]}', articulate key trade-offs, provide a concise design, and highlight prior experience."
+            else:
+                response = self.openai_client.chat.completions.create(
+                    model=Config.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": self._get_system_prompt()},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=2000,
+                    temperature=0.7,
+                )
+                ai_response = (response.choices[0].message.content or "").strip()
             
             # Store conversation entry
             entry = ConversationEntry(
@@ -846,7 +871,8 @@ class AIAssistant:
             f"{c.speaker}: {c.content}" for c in session.conversations
         ])
         
-        summary = await self.summarization.summarize_transcript({
+        from .summarization import summarize_transcript as _summarize_transcript
+        summary = _summarize_transcript({
             "text": conversations_text,
             "segments": []
         })
@@ -1121,7 +1147,7 @@ Provide helpful, experienced advice based on 20 years in the industry. Be practi
                 temperature=temperature
             )
             
-            return response.choices[0].message.content.strip()
+            return (response.choices[0].message.content or "").strip()
             
         except Exception as e:
             logger.error(f"Error generating AI response: {e}")
@@ -1192,7 +1218,7 @@ Provide helpful, experienced advice based on 20 years in the industry. Be practi
         except Exception as e:
             logger.error(f"Error processing real-time audio: {e}")
     
-    def set_interview_configuration(self, level: str, company: str = None):
+    def set_interview_configuration(self, level: str, company: Optional[str] = None):
         """Set interview level and target company."""
         
         valid_levels = ["IC5", "IC6", "IC7", "E5", "E6", "E7"]
