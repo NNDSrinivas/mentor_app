@@ -32,7 +32,7 @@ import java.util.concurrent.CompletableFuture;
 public final class AIMentorService {
     
     private static final Logger LOG = Logger.getInstance(AIMentorService.class);
-    private static final String DEFAULT_SERVICE_URL = "http://localhost:8081";
+    private static final String DEFAULT_SERVICE_URL = "http://localhost:8084";
     
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -92,16 +92,18 @@ public final class AIMentorService {
     public CompletableFuture<String> askQuestion(@NotNull String question, @Nullable String selectedCode, @Nullable String fileName) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Map<String, Object> requestData = new HashMap<>();
-                requestData.put("question", question);
-                requestData.put("code", selectedCode);
-                requestData.put("file_name", fileName);
-                requestData.put("meeting_context", meetingContext);
-                requestData.put("jira_context", jiraContext);
-                requestData.put("project_name", project != null ? project.getName() : "unknown");
-                
-                String jsonRequest = objectMapper.writeValueAsString(requestData);
-                
+                Map<String, Object> payload = new HashMap<>();
+                payload.put("question", question);
+                // simple_web.py expects an optional 'context' object; include useful metadata
+                Map<String, Object> context = new HashMap<>();
+                if (fileName != null) context.put("file_name", fileName);
+                if (selectedCode != null) context.put("selected_code", selectedCode);
+                context.put("source", "intellij_plugin");
+                payload.put("context", context);
+                payload.put("interview_mode", false);
+
+                String jsonRequest = objectMapper.writeValueAsString(payload);
+
                 HttpPost request = new HttpPost(serviceUrl + "/api/ask");
                 request.setHeader("Content-Type", "application/json");
                 request.setEntity(new StringEntity(jsonRequest));
@@ -111,7 +113,13 @@ public final class AIMentorService {
                 
                 if (response.getStatusLine().getStatusCode() == 200) {
                     JsonNode jsonResponse = objectMapper.readTree(responseBody);
-                    return jsonResponse.get("answer").asText();
+                    // simple_web responds with 'response'; fall back to 'answer' if present
+                    if (jsonResponse.has("response")) {
+                        return jsonResponse.get("response").asText();
+                    } else if (jsonResponse.has("answer")) {
+                        return jsonResponse.get("answer").asText();
+                    }
+                    return responseBody;
                 } else {
                     LOG.warn("AI Mentor request failed: " + responseBody);
                     return "Sorry, I couldn't process your question. Please try again.";
@@ -130,29 +138,15 @@ public final class AIMentorService {
     public CompletableFuture<String> analyzeCode(@NotNull String code, @NotNull String language, @Nullable String fileName) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Map<String, Object> requestData = new HashMap<>();
-                requestData.put("code", code);
-                requestData.put("language", language);
-                requestData.put("file_name", fileName);
-                requestData.put("analysis_type", "comprehensive");
-                requestData.put("context", jiraContext);
-                
-                String jsonRequest = objectMapper.writeValueAsString(requestData);
-                
-                HttpPost request = new HttpPost(serviceUrl + "/api/analyze");
-                request.setHeader("Content-Type", "application/json");
-                request.setEntity(new StringEntity(jsonRequest));
-                
-                HttpResponse response = httpClient.execute(request);
-                String responseBody = EntityUtils.toString(response.getEntity());
-                
-                if (response.getStatusLine().getStatusCode() == 200) {
-                    JsonNode jsonResponse = objectMapper.readTree(responseBody);
-                    return jsonResponse.get("analysis").asText();
-                } else {
-                    return "Failed to analyze code: " + responseBody;
+                // Route analysis through /api/ask with an analysis-style prompt
+                StringBuilder sb = new StringBuilder();
+                sb.append("Analyze the following ").append(language).append(" code and suggest improvements, potential bugs, refactorings, tests, and best practices.\n\n");
+                if (fileName != null) {
+                    sb.append("File: ").append(fileName).append("\n\n");
                 }
-                
+                sb.append("Code:\n\n").append(code);
+
+                return askQuestion(sb.toString(), code, fileName).get();
             } catch (Exception e) {
                 LOG.error("Failed to analyze code", e);
                 return "Error occurred during code analysis.";
@@ -166,31 +160,46 @@ public final class AIMentorService {
     public CompletableFuture<String> generateCodeForTask(@NotNull String taskDescription, @NotNull String language) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Map<String, Object> requestData = new HashMap<>();
-                requestData.put("task", taskDescription);
-                requestData.put("language", language);
-                requestData.put("jira_task", currentJiraTask);
-                requestData.put("meeting_context", meetingContext);
-                requestData.put("project_context", getProjectContext());
-                
-                String jsonRequest = objectMapper.writeValueAsString(requestData);
-                
-                HttpPost request = new HttpPost(serviceUrl + "/api/generate");
-                request.setHeader("Content-Type", "application/json");
-                request.setEntity(new StringEntity(jsonRequest));
-                
-                HttpResponse response = httpClient.execute(request);
-                String responseBody = EntityUtils.toString(response.getEntity());
-                
-                if (response.getStatusLine().getStatusCode() == 200) {
-                    JsonNode jsonResponse = objectMapper.readTree(responseBody);
-                    return jsonResponse.get("code").asText();
-                } else {
-                    return "// Failed to generate code: " + responseBody;
-                }
-                
+                StringBuilder sb = new StringBuilder();
+                sb.append("Generate ").append(language).append(" code for the following task. ");
+                if (currentJiraTask != null) sb.append("Related Jira task: ").append(currentJiraTask).append(". ");
+                sb.append("Provide clean, correct code with comments if helpful.\n\n");
+                sb.append("Task: ").append(taskDescription);
+
+                return askQuestion(sb.toString(), null, null).get();
             } catch (Exception e) {
                 LOG.error("Failed to generate code", e);
+                return "// Error occurred during code generation";
+            }
+        });
+    }
+
+    /**
+     * Overload used by GenerateCodeAction to include more preferences.
+     */
+    public CompletableFuture<String> generateCodeForTask(@NotNull String taskDescription,
+                                                         @Nullable String fileName,
+                                                         @Nullable String fileType,
+                                                         @Nullable String existingCode,
+                                                         @Nullable String codeStyle,
+                                                         boolean includeTests) {
+        String lang = fileType != null ? fileType : "plaintext";
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                StringBuilder sb = new StringBuilder();
+                sb.append("Generate ").append(lang).append(" code for the following task.");
+                if (codeStyle != null) sb.append(" Style: ").append(codeStyle).append('.');
+                if (includeTests) sb.append(" Include unit tests.");
+                sb.append("\n\nTask: ").append(taskDescription).append("\n\n");
+                if (fileName != null) sb.append("Target file: ").append(fileName).append("\n\n");
+                if (existingCode != null && !existingCode.trim().isEmpty()) {
+                    sb.append("Existing context:\n\n").append(existingCode).append("\n\n");
+                }
+                sb.append("Return only code when appropriate.");
+
+                return askQuestion(sb.toString(), existingCode, fileName).get();
+            } catch (Exception e) {
+                LOG.error("Failed to generate code (extended)", e);
                 return "// Error occurred during code generation";
             }
         });
@@ -199,36 +208,16 @@ public final class AIMentorService {
     /**
      * Sync with Jira tasks
      */
-    public CompletableFuture<Map<String, Object>> syncJiraTasks() {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                HttpGet request = new HttpGet(serviceUrl + "/api/jira/tasks");
-                HttpResponse response = httpClient.execute(request);
-                String responseBody = EntityUtils.toString(response.getEntity());
-                
-                if (response.getStatusLine().getStatusCode() == 200) {
-                    JsonNode jsonResponse = objectMapper.readTree(responseBody);
-                    Map<String, Object> result = objectMapper.convertValue(jsonResponse, Map.class);
-                    
-                    // Update current context if tasks are available
-                    if (result.containsKey("tasks")) {
-                        updateJiraContext(result);
-                    }
-                    
-                    return result;
-                } else {
-                    Map<String, Object> errorResult = new HashMap<>();
-                    errorResult.put("error", "Failed to sync Jira tasks");
-                    return errorResult;
-                }
-                
-            } catch (Exception e) {
-                LOG.error("Failed to sync Jira tasks", e);
-                Map<String, Object> errorResult = new HashMap<>();
-                errorResult.put("error", e.getMessage());
-                return errorResult;
-            }
-        });
+    public java.util.concurrent.CompletableFuture<java.util.List<java.util.Map<String, Object>>> syncJiraTasks() {
+        // No Jira backend in this repo; return empty list to populate UI safely
+        return java.util.concurrent.CompletableFuture.completedFuture(java.util.Collections.emptyList());
+    }
+
+    /**
+     * Detect interview mode (stubbed: returns false). Could be extended to query local services.
+     */
+    public CompletableFuture<Boolean> detectInterviewMode() {
+        return CompletableFuture.completedFuture(false);
     }
     
     /**

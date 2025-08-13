@@ -46,8 +46,9 @@ public class AIMentorToolWindow {
         chatArea.setWrapStyleWord(true);
         chatArea.setText("Welcome to AI Mentor!\nAsk questions about your code, get suggestions, or request code generation.\n\n");
         
-        questionField = new JBTextField();
-        questionField.setPlaceholderText("Ask AI Mentor a question...");
+    questionField = new JBTextField();
+    // Show placeholder using EmptyText API
+    questionField.getEmptyText().setText("Ask AI Mentor a question...");
         
         askButton = new JBButton("Ask", AllIcons.Actions.Execute);
         askButton.addActionListener(new AskQuestionListener());

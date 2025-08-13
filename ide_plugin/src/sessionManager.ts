@@ -16,7 +16,7 @@ export class InterviewSessionManager {
     private eventSource: EventSource | null = null;
     private answers: Answer[] = [];
     private currentAnswerIndex = 0;
-    private statusBar: vscode.StatusBarItem;
+    private statusBar!: vscode.StatusBarItem;
     private context: vscode.ExtensionContext;
     private onAnswersUpdated = new vscode.EventEmitter<Answer[]>();
     
@@ -69,7 +69,7 @@ export class InterviewSessionManager {
                 throw new Error(`Failed to create session: ${response.statusText}`);
             }
 
-            const data = await response.json();
+            const data = await response.json() as { session_id: string };
             this.sessionId = data.session_id;
 
             // Connect to event stream
