@@ -39,6 +39,8 @@ class PrivateOverlay:
         self.current_content = ""
         self.auto_hide_timer = None
         self.fallback_mode = not TKINTER_AVAILABLE
+        self.opacity = Config.OVERLAY_OPACITY
+        self.opacity_scale = None
         
     def initialize(self):
         """Initialize the overlay system."""
@@ -47,6 +49,7 @@ class PrivateOverlay:
                 # Create root window (hidden)
                 self.root = tk.Tk()
                 self.root.withdraw()  # Hide the main window
+                self._bind_hotkeys()
                 
                 # Start the overlay monitoring thread
                 self.monitor_thread = threading.Thread(target=self._monitor_overlays, daemon=True)
@@ -63,7 +66,18 @@ class PrivateOverlay:
         except Exception as e:
             logger.error(f"Failed to initialize overlay system: {e}")
             self.fallback_mode = True
-    
+
+    def _bind_hotkeys(self):
+        """Bind global hotkeys for overlay controls."""
+        if not TKINTER_AVAILABLE or self.fallback_mode or not self.root:
+            return
+        try:
+            self.root.bind_all('<Control-Shift-o>', self.toggle_visibility)
+            self.root.bind_all('<Control-Shift-Up>', lambda _e: self.adjust_opacity(0.1))
+            self.root.bind_all('<Control-Shift-Down>', lambda _e: self.adjust_opacity(-0.1))
+        except Exception as e:
+            logger.error(f"Failed to bind hotkeys: {e}")
+
     def show_ai_response(self, content: str, response_type: str = "response"):
         """Show AI response in private overlay."""
         try:
@@ -74,7 +88,7 @@ class PrivateOverlay:
                 self._update_content(content, response_type)
                 self._position_window()
                 self._show_window()
-                self._set_auto_hide_timer(15)  # Auto-hide after 15 seconds
+                self._set_auto_hide_timer(Config.OVERLAY_AUTO_HIDE_SECONDS)
             
             logger.info(f"Showing AI {response_type}: {content[:50]}...")
             
@@ -120,7 +134,7 @@ class PrivateOverlay:
         # Window configuration
         self.overlay_window.overrideredirect(True)  # Remove window decorations
         self.overlay_window.attributes('-topmost', True)  # Always on top
-        self.overlay_window.attributes('-alpha', 0.9)  # Slightly transparent
+        self.overlay_window.attributes('-alpha', self.opacity)  # Configurable transparency
 
         # Make window stay on top even during screen sharing
         try:
@@ -148,6 +162,15 @@ class PrivateOverlay:
             relief='flat', width=2, height=1
         )
         self.close_button.pack(side=tk.RIGHT, anchor=tk.NE)
+
+        # Opacity slider
+        self.opacity_scale = tk.Scale(
+            self.main_frame, from_=20, to=100, orient=tk.HORIZONTAL,
+            command=self._on_opacity_change, bg='#2b2b2b', fg='#00ff88',
+            highlightthickness=0, length=100
+        )
+        self.opacity_scale.set(int(self.opacity * 100))
+        self.opacity_scale.pack(anchor=tk.E, pady=(5, 0))
     
     def _update_content(self, content: str, content_type: str):
         """Update overlay content."""
@@ -222,6 +245,33 @@ class PrivateOverlay:
         if self.overlay_window:
             self.overlay_window.deiconify()
             self.is_visible = True
+
+    def toggle_visibility(self, _event=None):
+        """Toggle overlay visibility via hotkey."""
+        if self.is_visible:
+            self.hide_overlay()
+        else:
+            if self.overlay_window:
+                self._show_window()
+            elif self.current_content:
+                self.show_ai_response(self.current_content)
+
+    def adjust_opacity(self, delta: float):
+        """Incrementally adjust window opacity."""
+        self.opacity = max(0.2, min(1.0, self.opacity + delta))
+        if self.overlay_window:
+            self.overlay_window.attributes('-alpha', self.opacity)
+        if self.opacity_scale:
+            self.opacity_scale.set(int(self.opacity * 100))
+
+    def _on_opacity_change(self, value):
+        """Callback for opacity slider changes."""
+        try:
+            self.opacity = max(0.2, min(1.0, float(value) / 100))
+            if self.overlay_window:
+                self.overlay_window.attributes('-alpha', self.opacity)
+        except Exception as e:
+            logger.error(f"Opacity change error: {e}")
     
     def hide_overlay(self):
         """Hide the overlay window."""

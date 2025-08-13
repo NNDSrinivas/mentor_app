@@ -38,8 +38,9 @@ class MentorService:
         logger.info("🤖 AI Mentor Assistant starting in background mode...")
         self.running = True
         
-        # Initialize overlay system for private AI interactions
-        initialize_overlay_system()
+        # Initialize overlay system for private AI interactions when enabled
+        if Config.use_private_overlay():
+            initialize_overlay_system()
         
         # Start all monitoring tasks
         tasks = [
