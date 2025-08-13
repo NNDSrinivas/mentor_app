@@ -5,9 +5,23 @@ import os
 import json
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Any
-import PyPDF2
-import docx2txt
+from typing import Dict, List, Optional, Any, cast
+
+# Optional document processing imports
+try:
+    import PyPDF2
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+    PyPDF2 = None  # type: ignore
+    
+try:
+    import docx2txt
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+    docx2txt = None  # type: ignore
+    
 from werkzeug.utils import secure_filename
 
 logger = logging.getLogger(__name__)
@@ -150,9 +164,13 @@ class ProfileManager:
     
     def _extract_from_pdf(self, file_path: str) -> str:
         """Extract text from PDF file"""
+        if not PDF_AVAILABLE:
+            logger.warning("PyPDF2 not available - cannot extract PDF text")
+            return "PDF processing not available - install PyPDF2 to enable PDF resume parsing"
+            
         try:
             with open(file_path, 'rb') as f:
-                pdf_reader = PyPDF2.PdfReader(f)
+                pdf_reader = cast(Any, PyPDF2).PdfReader(f)
                 text = ""
                 for page in pdf_reader.pages:
                     text += page.extract_text() + "\n"
@@ -163,8 +181,12 @@ class ProfileManager:
     
     def _extract_from_docx(self, file_path: str) -> str:
         """Extract text from DOCX file"""
+        if not DOCX_AVAILABLE:
+            logger.warning("docx2txt not available - cannot extract DOCX text")
+            return "DOCX processing not available - install docx2txt to enable DOCX resume parsing"
+            
         try:
-            return docx2txt.process(file_path)
+            return cast(Any, docx2txt).process(file_path)
         except Exception as e:
             logger.error(f"❌ Error extracting DOCX: {e}")
             return ""
