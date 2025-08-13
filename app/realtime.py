@@ -80,6 +80,14 @@ class RealtimeSessionManager:
         for session_id in to_remove:
             self.end_session(session_id)
 
+    def broadcast_to_all(self, event_type: str, data: Dict[str, Any]):
+        """Broadcast an event to all active sessions"""
+        for session in self.sessions.values():
+            try:
+                session.broadcast_event(event_type, data)
+            except Exception as e:
+                log.error(f"Failed to broadcast to session {session.session_id}: {e}")
+
 
 class RealtimeSession:
     """
@@ -306,6 +314,20 @@ class RealtimeSession:
             except Exception as e:
                 log.error(f"Failed to send to client {client_id}: {e}")
 
+    def broadcast_event(self, event_type: str, data: Dict[str, Any]):
+        """Broadcast arbitrary event to all connected clients"""
+        message = {
+            'type': event_type,
+            'session_id': self.session_id,
+            'data': data,
+        }
+
+        for client_id, client_queue in self.client_queues.items():
+            try:
+                client_queue.put(json.dumps(message))
+            except Exception as e:
+                log.error(f"Failed to send to client {client_id}: {e}")
+
     def add_client_queue(self, client_id: str) -> queue.Queue:
         """Add a client queue for real-time updates"""
         client_queue = queue.Queue()
@@ -348,6 +370,14 @@ session_manager = RealtimeSessionManager()
 def get_session_manager() -> RealtimeSessionManager:
     """Get the global session manager instance"""
     return session_manager
+
+
+def notify_build_status(build_info: Dict[str, Any]):
+    """Broadcast build status updates to all clients"""
+    try:
+        session_manager.broadcast_to_all('build_status', build_info)
+    except Exception as e:
+        log.error(f"Failed to broadcast build status: {e}")
 
 
 # Backward compatibility functions for existing API
