@@ -127,7 +127,7 @@ If you implement a feature, reintroduce documentation with concrete details: end
 
 ## License
 
-MIT (add a LICENSE file if not present).
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
