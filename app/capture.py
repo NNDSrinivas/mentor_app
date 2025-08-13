@@ -12,11 +12,55 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Tuple, Optional
 
-import sounddevice as sd
-import scipy.io.wavfile as wav
-import numpy as np
+# Optional audio processing imports
+try:
+    import sounddevice as sd
+    import scipy.io.wavfile as wav
+    import numpy as np
+    AUDIO_AVAILABLE = True
+except ImportError:
+    AUDIO_AVAILABLE = False
+    # Mock modules for when audio libs not available
+    class MockSoundDevice:
+        def __init__(self): pass
+        def rec(self, *args, **kwargs): return []
+        def wait(self): pass
+        def stop(self, *args): pass
+        class InputStream:
+            def __init__(self, *args, **kwargs): pass
+            def start(self): pass
+            def stop(self): pass
+            def close(self): pass
+        InputStream = InputStream
+        @property
+        def default(self): return MockDevice()
+        
+    class MockDevice:
+        @property  
+        def device(self): return 0
+        @property
+        def channels(self): return 1
+        @property
+        def samplerate(self): return 44100
+        
+    class MockWav:
+        @staticmethod
+        def write(filename, rate, data): pass
+        
+    class MockNumpy:
+        @staticmethod
+        def zeros(*args, **kwargs): return []
+        @staticmethod
+        def concatenate(seq, axis=0): return []
+        float32 = float
+        int16 = int
+        
+    sd = MockSoundDevice()
+    wav = MockWav()
+    np = MockNumpy()
 
 from .config import Config
+from .realtime import RealtimeSessionManager, get_session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -178,3 +222,66 @@ def capture_microphone_test(duration: int = 5) -> str:
     
     logger.info(f"Microphone test completed: {test_path}")
     return test_path
+
+
+class BaseCaptionClient:
+    """Base client for streaming captions into the realtime system.
+
+    This simplified implementation reads caption lines from a text file and
+    forwards them to a :class:`RealtimeSession` via the global
+    :func:`get_session_manager` helper.  Real integrations with meeting
+    platforms would replace the file reader with API specific logic.
+    """
+
+    platform: str = "generic"
+
+    def __init__(
+        self,
+        session_id: str,
+        caption_file: str,
+        manager: Optional[RealtimeSessionManager] = None,
+    ) -> None:
+        self.session_id = session_id
+        self.caption_file = caption_file
+        self.manager = manager or get_session_manager()
+
+    def stream_captions(self, delay: float = 0.2) -> None:
+        """Stream captions from ``caption_file`` to the session manager."""
+        session = self.manager.get_session(self.session_id)
+        if not session:
+            raise ValueError(f"Session {self.session_id} not found")
+
+        try:
+            with open(self.caption_file, "r", encoding="utf-8") as fh:
+                for idx, line in enumerate(fh, 1):
+                    text = line.strip()
+                    if not text:
+                        continue
+                    caption = {
+                        "id": f"{self.session_id}_{idx}",
+                        "text": text,
+                        "speaker": "unknown",
+                        "platform": self.platform,
+                    }
+                    session.add_caption(caption)
+                    time.sleep(delay)
+        except FileNotFoundError:
+            logger.error("Caption file %s not found", self.caption_file)
+
+
+class ZoomClient(BaseCaptionClient):
+    """Stream captions for a Zoom meeting."""
+
+    platform = "zoom"
+
+
+class TeamsClient(BaseCaptionClient):
+    """Stream captions for a Microsoft Teams meeting."""
+
+    platform = "teams"
+
+
+class GoogleMeetClient(BaseCaptionClient):
+    """Stream captions for a Google Meet meeting."""
+
+    platform = "google_meet"
