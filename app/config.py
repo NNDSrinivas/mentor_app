@@ -40,10 +40,12 @@ class Config:
     SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "44100"))
     CHANNELS = int(os.getenv("CHANNELS", "1"))
     CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1024"))
-    
+
     # Screen recording settings
     SCREEN_FPS = int(os.getenv("SCREEN_FPS", "10"))
     SCREEN_QUALITY = int(os.getenv("SCREEN_QUALITY", "80"))
+    SCREEN_RECORDING_ENABLED = os.getenv("SCREEN_RECORDING_ENABLED", "false").lower() == "true"
+    SCREEN_RECORDING_DURATION = int(os.getenv("SCREEN_RECORDING_DURATION", "10"))  # seconds
     
     # Knowledge base settings
     CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db")

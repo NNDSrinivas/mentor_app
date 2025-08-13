@@ -16,6 +16,7 @@ The README has been aligned with the actual code so you can run it end-to-end to
     - GET /api/sessions/{id}/stream → Server-Sent Events (SSE) for realtime
     - POST /api/sessions/{id}/captions → push caption chunks with speaker hints
     - DELETE /api/sessions/{id} → end a session
+    - GET /api/sessions/{id}/recording?analyze=true → screen recording path or analysis
     - POST /api/meeting-events → legacy meeting event ingestion
 - Clients
     - Chrome extension in `browser_extension/` (calls 8084 for /api/ask and /api/resume, 8080 for meeting events)
@@ -34,6 +35,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.template .env
 # Edit .env and set OPENAI_API_KEY
+# Optional: enable screen recording
+# SCREEN_RECORDING_ENABLED=true
 ```
 
 2) Start services in two terminals
