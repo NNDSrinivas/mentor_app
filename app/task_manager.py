@@ -10,6 +10,7 @@ import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from dataclasses import dataclass, asdict
+from backend.memory_service import MemoryService
 
 # Config with graceful fallbacks
 try:
@@ -62,6 +63,7 @@ class JiraIntegration:
         self.username = username or Config.JIRA_USERNAME
         self.api_token = api_token or Config.JIRA_API_TOKEN
         self.session = requests.Session()
+        self.memory = MemoryService()
         
         if self.username and self.api_token:
             self.session.auth = (self.username, self.api_token)
@@ -99,7 +101,9 @@ class JiraIntegration:
     def create_task(self, title: str, description: str, project_key: str, assignee: str = None) -> Task:
         """Create a new task in JIRA"""
         if not self._is_configured():
-            return self._create_mock_task(title, description, assignee)
+            task = self._create_mock_task(title, description, assignee)
+            self.memory.add_task(task.task_id, f"{task.title}: {task.description}", metadata={"status": task.status, "assignee": assignee})
+            return task
         
         try:
             issue_data = {
@@ -130,16 +134,21 @@ class JiraIntegration:
             response.raise_for_status()
             
             issue = response.json()
-            return self._convert_jira_to_task(issue)
+            task = self._convert_jira_to_task(issue)
+            self.memory.add_task(task.task_id, f"{task.title}: {task.description}", metadata={"status": task.status, "assignee": task.assignee})
+            return task
             
         except Exception as e:
             logger.error(f"Error creating JIRA task: {e}")
-            return self._create_mock_task(title, description, assignee)
+            task = self._create_mock_task(title, description, assignee)
+            self.memory.add_task(task.task_id, f"{task.title}: {task.description}", metadata={"status": task.status, "assignee": assignee})
+            return task
     
     def update_task_status(self, task_id: str, new_status: str) -> bool:
         """Update task status"""
         if not self._is_configured():
             logger.info(f"Mock: Updated task {task_id} to status {new_status}")
+            self.memory.add_task(task_id, f"Status updated to {new_status}", metadata={"status": new_status})
             return True
         
         try:
@@ -173,6 +182,7 @@ class JiraIntegration:
                 json={"transition": {"id": target_transition}}
             )
             response.raise_for_status()
+            self.memory.add_task(task_id, f"Status updated to {new_status}", metadata={"status": new_status})
             return True
             
         except Exception as e:
@@ -183,6 +193,7 @@ class JiraIntegration:
         """Add comment to task"""
         if not self._is_configured():
             logger.info(f"Mock: Added comment to task {task_id}: {comment}")
+            self.memory.add_task(task_id, comment, metadata={"comment": True})
             return True
         
         try:
@@ -204,6 +215,7 @@ class JiraIntegration:
                 json=comment_data
             )
             response.raise_for_status()
+            self.memory.add_task(task_id, comment, metadata={"comment": True})
             return True
             
         except Exception as e:
