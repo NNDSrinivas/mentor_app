@@ -1,21 +1,36 @@
 # AI Mentor – Interview Assistant (Practical Guide)
 
-This repo implements an AI interview assistant you can run locally across three surfaces: a Flask Q&A API, a realtime session service for meetings, and optional clients (Chrome overlay, mobile app, IDE plugins).
+This repo implements an AI interview assistant you can r## Not- K- - K- Knowledge base persists to `data/chroma_db/`. Don't commit that directory.
+- Resume storage persists in a local SQLite database; your resume survives backend restarts.
+- Advanced features under `backend/` are imported defensively and the app runs without them.edge base persists to `data/chroma_db/`. Don't commit that directory.
+- Resume storage persists in a local SQLite database; your resume survives backend restarts.
+- Advanced features under `backend/` are imported defensively and the app runs without them.
+- `start_mentor_app.py` can start the Q&A service, but it references a bridge file not present. Prefer running the two services directly as shown above.e base persists to `data/chroma_db/`. Don't commit that directory.
+- Resume storage persists in a local SQLite database; your resume survives backend restarts.
+- Advanced features under `backend/` are imported defensively and the app runs without them.e base persists to `data/chroma_db/`. Don't commit that directory.
+- Resume storage persists in a local SQLite database; your resume survives backend restarts.
+- Advanced features under `backend/` are imported defensively and the app runs without them.
+- `start_mentor_app.py` can start the Q&A service, but it references a bridge file not present. Prefer running the two services directly as shown above.dge base persists to `data/chroma_db/`. Don't commit that directory.
+- Resume storage persists in a local SQLite database; your resume survives backend restarts.
+- Advanced features under `backend/` are imported defensively and the app runs without them.nowledge base persists to `data/chroma_db/`. Don't commit that directory.
+- Resume storage persists in a local SQLite database; your resume survives backend restarts.
+- Advanced features under `backend/` are imported defensively and the app runs without them.y across three surfaces: a Flask Q&A API, a realtime session service for meetings, and optional clients (Chrome overlay, mobile app, IDE plugins).
 
 The README has been aligned with the actual code so you can run it end-to-end today.
 
 ## Architecture at a glance
 
-- Q&A + Resume API (port 8084): `simple_web.py`
+- Q&A + Resume API (port 8084): `production_backend.py`
     - POST /api/ask → generates an answer using `app/ai_assistant.py`
-    - POST/GET /api/resume → store/read resume text in memory
+    - POST/GET /api/resume → store/read resume text in SQLite (persistent)
     - GET /api/health → service health
-- Realtime sessions API (port 8080): `web_interface.py`
+- Realtime sessions API (port 8080): `production_realtime.py`
     - POST /api/sessions → create a session
     - GET /api/sessions/{id}/answers → recent answers for polling clients
     - GET /api/sessions/{id}/stream → Server-Sent Events (SSE) for realtime
     - POST /api/sessions/{id}/captions → push caption chunks with speaker hints
     - DELETE /api/sessions/{id} → end a session
+    - GET /api/sessions/{id}/recording?analyze=true → screen recording path or analysis
     - POST /api/meeting-events → legacy meeting event ingestion
 - Clients
     - Chrome extension in `browser_extension/` (calls 8084 for /api/ask and /api/resume, 8080 for meeting events)
@@ -34,16 +49,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.template .env
 # Edit .env and set OPENAI_API_KEY
+# Optional: enable screen recording
+# SCREEN_RECORDING_ENABLED=true
 ```
 
 2) Start services in two terminals
 
 ```bash
 # Terminal A – Q&A service (port 8084)
-python simple_web.py
+python production_backend.py
 
 # Terminal B – Realtime sessions (port 8080)
-python web_interface.py
+python production_realtime.py
 ```
 
 3) Test APIs
@@ -91,12 +108,12 @@ Edit `.env` (copied from `.env.template`):
 
 ## API summary
 
-- 8084 (simple_web):
+- 8084 (production_backend):
     - POST /api/ask { question, interview_mode? }
     - POST /api/resume { resume_text }
     - GET /api/resume
     - GET /api/health
-- 8080 (web_interface):
+- 8080 (production_realtime):
     - POST /api/sessions { user_level, meeting_type, user_name }
     - GET /api/sessions/{id}/answers
     - GET /api/sessions/{id}/stream (SSE)
@@ -108,6 +125,7 @@ Edit `.env` (copied from `.env.template`):
 
 - Knowledge base persists to `data/chroma_db/`. Don’t commit that directory.
 - Resumes persist in the `resumes` table of the SQLite database.
+- Resume storage persists in a local SQLite database; your resume survives backend restarts.
 - Advanced features under `backend/` are imported defensively and the app runs without them.
 - `start_mentor_app.py` can start the Q&A service, but it references a bridge file not present. Prefer running the two services directly as shown above.
 
@@ -124,7 +142,7 @@ If you implement a feature, reintroduce documentation with concrete details: end
 
 ## License
 
-MIT (add a LICENSE file if not present).
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
@@ -149,4 +167,4 @@ Stop the services when done:
 ./stop_services.sh
 ```
 
-Mock mode: If `OPENAI_API_KEY` isn’t set, the backend starts in a safe mock mode that returns placeholder answers (see `app/ai_assistant.py` and `simple_web.py` fallback). This lets you verify end-to-end flows without external credentials.
+Mock mode: If `OPENAI_API_KEY` isn’t set, the backend starts in a safe mock mode that returns placeholder answers (see `app/ai_assistant.py` and `production_backend.py` fallback). This lets you verify end-to-end flows without external credentials.

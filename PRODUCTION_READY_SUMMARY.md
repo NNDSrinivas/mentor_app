@@ -61,9 +61,9 @@ railway login
 railway create ai-mentor-backend
 railway deploy
 
-# Set environment variables
+# Set environment variables (JWT_SECRET is required, no default)
 railway variables set OPENAI_API_KEY=sk-proj-your-key-here
-railway variables set JWT_SECRET=super-secret-change-this-123
+railway variables set JWT_SECRET=super-secret-change-this-123 # required, no default
 
 # Get your domain
 railway domain
@@ -74,7 +74,7 @@ railway domain
 ```bash
 heroku create ai-mentor-backend
 heroku config:set OPENAI_API_KEY=sk-proj-your-key-here
-heroku config:set JWT_SECRET=super-secret-change-this-123
+heroku config:set JWT_SECRET=super-secret-change-this-123 # required, no default
 git push heroku main
 ```
 

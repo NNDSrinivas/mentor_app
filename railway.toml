@@ -1,4 +1,5 @@
 # Railway configuration for deployment
+# Ensure JWT_SECRET is set in Railway environment variables before deploying
 [build]
 builder = "NIXPACKS"
 

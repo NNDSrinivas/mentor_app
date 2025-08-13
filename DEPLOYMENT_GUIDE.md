@@ -49,10 +49,10 @@ Your **Production-Ready SaaS Backend** with:
    railway deploy
    ```
 
-3. **Set Environment Variables**
+3. **Set Environment Variables (JWT_SECRET is required, no default)**
    ```bash
    railway variables set OPENAI_API_KEY=sk-proj-your-key-here
-   railway variables set JWT_SECRET=super-secret-change-this
+   railway variables set JWT_SECRET=super-secret-change-this # required
    railway variables set FLASK_ENV=production
    ```
 
@@ -69,10 +69,10 @@ Your **Production-Ready SaaS Backend** with:
    heroku create ai-mentor-backend
    ```
 
-2. **Set Environment Variables**
+2. **Set Environment Variables (JWT_SECRET is required, no default)**
    ```bash
    heroku config:set OPENAI_API_KEY=sk-proj-your-key-here
-   heroku config:set JWT_SECRET=super-secret-change-this
+   heroku config:set JWT_SECRET=super-secret-change-this # required
    heroku config:set FLASK_ENV=production
    ```
 

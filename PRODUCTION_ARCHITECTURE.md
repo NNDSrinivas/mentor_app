@@ -96,6 +96,7 @@ This is completely different from a developer tool!
 ### **Backend Environment:**
 ```bash
 # Production .env (on your server only)
+# JWT_SECRET must be set to a strong value; the backend exits if it is missing
 OPENAI_API_KEY=your_company_openai_key
 DATABASE_URL=your_database_connection
 JWT_SECRET=your_jwt_secret
