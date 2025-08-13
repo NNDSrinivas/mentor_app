@@ -116,7 +116,7 @@ class MultiLanguageProcessor:
             }
     
     def get_ai_response_multilingual(self, question: str, context: str, 
-                                   response_language: str = None) -> str:
+                                   response_language: Optional[str] = None) -> str:
         """Get AI response in specified language."""
         if not response_language:
             response_language = self.default_language
@@ -154,7 +154,8 @@ class MultiLanguageProcessor:
                 temperature=0.3
             )
             
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content or ""
+            return content.strip()
             
         except Exception as e:
             logger.error(f"Multi-lingual AI response failed: {e}")
@@ -188,13 +189,14 @@ class MultiLanguageProcessor:
                 temperature=0.1
             )
             
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content or ""
+            return content.strip()
             
         except Exception as e:
             logger.error(f"Translation failed: {e}")
             return f"Translation failed: {str(e)}"
     
-    def summarize_multilingual(self, transcript: Dict, summary_language: str = None) -> Dict:
+    def summarize_multilingual(self, transcript: Dict, summary_language: Optional[str] = None) -> Dict:
         """Generate summary in specified language."""
         if not summary_language:
             summary_language = transcript.get('language', self.default_language)
@@ -252,7 +254,7 @@ class MultiLanguageProcessor:
 ml_processor = MultiLanguageProcessor()
 
 
-def transcribe_multilingual(audio_path: str, language: str = None) -> Dict:
+def transcribe_multilingual(audio_path: str, language: Optional[str] = None) -> Dict:
     """Transcribe audio with multi-language support."""
     if language:
         return ml_processor.transcribe_specific_language(audio_path, language)
@@ -260,7 +262,7 @@ def transcribe_multilingual(audio_path: str, language: str = None) -> Dict:
         return ml_processor.transcribe_with_language_detection(audio_path)
 
 
-def get_multilingual_summary(transcript: Dict, language: str = None) -> Dict:
+def get_multilingual_summary(transcript: Dict, language: Optional[str] = None) -> Dict:
     """Get meeting summary in specified language."""
     return ml_processor.summarize_multilingual(transcript, language)
 

@@ -1,48 +1,42 @@
 {
   "manifest_version": 3,
-  "name": "AI Mentor Assistant",
-  "version": "1.8.0",
-  "description": "Intelligent meeting recording and analysis for developers",
+  "name": "AI Interview Assistant - ULTRA STEALTH",
+  "version": "1.4.0",
+  "description": "Ultra stealth AI assistant - invisible to screen capture with auto-listening",
+  
   "permissions": [
-    "activeTab",
     "storage",
-    "scripting",
-    "tabs",
-    "alarms",
-    "offscreen",
-    "tabCapture",
-    "desktopCapture"
+    "activeTab",
+    "scripting"
   ],
+  
   "host_permissions": [
-    "https://meet.google.com/*",
-    "https://teams.microsoft.com/*",
-    "https://*.zoom.us/*",
-    "https://zoom.us/*",
+    "http://localhost:8084/*",
     "http://localhost:8080/*",
-    "https://*/*",
-    "http://*/*"
+    "https://meet.google.com/*"
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
+  
   "content_scripts": [
     {
-      "matches": [
-        "https://meet.google.com/*",
-        "https://teams.microsoft.com/*",
-        "https://*.zoom.us/*",
-        "https://zoom.us/*"
-      ],
+      "matches": ["https://meet.google.com/*"],
       "js": ["content.js"],
-      "run_at": "document_end"
+      "run_at": "document_end",
+      "all_frames": false
     }
   ],
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["*.js", "*.css"],
+      "matches": ["https://meet.google.com/*"]
+    }
+  ],
+  
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "AI Meeting Mentor"
+    "default_title": "AI Interview Assistant - ULTRA STEALTH"
   },
-  "web_accessible_resources": [{
-    "resources": ["extension_bridge.js", "inject.js", "offscreen.js", "offscreen.html", "overlay_client.js"],
-    "matches": ["<all_urls>"]
-  }]
+  
+  "background": {
+    "service_worker": "background.js"
+  }
 }
