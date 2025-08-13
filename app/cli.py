@@ -10,6 +10,7 @@ from typing import Optional
 
 from .config import Config
 from . import capture, transcription, summarization, screen_record, knowledge_base
+from .integrations.jira_client import JiraClient
 
 
 def cmd_record_audio(args) -> None:
@@ -136,6 +137,49 @@ def cmd_kb_ingest(args) -> None:
         print("📝 Ingesting text document...")
         knowledge_base.ingest_documents([args.text], args.doc_type)
         print("✅ Text document ingested")
+
+
+def cmd_jira_issues(args) -> None:
+    """List issues assigned to the current user."""
+    client = JiraClient(dry_run=False)
+    issues = client.get_assigned_issues()
+    if not issues:
+        print("❌ No issues assigned to you")
+        return
+    print("📋 Assigned Issues:")
+    for issue in issues:
+        fields = issue.get("fields", {})
+        status = fields.get("status", {}).get("name", "Unknown")
+        summary = fields.get("summary", "")
+        print(f" - {issue.get('key')} [{status}] {summary}")
+
+
+def cmd_jira_comment(args) -> None:
+    """Add a comment to a JIRA issue (with confirmation)."""
+    client = JiraClient()
+    client.add_comment(args.issue, args.comment)  # preview in dry run
+    print(f"About to comment on {args.issue}: {args.comment}")
+    if input("Proceed? (y/N): ").strip().lower() != "y":
+        print("❌ Action cancelled")
+        return
+    client.dry_run = False
+    client.add_comment(args.issue, args.comment)
+    print("✅ Comment added")
+
+
+def cmd_jira_transition(args) -> None:
+    """Transition a JIRA issue to a new status (with confirmation)."""
+    client = JiraClient()
+    client.transition_issue(args.issue, args.transition)  # preview in dry run
+    print(
+        f"About to transition {args.issue} using transition {args.transition}"
+    )
+    if input("Proceed? (y/N): ").strip().lower() != "y":
+        print("❌ Action cancelled")
+        return
+    client.dry_run = False
+    client.transition_issue(args.issue, args.transition)
+    print("✅ Issue transitioned")
 
 
 def cmd_kb_search(args) -> None:
@@ -265,11 +309,22 @@ Examples:
     
     # Knowledge base stats command
     subparsers.add_parser('kb-stats', help='Show knowledge base statistics')
-    
+
     # Answer question command
     answer_parser = subparsers.add_parser('answer', help='Answer question using knowledge base')
     answer_parser.add_argument('question', help='Question to answer')
-    
+
+    # JIRA commands
+    subparsers.add_parser('jira-issues', help='List JIRA issues assigned to you')
+
+    jira_comment_parser = subparsers.add_parser('jira-comment', help='Add comment to a JIRA issue')
+    jira_comment_parser.add_argument('issue', help='Issue key (e.g., PROJ-123)')
+    jira_comment_parser.add_argument('comment', help='Comment text')
+
+    jira_transition_parser = subparsers.add_parser('jira-transition', help='Transition a JIRA issue')
+    jira_transition_parser.add_argument('issue', help='Issue key (e.g., PROJ-123)')
+    jira_transition_parser.add_argument('transition', help='Transition ID to apply')
+
     return parser
 
 
@@ -283,7 +338,7 @@ def main() -> None:
         return
     
     # Commands that don't require API key
-    local_commands = {'screenshot', 'kb-stats'}
+    local_commands = {'screenshot', 'kb-stats', 'jira-issues', 'jira-comment', 'jira-transition'}
     
     # Validate environment
     try:
@@ -306,7 +361,10 @@ def main() -> None:
         'kb-ingest': cmd_kb_ingest,
         'kb-search': cmd_kb_search,
         'kb-stats': cmd_kb_stats,
-        'answer': cmd_answer
+        'answer': cmd_answer,
+        'jira-issues': cmd_jira_issues,
+        'jira-comment': cmd_jira_comment,
+        'jira-transition': cmd_jira_transition,
     }
     
     handler = command_handlers.get(args.command)
