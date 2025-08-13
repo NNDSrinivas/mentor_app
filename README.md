@@ -123,8 +123,7 @@ Sections covering advanced diarization metrics, automated task extraction, Jira/
 If you implement a feature, reintroduce documentation with concrete details: endpoints, file paths, run commands.
 
 ## License
-
-MIT (add a LICENSE file if not present).
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
