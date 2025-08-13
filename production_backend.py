@@ -3,6 +3,7 @@ Production Backend for AI Mentor - Q&A and Resume Service
 Port 8084 - Main service for browser extension and IDE plugins
 """
 import os
+import sys
 import sqlite3
 import json
 import jwt
@@ -27,6 +28,11 @@ except ImportError as e:
 # Load environment variables
 load_dotenv()
 
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    print("Error: JWT_SECRET environment variable not set. Exiting.")
+    sys.exit(1)
+
 app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
@@ -37,7 +43,7 @@ CORS(app, resources={
 })
 
 # Configuration
-app.config['SECRET_KEY'] = os.getenv('JWT_SECRET', 'your-secret-key-change-this')
+app.config['SECRET_KEY'] = JWT_SECRET
 app.config['DATABASE'] = os.getenv('DATABASE_PATH', 'production_mentor.db')
 
 # OpenAI Configuration
