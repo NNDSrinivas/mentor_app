@@ -1,7 +1,7 @@
 # backend/integrations/jira_manager.py
 from __future__ import annotations
-import os, base64, requests
-from typing import Dict, Any, Optional
+import os, base64, requests, threading
+from typing import Dict, Any, Optional, Callable
 
 JIRA_BASE = os.getenv("JIRA_BASE_URL", "")
 JIRA_USER = os.getenv("JIRA_USER", "")
@@ -14,6 +14,8 @@ def _auth():
 class JiraManager:
     def __init__(self, dry_run=True):
         self.dry_run = dry_run
+        self._poll_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
 
     def create_issue(self, project_key: str, summary: str, description: str, issue_type="Task") -> Dict[str, Any]:
         payload = {
@@ -99,3 +101,28 @@ class JiraManager:
         r = requests.get(f"{JIRA_BASE}/rest/api/3/issue/{key}/transitions", headers=_auth(), timeout=30)
         r.raise_for_status()
         return r.json()
+
+    def start_assigned_issue_polling(self, assignee: str, interval: int, callback: Callable[[Dict[str, Any]], None]):
+        """Poll assigned issues for a user on a schedule and invoke callback."""
+        if self._poll_thread and self._poll_thread.is_alive():
+            return
+
+        self._stop_event.clear()
+
+        def _poll():
+            while not self._stop_event.is_set():
+                issues = self.get_assigned_issues(assignee)
+                try:
+                    callback(issues)
+                finally:
+                    self._stop_event.wait(interval)
+
+        self._poll_thread = threading.Thread(target=_poll, daemon=True)
+        self._poll_thread.start()
+
+    def stop_polling(self):
+        if self._poll_thread:
+            self._stop_event.set()
+            if threading.current_thread() != self._poll_thread:
+                self._poll_thread.join(timeout=0.1)
+            self._poll_thread = None
