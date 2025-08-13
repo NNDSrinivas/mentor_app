@@ -38,6 +38,12 @@ function HomeScreen({ navigation }: any) {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [participants, setParticipants] = useState<number[]>([]);
+  const [overlayVisible, setOverlayVisible] = useState<boolean>(true);
+  const [overlayOpacity, setOverlayOpacity] = useState<number>(0.95);
+
+  const adjustOpacity = (delta: number) => {
+    setOverlayOpacity(o => Math.max(0.2, Math.min(1, o + delta)));
+  };
 
   useEffect(() => {
     // Auto-connect on app start
@@ -250,6 +256,22 @@ function HomeScreen({ navigation }: any) {
         <Text style={styles.participantText}>Participants: {participants.length}</Text>
       )}
 
+      {/* Overlay controls */}
+      <View style={styles.overlayControls}>
+        <TouchableOpacity onPress={() => setOverlayVisible(!overlayVisible)}>
+          <Text style={styles.toggleText}>{overlayVisible ? 'Hide' : 'Show'} Answers</Text>
+        </TouchableOpacity>
+        <View style={styles.opacityButtons}>
+          <TouchableOpacity style={styles.opacityButton} onPress={() => adjustOpacity(-0.1)}>
+            <Text style={styles.toggleText}>-</Text>
+          </TouchableOpacity>
+          <Text style={styles.opacityValue}>{Math.round(overlayOpacity * 100)}%</Text>
+          <TouchableOpacity style={styles.opacityButton} onPress={() => adjustOpacity(0.1)}>
+            <Text style={styles.toggleText}>+</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Connection Settings */}
       {!isConnected && (
         <View style={styles.settingsSection}>
@@ -294,7 +316,11 @@ function HomeScreen({ navigation }: any) {
 
       {/* Answers List */}
       <ScrollView
-        style={styles.answersList}
+        style={[
+          styles.answersList,
+          { opacity: overlayOpacity },
+          !overlayVisible && { display: 'none' }
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#667eea" />
         }
@@ -450,6 +476,30 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     textAlign: 'center',
     marginVertical: 8,
+  },
+  overlayControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    backgroundColor: '#2a2a2a',
+  },
+  toggleText: {
+    color: '#fff',
+  },
+  opacityButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  opacityButton: {
+    backgroundColor: '#333',
+    padding: 6,
+    borderRadius: 4,
+    marginHorizontal: 4,
+  },
+  opacityValue: {
+    color: '#fff',
   },
   settingsSection: {
     padding: 20,

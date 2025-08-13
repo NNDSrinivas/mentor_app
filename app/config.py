@@ -25,6 +25,20 @@ class Config:
     AI_INTERACTION_MODE = os.getenv("AI_INTERACTION_MODE", "private")  # private, public, silent
     AI_RESPONSE_DELAY = int(os.getenv("AI_RESPONSE_DELAY", "3"))  # seconds before responding
     CONVERSATION_MEMORY_DAYS = int(os.getenv("CONVERSATION_MEMORY_DAYS", "30"))  # days to keep conversations
+
+    # Session mode determines default behaviors
+    SESSION_MODE = os.getenv("SESSION_MODE", "general")  # general, interview
+    PRIVATE_OVERLAY_MODE = os.getenv("PRIVATE_OVERLAY_MODE", "auto")  # on, off, auto
+
+    @classmethod
+    def use_private_overlay(cls) -> bool:
+        """Return True if the private overlay should be active."""
+        mode = cls.PRIVATE_OVERLAY_MODE.lower()
+        if mode == "on":
+            return True
+        if mode == "off":
+            return False
+        return cls.SESSION_MODE == "interview"
     
     # Private overlay settings
     OVERLAY_AUTO_HIDE_SECONDS = int(os.getenv("OVERLAY_AUTO_HIDE_SECONDS", "15"))
