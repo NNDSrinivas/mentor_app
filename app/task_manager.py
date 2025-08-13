@@ -11,6 +11,10 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from dataclasses import dataclass, asdict
 
+from backend.integrations.jira_manager import JiraManager
+from backend.integrations.github_manager import GitHubManager
+from backend.approvals import request_pr_auto_reply, sync_jira_pr_status
+
 # Config with graceful fallbacks
 try:
     from app.config import Config
@@ -323,6 +327,9 @@ class JiraIntegration:
 class TaskManager:
     def __init__(self):
         self.jira = JiraIntegration()
+        # Managers exposed for cross-service integrations
+        self.jira_manager = JiraManager(dry_run=True)
+        self.github_manager = GitHubManager(dry_run=True)
         self.active_tasks: Dict[str, Task] = {}
         
     def get_user_current_tasks(self, user_email: str) -> List[Task]:
@@ -334,6 +341,14 @@ class TaskManager:
             self.active_tasks[task.task_id] = task
             
         return tasks
+
+    def auto_reply_to_pr(self, owner: str, repo: str, pr_number: int, jira_issue: Optional[str] = None):
+        """Use LLM to suggest fixes for PR comments and queue for approval."""
+        return request_pr_auto_reply(owner, repo, pr_number, jira_issue)
+
+    def sync_pr_status_to_jira(self, owner: str, repo: str, pr_number: int, jira_issue: str):
+        """Trigger a Jira update reflecting the latest PR status."""
+        return sync_jira_pr_status(owner, repo, pr_number, jira_issue)
     
     def extract_tasks_from_meeting(self, meeting_summary: Dict) -> List[str]:
         """Extract potential tasks from meeting content"""
