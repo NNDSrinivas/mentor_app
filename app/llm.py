@@ -21,4 +21,4 @@ def generate_answer(prompt: str) -> str:
         temperature=0.4,
         max_tokens=400
     )
-    return resp.choices[0].message.content.strip()
+    return (resp.choices[0].message.content or "").strip()
