@@ -1,8 +1,10 @@
 # backend/pr_auto_reply.py
 from __future__ import annotations
 import os
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from openai import OpenAI
+
+from backend.integrations.github_manager import GitHubManager
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -35,3 +37,44 @@ def suggest_replies_and_patch(pr_title: str, pr_desc: str, files_changed: List[D
     data = resp.choices[0].message.content or ""
     # let the server validate JSON before acting
     return {"raw": data}
+
+
+def fetch_pr_context(owner: str, repo: str, pr_number: int, mgr: Optional[GitHubManager] = None) -> Dict[str, Any]:
+    """Fetch PR details, changed files and review comments."""
+    mgr = mgr or GitHubManager(dry_run=True)
+    pr = mgr.get_pr(owner, repo, pr_number)
+    files = mgr.get_pr_files(owner, repo, pr_number)
+    comments = mgr.get_review_comments(owner, repo, pr_number)
+    return {"pr": pr, "files": files, "comments": comments}
+
+
+def parse_comment_action(body: str) -> Optional[str]:
+    """Return requested action from a comment if present."""
+    text = body.strip().lower()
+    if text.startswith("/apply") or text.startswith("@bot apply"):
+        return "apply"
+    return None
+
+
+def relay_comment_actions(owner: str, repo: str, pr_number: int, comments: List[Dict[str, Any]]) -> None:
+    """Relay actionable comments to approval worker for processing."""
+    try:
+        from backend.approval_worker import handle_comment_action
+    except Exception:
+        return
+
+    for c in comments:
+        action = parse_comment_action(c.get("body", ""))
+        if action == "apply":
+            handle_comment_action(owner, repo, pr_number, c)
+
+
+def suggest_replies_for_pr(owner: str, repo: str, pr_number: int, mgr: Optional[GitHubManager] = None) -> Dict[str, Any]:
+    """Fetch PR context, relay actions and produce auto-replies."""
+    ctx = fetch_pr_context(owner, repo, pr_number, mgr)
+    pr = ctx.get("pr", {})
+    files = ctx.get("files", [])
+    comments_raw = ctx.get("comments", [])
+    comments = comments_raw if isinstance(comments_raw, list) else comments_raw.get("comments", [])
+    relay_comment_actions(owner, repo, pr_number, comments)
+    return suggest_replies_and_patch(pr.get("title", ""), pr.get("body", ""), files, comments)
