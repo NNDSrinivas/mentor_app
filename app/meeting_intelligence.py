@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
 from app.config import Config
+from backend.diarization_service import DiarizationService
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,8 @@ class MeetingIntelligence:
     def __init__(self):
         self.active_meetings: Dict[str, MeetingContext] = {}
         self.speaker_patterns: Dict[str, Dict] = {}
+        # DiarizationService knows how to map speaker labels to team members
+        self.diarization = DiarizationService()
         
     def start_meeting(self, meeting_id: str, participants: List[str] = None) -> MeetingContext:
         """Initialize a new meeting session with intelligence tracking"""
@@ -61,8 +64,17 @@ class MeetingIntelligence:
         """Process meeting caption with intelligence extraction"""
         if meeting_id not in self.active_meetings:
             self.start_meeting(meeting_id)
-            
+
         context = self.active_meetings[meeting_id]
+
+        # Map diarized speaker labels to known team members for friendly output
+        if speaker_id:
+            resolved = self.diarization.resolve_speaker(speaker_id)
+            if resolved:
+                speaker_id = resolved
+                # Ensure participant list includes this speaker
+                if not any(p.speaker_id == speaker_id for p in context.participants):
+                    context.participants.append(Speaker(speaker_id=speaker_id, name=speaker_id))
         
         # Detect meeting type from content
         meeting_type = self._detect_meeting_type(text, context)
