@@ -1,7 +1,7 @@
 # backend/integrations/github_manager.py
 from __future__ import annotations
 import os, base64, requests, json
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, cast
 
 GITHUB_API = os.getenv("GITHUB_API", "https://api.github.com")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -147,9 +147,9 @@ class GitHubManager:
         if self.dry_run:
             return {"dry_run": True, "title": title, "body": body}
         
-        payload = {"title": title, "body": body}
+        payload: Dict[str, Any] = {"title": title, "body": body}
         if labels:
-            payload["labels"] = labels
+            cast(Any, payload)["labels"] = labels
         
         r = requests.post(f"{GITHUB_API}/repos/{owner}/{repo}/issues", headers=_h(), json=payload)
         r.raise_for_status()

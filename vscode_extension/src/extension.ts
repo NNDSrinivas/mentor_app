@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
+import EventSource from 'eventsource';
 
 interface JiraTask {
     key: string;
@@ -48,12 +49,16 @@ class AIMentorProvider {
     private meetingContext: any = null;
     private isPairProgramming: boolean = false;
     private extensionBridge: ExtensionBridge;
+    private sessionEventSource: EventSource | null = null;
+    private serviceUrl: string;
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
         this.jiraClient = new JiraClient();
         this.statusBarItem = this.createStatusBar();
         this.extensionBridge = new ExtensionBridge(this);
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        this.serviceUrl = config.get<string>('mentorServiceUrl', 'http://localhost:8080');
     }
 
     private createStatusBar(): vscode.StatusBarItem {
@@ -66,6 +71,12 @@ class AIMentorProvider {
     }
 
     async startCodingSessionMonitoring() {
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        const sessionId = config.get<string>('sessionId', '');
+        if (sessionId) {
+            this.subscribeToSession(sessionId);
+        }
+
         // Monitor file changes, errors, and coding patterns
         vscode.workspace.onDidChangeTextDocument(async (event) => {
             if (event.document.languageId === 'python' || 
@@ -104,6 +115,26 @@ class AIMentorProvider {
         
         // Start listening for browser extension messages
         this.extensionBridge.startListening();
+    }
+
+    private subscribeToSession(sessionId: string) {
+        if (this.sessionEventSource) {
+            this.sessionEventSource.close();
+        }
+        const es = new EventSource(`${this.serviceUrl}/api/sessions/${sessionId}/stream`);
+        es.onmessage = (e: MessageEvent) => {
+            try {
+                const evt = JSON.parse(e.data);
+                if (evt.type === 'participant_joined' || evt.type === 'participant_left') {
+                    const count = (evt.data?.participants || []).length;
+                    this.updateStatus(`👥 Participants: ${count}`);
+                }
+            } catch (err) {
+                console.error('SSE parse error', err);
+            }
+        };
+        es.onerror = (err: any) => console.error('SSE connection error', err);
+        this.sessionEventSource = es;
     }
 
     private async analyzeCodeChanges(event: vscode.TextDocumentChangeEvent) {
