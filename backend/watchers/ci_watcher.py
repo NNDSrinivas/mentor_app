@@ -1,9 +1,19 @@
 # backend/watchers/ci_watcher.py
 from __future__ import annotations
 import logging
-from typing import Dict, Any, List
+import os
+from typing import Dict, Any, List, Optional
+
+import requests
+from backend.build_monitor import BuildMonitor
 
 log = logging.getLogger(__name__)
+
+try:  # Realtime notifications are optional
+    from app.realtime import notify_build_status
+except Exception:  # pragma: no cover - realtime not available in some contexts
+    def notify_build_status(_info: Dict[str, Any]):
+        pass
 
 # Import approvals globally to avoid circular imports
 def get_approvals():
@@ -39,25 +49,47 @@ def handle_check_suite(payload: Dict[str, Any]):
     repo = payload.get("repository", {}).get("full_name")
     branch = check_suite.get("head_branch")
     
-    if action == "completed" and conclusion == "failure":
-        # CI failure detected - suggest fixes
-        pull_requests = check_suite.get("pull_requests", [])
-        pr_info = pull_requests[0] if pull_requests else None
-        
-        failure_context = {
-            "repo": repo,
-            "branch": branch,
-            "check_suite_id": check_suite.get("id"),
-            "pr_number": pr_info.get("number") if pr_info else None,
-            "pr_title": pr_info.get("title") if pr_info else None,
-            "head_sha": check_suite.get("head_sha"),
-            "message": f"Check suite failed on {repo}@{branch}",
-            "hints": extract_check_suite_hints(check_suite),
-            "severity": "high" if pr_info else "medium"
-        }
-        
-        get_approvals().submit("ci.fix_suggestions", failure_context)
-        log.warning(f"CI failure queued for approval: {repo}@{branch}")
+    if action == "completed":
+        if conclusion == "failure":
+            # CI failure detected - suggest fixes
+            pull_requests = check_suite.get("pull_requests", [])
+            pr_info = pull_requests[0] if pull_requests else None
+
+            failure_context = {
+                "repo": repo,
+                "branch": branch,
+                "check_suite_id": check_suite.get("id"),
+                "pr_number": pr_info.get("number") if pr_info else None,
+                "pr_title": pr_info.get("title") if pr_info else None,
+                "head_sha": check_suite.get("head_sha"),
+                "message": f"Check suite failed on {repo}@{branch}",
+                "hints": extract_check_suite_hints(check_suite),
+                "severity": "high" if pr_info else "medium"
+            }
+
+            monitor = BuildMonitor()
+            try:
+                analysis = monitor.monitor_repository(repo, branch)
+                failure_context["analysis"] = analysis
+            except Exception as e:
+                log.error(f"Failed to analyze build: {e}")
+
+            get_approvals().submit("ci.fix_suggestions", failure_context)
+            notify_build_status({
+                "provider": "github",
+                "repository": repo,
+                "branch": branch,
+                "status": "failed",
+                "analysis": failure_context.get("analysis", {})
+            })
+            log.warning(f"CI failure queued for approval: {repo}@{branch}")
+        elif conclusion == "success":
+            notify_build_status({
+                "provider": "github",
+                "repository": repo,
+                "branch": branch,
+                "status": "success"
+            })
 
 def handle_workflow_run(payload: Dict[str, Any]):
     """Handle workflow run events"""
@@ -67,22 +99,46 @@ def handle_workflow_run(payload: Dict[str, Any]):
     repo = payload.get("repository", {}).get("full_name")
     branch = workflow_run.get("head_branch")
     
-    if action == "completed" and conclusion == "failure":
-        failure_context = {
-            "repo": repo,
-            "branch": branch,
-            "workflow_id": workflow_run.get("id"),
-            "workflow_name": workflow_run.get("name"),
-            "run_number": workflow_run.get("run_number"),
-            "head_sha": workflow_run.get("head_sha"),
-            "message": f"Workflow '{workflow_run.get('name')}' failed on {repo}@{branch}",
-            "hints": extract_workflow_hints(workflow_run),
-            "logs_url": workflow_run.get("logs_url"),
-            "severity": "high"
-        }
-        
-        get_approvals().submit("ci.workflow_failure", failure_context)
-        log.warning(f"Workflow failure queued for approval: {workflow_run.get('name')} on {repo}")
+    if action == "completed":
+        if conclusion == "failure":
+            failure_context = {
+                "repo": repo,
+                "branch": branch,
+                "workflow_id": workflow_run.get("id"),
+                "workflow_name": workflow_run.get("name"),
+                "run_number": workflow_run.get("run_number"),
+                "head_sha": workflow_run.get("head_sha"),
+                "message": f"Workflow '{workflow_run.get('name')}' failed on {repo}@{branch}",
+                "hints": extract_workflow_hints(workflow_run),
+                "logs_url": workflow_run.get("logs_url"),
+                "severity": "high",
+            }
+
+            monitor = BuildMonitor()
+            try:
+                analysis = monitor._analyze_workflow_failure(repo, workflow_run.get("id"))
+                failure_context["analysis"] = analysis
+            except Exception as e:
+                log.error(f"Failed to analyze workflow: {e}")
+
+            get_approvals().submit("ci.workflow_failure", failure_context)
+            notify_build_status({
+                "provider": "github",
+                "repository": repo,
+                "branch": branch,
+                "status": "failed",
+                "run_id": workflow_run.get("id"),
+                "analysis": failure_context.get("analysis", {})
+            })
+            log.warning(f"Workflow failure queued for approval: {workflow_run.get('name')} on {repo}")
+        elif conclusion == "success":
+            notify_build_status({
+                "provider": "github",
+                "repository": repo,
+                "branch": branch,
+                "status": "success",
+                "run_id": workflow_run.get("id"),
+            })
 
 def handle_pull_request(payload: Dict[str, Any]):
     """Handle pull request events"""
@@ -288,3 +344,189 @@ def should_suggest_deployment(commits: List[Dict[str, Any]]) -> bool:
             return True
     
     return False
+
+
+def handle_gitlab_webhook(event: str, payload: Dict[str, Any]):
+    """Handle GitLab CI webhook events"""
+    log.info(f"Received GitLab webhook: {event}")
+
+    if event == "Pipeline Hook":
+        attrs = payload.get("object_attributes", {})
+        status = attrs.get("status")
+        repo = payload.get("project", {}).get("path_with_namespace")
+        branch = attrs.get("ref")
+
+        if status == "failed":
+            monitor = BuildMonitor()
+            build_info = {"id": attrs.get("id"), "repository": repo, "branch": branch}
+            log_content = attrs.get("failure_reason", "")
+            analysis = monitor.process_build_log(log_content, build_info)
+            notify_build_status({
+                "provider": "gitlab",
+                "repository": repo,
+                "branch": branch,
+                "status": "failed",
+                "analysis": analysis,
+            })
+        elif status == "success":
+            notify_build_status({
+                "provider": "gitlab",
+                "repository": repo,
+                "branch": branch,
+                "status": "success",
+            })
+
+
+def handle_circleci_webhook(event: str, payload: Dict[str, Any]):
+    """Handle CircleCI webhook events"""
+    log.info(f"Received CircleCI webhook: {event}")
+
+    status = payload.get("status") or payload.get("job", {}).get("status")
+    project = payload.get("project", {}).get("slug")
+    branch = payload.get("branch") or payload.get("pipeline", {}).get("vcs", {}).get("branch")
+
+    if status == "failed":
+        monitor = BuildMonitor()
+        build_info = {"id": payload.get("id"), "repository": project, "branch": branch}
+        log_content = payload.get("message", "")
+        analysis = monitor.process_build_log(log_content, build_info)
+        notify_build_status({
+            "provider": "circleci",
+            "repository": project,
+            "branch": branch,
+            "status": "failed",
+            "analysis": analysis,
+        })
+    elif status == "success":
+        notify_build_status({
+            "provider": "circleci",
+            "repository": project,
+            "branch": branch,
+            "status": "success",
+        })
+
+
+def handle_ci_webhook(provider: str, event: str, payload: Dict[str, Any]):
+    """Entry point for CI webhook handling"""
+    if provider == "github":
+        handle_github_webhook(event, payload)
+    elif provider == "gitlab":
+        handle_gitlab_webhook(event, payload)
+    elif provider == "circleci":
+        handle_circleci_webhook(event, payload)
+    else:
+        log.debug(f"Unhandled CI provider: {provider}")
+
+
+class CIWatcher:
+    """Poll status from popular CI providers"""
+
+    def __init__(self):
+        self.monitor = BuildMonitor()
+        self.github_token = os.getenv("GITHUB_TOKEN", "")
+        self.gitlab_token = os.getenv("GITLAB_TOKEN", "")
+        self.circleci_token = os.getenv("CIRCLECI_TOKEN", "")
+
+    def poll(self, provider: str, identifier: str, branch: str = "main") -> Dict[str, Any]:
+        if provider == "github":
+            return self._poll_github(identifier, branch)
+        if provider == "gitlab":
+            return self._poll_gitlab(identifier, branch)
+        if provider == "circleci":
+            return self._poll_circleci(identifier, branch)
+        raise ValueError(f"Unknown provider {provider}")
+
+    def _poll_github(self, repo: str, branch: str) -> Dict[str, Any]:
+        result = self.monitor.monitor_repository(repo, branch)
+        if result.get("failed_runs"):
+            notify_build_status({
+                "provider": "github",
+                "repository": repo,
+                "branch": branch,
+                "status": "failed",
+                "analysis": result,
+            })
+        else:
+            notify_build_status({
+                "provider": "github",
+                "repository": repo,
+                "branch": branch,
+                "status": "success",
+            })
+        return result
+
+    def _poll_gitlab(self, project_id: str, branch: str) -> Dict[str, Any]:
+        if not self.gitlab_token:
+            return {"error": "Missing GitLab token"}
+        url = f"https://gitlab.com/api/v4/projects/{project_id}/pipelines"
+        params = {"ref": branch, "per_page": 1}
+        headers = {"PRIVATE-TOKEN": self.gitlab_token}
+        try:
+            resp = requests.get(url, headers=headers, params=params)
+            resp.raise_for_status()
+            pipelines = resp.json()
+            if not pipelines:
+                return {"status": "unknown"}
+            pipeline = pipelines[0]
+            status = pipeline.get("status")
+            info = {"id": pipeline.get("id"), "repository": project_id, "branch": branch}
+            if status == "failed":
+                analysis = self.monitor.process_build_log("", info)
+                notify_build_status({
+                    "provider": "gitlab",
+                    "repository": project_id,
+                    "branch": branch,
+                    "status": "failed",
+                    "analysis": analysis,
+                })
+            elif status in ("success", "passed"):
+                notify_build_status({
+                    "provider": "gitlab",
+                    "repository": project_id,
+                    "branch": branch,
+                    "status": "success",
+                })
+            return {"status": status, "pipeline": pipeline.get("id")}
+        except requests.RequestException as e:
+            log.error(f"GitLab polling failed: {e}")
+            return {"error": str(e)}
+
+    def _poll_circleci(self, project_slug: str, branch: str) -> Dict[str, Any]:
+        if not self.circleci_token:
+            return {"error": "Missing CircleCI token"}
+        headers = {"Circle-Token": self.circleci_token}
+        url = f"https://circleci.com/api/v2/project/{project_slug}/pipeline"
+        params = {"branch": branch}
+        try:
+            resp = requests.get(url, headers=headers, params=params)
+            resp.raise_for_status()
+            pipelines = resp.json().get("items", [])
+            if not pipelines:
+                return {"status": "unknown"}
+            pipeline_id = pipelines[0].get("id")
+            wf_url = f"https://circleci.com/api/v2/pipeline/{pipeline_id}/workflow"
+            wf_resp = requests.get(wf_url, headers=headers)
+            wf_resp.raise_for_status()
+            workflow = wf_resp.json().get("items", [])[0]
+            status = workflow.get("status")
+            info = {"id": workflow.get("id"), "repository": project_slug, "branch": branch}
+            if status == "failed":
+                analysis = self.monitor.process_build_log("", info)
+                notify_build_status({
+                    "provider": "circleci",
+                    "repository": project_slug,
+                    "branch": branch,
+                    "status": "failed",
+                    "analysis": analysis,
+                })
+            elif status == "success":
+                notify_build_status({
+                    "provider": "circleci",
+                    "repository": project_slug,
+                    "branch": branch,
+                    "status": "success",
+                })
+            return {"status": status, "workflow": workflow.get("id")}
+        except requests.RequestException as e:
+            log.error(f"CircleCI polling failed: {e}")
+            return {"error": str(e)}

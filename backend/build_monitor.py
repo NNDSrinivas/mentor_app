@@ -141,7 +141,33 @@ class BuildMonitor:
         
         # Generate intelligent suggestions
         analysis["suggestions"] = self._generate_intelligent_suggestions(analysis["failures"], build_info)
-        
+
+        return analysis
+
+    def process_build_log(self, build_log: str, build_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze a build log and attempt fixes using codegen"""
+        analysis = self.analyze_build_failure(build_log, build_info)
+
+        patches: List[str] = []
+        try:
+            from backend import codegen
+            for failure in analysis.get("failures", []):
+                context_text = "\n".join(failure.get("line_context", []))
+                patch = codegen.generate_patch({"body": context_text})
+                if patch:
+                    patches.append(patch)
+        except Exception as e:
+            log.error(f"Code generation failed: {e}")
+
+        if patches:
+            combined = "\n".join(patches)
+            analysis["proposed_patch"] = combined
+            try:
+                from backend.patch_apply import apply_patch
+                analysis["patch_application"] = apply_patch(combined)
+            except Exception as e:
+                analysis["patch_application"] = {"success": False, "error": str(e)}
+
         return analysis
     
     def _extract_context(self, log: str, match_pos: int, context_lines: int = 3) -> List[str]:
@@ -414,7 +440,7 @@ addopts = -v --tb=short
                     "repository": repository
                 }
                 
-                return self.analyze_build_failure(log_content, build_info)
+                return self.process_build_log(log_content, build_info)
             else:
                 return {"error": f"Could not fetch logs for run {run_id}"}
                 
