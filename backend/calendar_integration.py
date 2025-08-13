@@ -41,7 +41,7 @@ class CalendarIntegration:
         self.outlook_credentials = self._load_outlook_credentials()
         self.interview_patterns = self._load_interview_patterns()
         
-    def _load_google_credentials(self) -> Optional[Dict[str, str]]:
+    def _load_google_credentials(self) -> Dict[str, str]:
         """Load Google Calendar API credentials"""
         return {
             "client_id": os.getenv("GOOGLE_CLIENT_ID", ""),
@@ -50,7 +50,7 @@ class CalendarIntegration:
             "access_token": os.getenv("GOOGLE_ACCESS_TOKEN", "")
         }
     
-    def _load_outlook_credentials(self) -> Optional[Dict[str, str]]:
+    def _load_outlook_credentials(self) -> Dict[str, str]:
         """Load Microsoft Outlook API credentials"""
         return {
             "client_id": os.getenv("OUTLOOK_CLIENT_ID", ""),

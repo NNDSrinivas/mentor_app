@@ -8,11 +8,15 @@ pipeline.
 
 import logging
 import os
-import tempfile
+import io
+import wave
+import numpy as np
+import threading
 import time
+import tempfile
+from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -20,6 +24,13 @@ try:  # pyannote is optional but preferred
     from pyannote.audio import Pipeline
 except Exception:  # pragma: no cover - only triggered when dependency missing
     Pipeline = None  # type: ignore
+
+try:  # Optional heavy dependency
+    from pyannote.audio import Pipeline  # type: ignore
+    PYANNOTE_AVAILABLE = True
+except Exception:  # pragma: no cover - handled gracefully
+    Pipeline = None
+    PYANNOTE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -56,50 +67,175 @@ class SpeakerDiarizer:
         self.is_processing = False
         self.silence_threshold = 2.0  # seconds of silence to end a question
         self.last_speech_time = time.time()
-
+        
         # Mapping from raw diarization speaker labels to conversation roles
         self.speaker_role_map: Dict[str, str] = {}
-
-        # Lazily initialised pyannote diarization pipeline
-        self.pipeline = None
-        self._pipeline_loaded = False
         
-    def identify_speakers(self, audio_chunk: bytes, timestamp: float) -> List[SpeakerSegment]:
-        """Identify speakers in an audio chunk using `pyannote.audio`.
+        self.pipeline: Optional[Pipeline] = None
+
+        if PYANNOTE_AVAILABLE:
+            try:
+                token = os.getenv("HUGGINGFACE_TOKEN")
+                if token:
+                    self.pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization", use_auth_token=token)
+                else:
+                    self.pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization")
+                logger.info("✅ Loaded pyannote speaker diarization pipeline")
+            except Exception as e:  # pragma: no cover - heavy model may be unavailable
+                logger.warning(f"pyannote pipeline unavailable: {e}")
+                self.pipeline = None
+
+    def identify_speakers(self, audio_source: Union[str, bytes], timestamp: float = 0.0) -> List[SpeakerSegment]:
+        """Diarize an audio source and return detected speaker segments.
 
         Args:
-            audio_chunk: Raw PCM/WAV bytes.
-            timestamp: Start time of the chunk in the conversation.
+            audio_source: Path to an audio file or raw PCM bytes.
+            timestamp: Optional start timestamp for the provided audio.
 
         Returns:
-            List of :class:`SpeakerSegment` with mapped roles.
+            List of :class:`SpeakerSegment` objects.
         """
+        if self.pipeline is not None:
+            try:  # pragma: no cover - exercised only when pyannote models are available
+                diarization = self.pipeline(audio_source)
+                segments: List[SpeakerSegment] = []
+                for turn, _, speaker in diarization.itertracks(yield_label=True):
+                    segments.append(
+                        SpeakerSegment(
+                            start_time=timestamp + float(turn.start),
+                            end_time=timestamp + float(turn.end),
+                            speaker_id=str(speaker),
+                            confidence=1.0,
+                            transcript="",
+                        )
+                    )
+                return segments
+            except Exception as e:  # pragma: no cover
+                logger.warning(f"pyannote diarization failed, falling back to heuristic: {e}")
 
+        return self._heuristic_diarization(audio_source, timestamp)
+
+    def _heuristic_diarization(self, audio_source: Union[str, bytes], timestamp: float) -> List[SpeakerSegment]:
+        """Fallback energy-based diarization used when pyannote isn't available."""
+        try:
+            if isinstance(audio_source, bytes):
+                wav = wave.open(io.BytesIO(audio_source))
+            else:
+                wav = wave.open(audio_source, "rb")
+        except Exception as e:
+            logger.error(f"Failed to open audio for diarization: {e}")
+            return []
+
+        with wav:
+            sample_rate = wav.getframerate()
+            frames = wav.readframes(wav.getnframes())
+
+        audio = np.frombuffer(frames, dtype=np.int16).astype(float)
+        if not len(audio):
+            return []
+
+        frame_size = int(sample_rate * 0.1)  # 100ms frames for finer detection
+        threshold = 0.01 * np.max(np.abs(audio))
         segments: List[SpeakerSegment] = []
-        self._load_pipeline()
-        if self.pipeline is None:
-            logger.warning("Pyannote pipeline not available; returning empty segments")
-            return segments
-
-        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
-            tmp.write(audio_chunk)
-            tmp.flush()
-
-            diarization = self.pipeline(tmp.name)
-
-        for turn, _, speaker_label in diarization.itertracks(yield_label=True):
-            role = self._map_speaker_role(speaker_label)
+        start = None
+        speaker_index = 0
+        for i in range(0, len(audio), frame_size):
+            frame = audio[i : i + frame_size]
+            energy = np.mean(np.abs(frame))
+            current_time = timestamp + i / sample_rate
+            if energy > threshold and start is None:
+                start = current_time
+            elif energy <= threshold and start is not None:
+                end = current_time
+                segments.append(
+                    SpeakerSegment(
+                        start_time=start,
+                        end_time=end,
+                        speaker_id=f"speaker_{speaker_index}",
+                        confidence=0.5,
+                        transcript="",
+                    )
+                )
+                speaker_index += 1
+                start = None
+        if start is not None:
+            end = timestamp + len(audio) / sample_rate
             segments.append(
                 SpeakerSegment(
-                    start_time=timestamp + turn.start,
-                    end_time=timestamp + turn.end,
-                    speaker_id=role,
-                    confidence=1.0,
+                    start_time=start,
+                    end_time=end,
+                    speaker_id=f"speaker_{speaker_index}",
+                    confidence=0.5,
                     transcript="",
-                    is_question=False,
-                    is_interviewer=role == "interviewer",
                 )
             )
+
+        return segments
+                            speaker_id=str(speaker),
+                            confidence=1.0,
+                            transcript="",
+                        )
+                    )
+                return segments
+            except Exception as e:  # pragma: no cover
+                logger.warning(f"pyannote diarization failed, falling back to heuristic: {e}")
+
+        return self._heuristic_diarization(audio_source, timestamp)
+
+    def _heuristic_diarization(self, audio_source: Union[str, bytes], timestamp: float) -> List[SpeakerSegment]:
+        """Fallback energy-based diarization used when pyannote isn't available."""
+        try:
+            if isinstance(audio_source, bytes):
+                wav = wave.open(io.BytesIO(audio_source))
+            else:
+                wav = wave.open(audio_source, "rb")
+        except Exception as e:
+            logger.error(f"Failed to open audio for diarization: {e}")
+            return []
+
+        with wav:
+            sample_rate = wav.getframerate()
+            frames = wav.readframes(wav.getnframes())
+
+        audio = np.frombuffer(frames, dtype=np.int16).astype(float)
+        if not len(audio):
+            return []
+
+        frame_size = int(sample_rate * 0.1)  # 100ms frames for finer detection
+        threshold = 0.01 * np.max(np.abs(audio))
+        segments: List[SpeakerSegment] = []
+        start = None
+        speaker_index = 0
+        for i in range(0, len(audio), frame_size):
+            frame = audio[i : i + frame_size]
+            energy = np.mean(np.abs(frame))
+            current_time = timestamp + i / sample_rate
+            if energy > threshold and start is None:
+                start = current_time
+            elif energy <= threshold and start is not None:
+                end = current_time
+                segments.append(
+                    SpeakerSegment(
+                        start_time=start,
+                        end_time=end,
+                        speaker_id=f"speaker_{speaker_index}",
+                        confidence=0.5,
+                        transcript="",
+                    )
+                )
+                speaker_index += 1
+                start = None
+        if start is not None:
+            end = timestamp + len(audio) / sample_rate
+                segments.append(
+                    SpeakerSegment(
+                        start_time=start,
+                        end_time=end,
+                        speaker_id=f"speaker_{speaker_index}",
+                        confidence=0.5,
+                        transcript="",
+                    )
+                )
 
         return segments
 
@@ -349,6 +485,7 @@ class InterviewFlowManager:
         self.current_state = 'waiting'  # waiting, question_active, response_pending, answering
         self.question_buffer = []
         self.response_callbacks = []
+        self.segment_callbacks = []
         
     def process_speech_segment(self, transcript: str, voice_features: Dict) -> Optional[str]:
         """Process a speech segment and return AI response if appropriate."""
@@ -356,6 +493,11 @@ class InterviewFlowManager:
         # Create speaker segment
         segment = self.diarizer.process_transcript_with_speakers(transcript, voice_features)
         self.diarizer.current_segments.append(segment)
+        for callback in self.segment_callbacks:
+            try:
+                callback(segment)
+            except Exception as e:
+                logger.error(f"Error in segment callback: {e}")
         
         # Update conversation state
         if segment.is_interviewer and segment.is_question:
@@ -376,10 +518,14 @@ class InterviewFlowManager:
                 return complete_question
         
         return None
-    
+
     def register_response_callback(self, callback):
         """Register a callback for when responses are ready."""
         self.response_callbacks.append(callback)
+
+    def register_segment_callback(self, callback):
+        """Register a callback that fires whenever a new segment is processed."""
+        self.segment_callbacks.append(callback)
     
     def notify_response_generated(self, question: str, response: str):
         """Notify that a response has been generated."""

@@ -84,6 +84,20 @@
     es.onerror = () => setTimeout(() => connect(meetingId), 2000);
   }
 
+  // --- Caption forwarding
+  async function pushCaption(text, speaker = null) {
+    if (!state.meetingId) return;
+    try {
+      await fetch(`${state.backend}/api/sessions/${encodeURIComponent(state.meetingId)}/captions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, speaker }),
+      });
+    } catch (e) {
+      console.warn('Failed to push caption', e);
+    }
+  }
+
   // --- Mic alignment (read-back auto-scroll)
   // Strategy: browser SpeechRecognition if available; fallback to noop.
   function startReadBackAlignment() {
@@ -133,6 +147,7 @@
 
   window.AIMOverlay = {
     connect,
+    pushCaption,
     setBackend: (b) => state.backend = b
   };
 
