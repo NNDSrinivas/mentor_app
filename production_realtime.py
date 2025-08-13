@@ -59,6 +59,54 @@ else:
 active_sessions: Dict[str, dict] = {}
 session_queues: Dict[str, queue.Queue] = {}
 
+
+class SessionStore:
+    """Shared session store backed by SQLite for participant metadata"""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+
+    def add_participant(self, session_id: str, user_id: int) -> None:
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO session_participants (session_id, user_id, joined_at, left_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP, NULL)
+            """,
+            (session_id, user_id),
+        )
+        conn.commit()
+        conn.close()
+
+    def remove_participant(self, session_id: str, user_id: int) -> None:
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """
+            UPDATE session_participants
+            SET left_at = CURRENT_TIMESTAMP
+            WHERE session_id = ? AND user_id = ? AND left_at IS NULL
+            """,
+            (session_id, user_id),
+        )
+        conn.commit()
+        conn.close()
+
+    def get_participants(self, session_id: str) -> List[int]:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute(
+            """
+            SELECT user_id FROM session_participants
+            WHERE session_id = ? AND left_at IS NULL
+            """,
+            (session_id,),
+        )
+        participants = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return participants
+
+
+session_store = SessionStore(app.config['DATABASE'])
+
 def init_db():
     """Initialize the database with required tables"""
     conn = sqlite3.connect(app.config['DATABASE'])
@@ -119,6 +167,17 @@ def init_db():
             importance_score REAL DEFAULT 1.0,  -- For prioritizing important interactions
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (session_id) REFERENCES sessions (id)
+        )
+    ''')
+
+    # Session participants for tracking joins/leaves
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS session_participants (
+            session_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            left_at TIMESTAMP NULL,
+            PRIMARY KEY (session_id, user_id)
         )
     ''')
     
@@ -688,10 +747,10 @@ def create_session():
             INSERT INTO sessions (id, user_id, user_level, meeting_type, project_context, metadata)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (session_id, user_id, user_level, meeting_type, project_context, json.dumps(data)))
-        
+
         db.commit()
-        
-        # Initialize session in memory
+
+        # Initialize session metadata
         active_sessions[session_id] = {
             'user_id': user_id,
             'created_at': datetime.utcnow().isoformat(),
@@ -699,6 +758,7 @@ def create_session():
             'meeting_type': meeting_type,
             'project_context': project_context
         }
+        session_store.add_participant(session_id, user_id)
         
         # Initialize event queue for this session
         session_queues[session_id] = queue.Queue()
@@ -779,11 +839,16 @@ def end_session(session_id):
         
         # Mark session as ended
         db.execute('''
-            UPDATE sessions 
-            SET ended_at = CURRENT_TIMESTAMP, is_active = 0 
+            UPDATE sessions
+            SET ended_at = CURRENT_TIMESTAMP, is_active = 0
             WHERE id = ? AND user_id = ?
         ''', (session_id, user_id))
-        
+
+        db.execute(
+            "UPDATE session_participants SET left_at = CURRENT_TIMESTAMP WHERE session_id = ? AND left_at IS NULL",
+            (session_id,),
+        )
+
         db.commit()
         
         # Broadcast session end to connected clients
@@ -808,6 +873,54 @@ def end_session(session_id):
         
     except Exception as e:
         return jsonify({'error': f'Failed to end session: {str(e)}'}), 500
+
+
+@app.route('/api/sessions/<session_id>/join', methods=['POST'])
+@require_auth
+def join_session(session_id):
+    """Join a session and broadcast presence"""
+    try:
+        user_id = g.current_user['user_id']
+        session_store.add_participant(session_id, user_id)
+        participants = session_store.get_participants(session_id)
+
+        if session_id in session_queues:
+            session_queues[session_id].put({
+                'type': 'participant_joined',
+                'data': {
+                    'user_id': user_id,
+                    'participants': participants
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            })
+
+        return jsonify({'message': 'joined', 'participants': participants}), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to join session: {str(e)}'}), 500
+
+
+@app.route('/api/sessions/<session_id>/leave', methods=['POST'])
+@require_auth
+def leave_session(session_id):
+    """Leave a session and broadcast presence"""
+    try:
+        user_id = g.current_user['user_id']
+        session_store.remove_participant(session_id, user_id)
+        participants = session_store.get_participants(session_id)
+
+        if session_id in session_queues:
+            session_queues[session_id].put({
+                'type': 'participant_left',
+                'data': {
+                    'user_id': user_id,
+                    'participants': participants
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            })
+
+        return jsonify({'message': 'left', 'participants': participants}), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to leave session: {str(e)}'}), 500
 
 @app.route('/api/sessions/<session_id>/captions', methods=['POST'])
 @require_auth
@@ -1176,7 +1289,8 @@ def stream_session_events(session_id):
                 'type': 'connected',
                 'session_id': session_id,
                 'timestamp': datetime.utcnow().isoformat(),
-                'message': 'Connected to real-time stream'
+                'message': 'Connected to real-time stream',
+                'participants': session_store.get_participants(session_id)
             })}\\n\\n"
             
             # Create a queue for this client if session doesn't exist

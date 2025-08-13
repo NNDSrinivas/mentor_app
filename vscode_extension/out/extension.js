@@ -29,6 +29,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deactivate = exports.activate = void 0;
 const vscode = __importStar(require("vscode"));
 const axios_1 = __importDefault(require("axios"));
+const eventsource_1 = __importDefault(require("eventsource"));
 function activate(context) {
     console.log('🤖 AI Mentor Assistant activated');
     const aiMentor = new AIMentorProvider(context);
@@ -53,10 +54,13 @@ class AIMentorProvider {
         this.currentTask = null;
         this.meetingContext = null;
         this.isPairProgramming = false;
+        this.sessionEventSource = null;
         this.context = context;
         this.jiraClient = new JiraClient();
         this.statusBarItem = this.createStatusBar();
         this.extensionBridge = new ExtensionBridge(this);
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        this.serviceUrl = config.get('mentorServiceUrl', 'http://localhost:8080');
     }
     createStatusBar() {
         const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -67,6 +71,11 @@ class AIMentorProvider {
         return statusBarItem;
     }
     async startCodingSessionMonitoring() {
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        const sessionId = config.get('sessionId', '');
+        if (sessionId) {
+            this.subscribeToSession(sessionId);
+        }
         // Monitor file changes, errors, and coding patterns
         vscode.workspace.onDidChangeTextDocument(async (event) => {
             if (event.document.languageId === 'python' ||
@@ -98,6 +107,26 @@ class AIMentorProvider {
         this.updateStatus("🎤 Monitoring coding session");
         // Start listening for browser extension messages
         this.extensionBridge.startListening();
+    }
+    subscribeToSession(sessionId) {
+        if (this.sessionEventSource) {
+            this.sessionEventSource.close();
+        }
+        const es = new eventsource_1.default(`${this.serviceUrl}/api/sessions/${sessionId}/stream`);
+        es.onmessage = (e) => {
+            try {
+                const evt = JSON.parse(e.data);
+                if (evt.type === 'participant_joined' || evt.type === 'participant_left') {
+                    const count = (evt.data?.participants || []).length;
+                    this.updateStatus(`👥 Participants: ${count}`);
+                }
+            }
+            catch (err) {
+                console.error('SSE parse error', err);
+            }
+        };
+        es.onerror = (err) => console.error('SSE connection error', err);
+        this.sessionEventSource = es;
     }
     async analyzeCodeChanges(event) {
         // Analyze what the user is doing and provide contextual help
