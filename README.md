@@ -92,6 +92,15 @@ Edit `.env` (copied from `.env.template`):
 - OPENAI_API_KEY (required for ai responses)
 - Optional tuning in `app/config.py` (overlay, knowledge base, privacy flags). Missing advanced backends are handled gracefully.
 
+## Screen sharing detection
+
+The private overlay attempts to detect when your screen is being shared
+(Zoom, Teams, etc.) using OS-specific hooks.  When sharing is active the
+overlay window is marked so it remains visible locally but is excluded from
+the shared feed where supported.  Platforms that expose no screen-sharing
+APIs fall back to hiding the overlay off-screen or printing responses to the
+console to avoid leaking content.
+
 ## API summary
 
 - 8084 (production_backend):
