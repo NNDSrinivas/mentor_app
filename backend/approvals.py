@@ -64,6 +64,9 @@ def request_pr_auto_reply(owner: str, repo: str, pr_number: int, jira_issue: Opt
         pr.get("body", "") or "",
         files,
         comments,
+        owner,
+        repo,
+        pr_number,
     )
 
     item = approvals.submit(
