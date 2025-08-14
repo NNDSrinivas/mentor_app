@@ -385,7 +385,15 @@ def gh_pr_webhook():
         files = get_pr_files(owner, repo, pr_number)
         comments = get_pr_comments(owner, repo, pr_number)
 
-        suggestions = suggest_replies_and_patch(pr.get("title",""), pr.get("body","") or "", files, comments)
+        suggestions = suggest_replies_and_patch(
+            pr.get("title", ""),
+            pr.get("body", "") or "",
+            files,
+            comments,
+            owner,
+            repo,
+            pr_number,
+        )
         
         # Gate via approvals before posting anything
         item = approvals.submit("github.pr_auto_reply", {
