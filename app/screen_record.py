@@ -10,6 +10,7 @@ import logging
 import os
 import time
 import threading
+import json
 from datetime import datetime
 from typing import List, Any, Dict, Optional, Tuple, cast
 
@@ -370,8 +371,40 @@ def record_screen(session_id: str, duration: Optional[int] = None) -> str:
         logger.info("Screen recording interrupted by user")
     finally:
         recorder.stop_recording()
-    
+
+    # Persist recording metadata for later retrieval
+    metadata = {
+        "session_id": session_id,
+        "video_path": video_path,
+        "recorded_at": datetime.utcnow().isoformat()
+    }
+    metadata_path = os.path.join(
+        Config.RECORDINGS_DIR, f"{session_id}_metadata.json"
+    )
+    try:
+        os.makedirs(Config.RECORDINGS_DIR, exist_ok=True)
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f)
+    except Exception as e:  # pragma: no cover - persistence failures shouldn't crash
+        logger.error(f"Failed to write recording metadata: {e}")
+
     return video_path
+
+
+def get_recording_path(session_id: str) -> Optional[str]:
+    """Retrieve stored recording path for a session if available."""
+    metadata_path = os.path.join(
+        Config.RECORDINGS_DIR, f"{session_id}_metadata.json"
+    )
+    if not os.path.exists(metadata_path):
+        return None
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("video_path")
+    except Exception as e:  # pragma: no cover - corrupted metadata
+        logger.error(f"Failed to load recording metadata: {e}")
+        return None
 
 
 def analyze_screen_video(video_path: str) -> List[Any]:

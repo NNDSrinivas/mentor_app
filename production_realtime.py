@@ -14,7 +14,7 @@ import queue
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Dict, Optional
-from flask import Flask, request, jsonify, g, Response
+from flask import Flask, request, jsonify, g, Response, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -774,6 +774,24 @@ def create_session():
                     session_id, Config.SCREEN_RECORDING_DURATION
                 )
                 session_recordings[session_id] = video_path
+                # Persist recording path with session metadata
+                try:
+                    conn = sqlite3.connect(app.config['DATABASE'])
+                    cursor = conn.execute(
+                        'SELECT metadata FROM sessions WHERE id = ?',
+                        (session_id,)
+                    )
+                    row = cursor.fetchone()
+                    metadata = json.loads(row[0]) if row and row[0] else {}
+                    metadata['recording_path'] = video_path
+                    conn.execute(
+                        'UPDATE sessions SET metadata = ? WHERE id = ?',
+                        (json.dumps(metadata), session_id)
+                    )
+                    conn.commit()
+                    conn.close()
+                except Exception as e:
+                    print(f"Failed to persist recording metadata: {e}")
 
             threading.Thread(target=_record_screen, daemon=True).start()
 
@@ -1158,7 +1176,7 @@ def get_conversation_memory(session_id):
 @app.route('/api/sessions/<session_id>/recording', methods=['GET'])
 @require_auth
 def get_screen_recording(session_id):
-    """Get screen recording path or analysis for a session."""
+    """Get screen recording path, download, or analysis for a session."""
     try:
         user_id = g.current_user['user_id']
         db = get_db()
@@ -1169,11 +1187,19 @@ def get_screen_recording(session_id):
 
         video_path = session_recordings.get(session_id)
         if not video_path:
+            video_path = screen_record.get_recording_path(session_id)
+            if video_path:
+                session_recordings[session_id] = video_path
+
+        if not video_path:
             return jsonify({'message': 'Recording in progress or unavailable'}), 202
 
         if request.args.get('analyze') == 'true':
             analysis = screen_record.analyze_screen_video(video_path)
             return jsonify({'video_path': video_path, 'analysis': analysis}), 200
+
+        if request.args.get('download') == 'true':
+            return send_file(video_path, as_attachment=True)
 
         return jsonify({'video_path': video_path}), 200
 
@@ -1325,13 +1351,14 @@ def stream_session_events(session_id):
         def event_stream():
             """Generator function for SSE events"""
             # Send initial connection event
-            yield f"data: {json.dumps({
+            initial = {
                 'type': 'connected',
                 'session_id': session_id,
                 'timestamp': datetime.utcnow().isoformat(),
                 'message': 'Connected to real-time stream',
                 'participants': session_store.get_participants(session_id)
-            })}\\n\\n"
+            }
+            yield f"data: {json.dumps(initial)}\\n\\n"
             
             # Create a queue for this client if session doesn't exist
             if session_id not in session_queues:
@@ -1347,17 +1374,19 @@ def stream_session_events(session_id):
                         yield f"data: {json.dumps(event)}\\n\\n"
                     except queue.Empty:
                         # Send heartbeat to keep connection alive
-                        yield f"data: {json.dumps({
+                        heartbeat = {
                             'type': 'heartbeat',
                             'timestamp': datetime.utcnow().isoformat()
-                        })}\\n\\n"
+                        }
+                        yield f"data: {json.dumps(heartbeat)}\\n\\n"
                     except Exception as e:
                         # Send error event and break
-                        yield f"data: {json.dumps({
+                        error_event = {
                             'type': 'error',
                             'message': str(e),
                             'timestamp': datetime.utcnow().isoformat()
-                        })}\\n\\n"
+                        }
+                        yield f"data: {json.dumps(error_event)}\\n\\n"
                         break
             except GeneratorExit:
                 # Client disconnected

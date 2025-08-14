@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
 from app.config import Config
 from backend.diarization_service import DiarizationService
+from . import screen_record
 try:
     from app.summarization import SummarizationService
 except Exception as e:  # pragma: no cover - optional dependency
@@ -369,6 +370,8 @@ class MeetingIntelligence:
             except Exception as e:
                 logger.warning(f"Failed to store meeting summary: {e}")
 
+        recording_path = screen_record.get_recording_path(meeting_id)
+
         return {
             "meeting_id": meeting_id,
             "meeting_type": context.meeting_type,
@@ -379,6 +382,7 @@ class MeetingIntelligence:
             "duration": "unknown",  # Would calculate from start/end times
             "key_topics": list(set([topic for patterns in self.speaker_patterns.values() for topic in patterns["topics"]])),
             "summary": summary_text,
+            "recording_path": recording_path,
         }
     
     def _generate_ai_summary(self, context: MeetingContext) -> str:
