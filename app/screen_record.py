@@ -352,10 +352,11 @@ def record_screen(session_id: str, duration: Optional[int] = None) -> str:
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     video_path = os.path.join(Config.RECORDINGS_DIR, f"{session_id}_{timestamp}_screen.mp4")
-    
+
     recorder = ScreenRecorder()
-    
+
     try:
+        os.makedirs(Config.RECORDINGS_DIR, exist_ok=True)
         recorder.start_recording(video_path)
         
         if duration:
