@@ -1,5 +1,4 @@
 import sys
-import asyncio
 from typing import Any
 from pathlib import Path
 import types
@@ -30,17 +29,34 @@ class DummySumm:
 sys.modules['app.knowledge_base'] = types.SimpleNamespace(KnowledgeBase=DummyKB)
 sys.modules['app.transcription'] = types.SimpleNamespace(TranscriptionService=DummyTS)
 sys.modules['app.summarization'] = types.SimpleNamespace(SummarizationService=DummySumm)
+sys.modules['openai'] = types.SimpleNamespace(OpenAI=object)
+sys.modules['dotenv'] = types.SimpleNamespace(load_dotenv=lambda: None)
 
 from app.ai_assistant import AIAssistant
+from app.rag import retrieve_context_snippets
 
 
-async def _run_segments(assistant: AIAssistant):
-    await assistant.process_interview_speech("Can you tell me about your experience?", {})
-    await assistant.process_interview_speech("Sure, I have worked on many projects.", {})
+def _run_segments(assistant: AIAssistant):
+    Segment = types.SimpleNamespace
+    assistant._handle_new_segment(
+        Segment(
+            speaker_id="interviewer",
+            transcript="Can you tell me about your experience?",
+            is_question=True,
+            is_interviewer=True,
+        )
+    )
+    assistant._handle_new_segment(
+        Segment(
+            speaker_id="candidate",
+            transcript="Sure, I have worked on many projects.",
+            is_question=False,
+            is_interviewer=False,
+        )
+    )
 
 
-@pytest.mark.asyncio
-async def test_ai_assistant_records_segments(monkeypatch):
+def test_ai_assistant_records_segments(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test")
     monkeypatch.setattr("app.ai_assistant.KnowledgeBase", DummyKB)
     monkeypatch.setattr("app.ai_assistant.TranscriptionService", DummyTS)
@@ -49,7 +65,7 @@ async def test_ai_assistant_records_segments(monkeypatch):
     assistant = AIAssistant()
     assistant.mock_mode = True
 
-    await _run_segments(assistant)
+    _run_segments(assistant)
 
     session = assistant.memory.sessions.get("interview_session")
     assert session is not None
@@ -58,3 +74,32 @@ async def test_ai_assistant_records_segments(monkeypatch):
     assert first.context["is_interviewer"] is True
     assert first.context["is_question"] is True
     assert second.context["is_interviewer"] is False
+
+
+def test_retrieve_context_snippets_returns_snippets(monkeypatch):
+    class FakeKB:
+        def search(self, query: str, top_k: int = 5, filter_metadata: Any | None = None):
+            assert query == "python"
+            assert top_k == 2
+            return [
+                {"content": "Python is a versatile language."},
+                {"content": "It emphasizes readability."},
+                {"content": "Extra snippet"},
+            ][:top_k]
+
+    # Patch KnowledgeBase used inside retrieve_context_snippets
+    monkeypatch.setattr("app.rag.KnowledgeBase", FakeKB)
+
+    result = retrieve_context_snippets("python", top_k=2)
+    assert "Python is a versatile language." in result
+    assert "It emphasizes readability." in result
+    assert "Extra snippet" not in result
+
+
+def test_retrieve_context_snippets_empty(monkeypatch):
+    class EmptyKB:
+        def search(self, query: str, top_k: int = 5, filter_metadata: Any | None = None):
+            return []
+
+    monkeypatch.setattr("app.rag.KnowledgeBase", EmptyKB)
+    assert retrieve_context_snippets("unknown") == ""
