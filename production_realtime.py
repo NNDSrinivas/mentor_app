@@ -13,7 +13,7 @@ import threading
 import queue
 from datetime import datetime, timedelta
 from functools import wraps
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from flask import Flask, request, jsonify, g, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -29,9 +29,6 @@ try:
 except ImportError as e:
     print(f"Knowledge base not available: {e}")
     KNOWLEDGE_BASE_AVAILABLE = False
-import threading
-from queue import Queue
-from typing import Dict, List, Optional
 
 # Load environment variables
 load_dotenv()
