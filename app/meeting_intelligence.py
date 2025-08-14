@@ -5,13 +5,23 @@ Provides speaker identification, context extraction, and real-time assistance
 
 import json
 import logging
+logger = logging.getLogger(__name__)
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
 from app.config import Config
 from backend.diarization_service import DiarizationService
+try:
+    from app.summarization import SummarizationService
+except Exception as e:  # pragma: no cover - optional dependency
+    SummarizationService = None  # type: ignore[assignment]
+    logger.warning(f"Summarization service unavailable: {e}")
 
-logger = logging.getLogger(__name__)
+try:
+    from backend.memory_service import MemoryService
+except Exception as e:  # pragma: no cover - optional dependency
+    MemoryService = None  # type: ignore[assignment]
+    logger.warning(f"Memory service unavailable: {e}")
 
 @dataclass
 class Speaker:
@@ -48,6 +58,16 @@ class MeetingIntelligence:
         self.speaker_patterns: Dict[str, Dict] = {}
         # DiarizationService knows how to map speaker labels to team members
         self.diarization = DiarizationService()
+        try:
+            self.summarizer = SummarizationService() if SummarizationService else None
+        except Exception as e:  # pragma: no cover - optional dependency
+            logger.warning(f"Failed to initialize summarization service: {e}")
+            self.summarizer = None
+        try:
+            self.memory = MemoryService() if MemoryService else None
+        except Exception as e:  # pragma: no cover - optional dependency
+            logger.warning(f"Failed to initialize memory service: {e}")
+            self.memory = None
         
     def start_meeting(self, meeting_id: str, participants: List[str] = None) -> MeetingContext:
         """Initialize a new meeting session with intelligence tracking"""
@@ -304,14 +324,51 @@ class MeetingIntelligence:
             return "medium"
         else:
             return "low"
+
+    def _compose_meeting_text(self, context: MeetingContext) -> str:
+        parts = [f"Meeting type: {context.meeting_type}"]
+        if context.participants:
+            parts.append("Participants: " + ", ".join(p.speaker_id for p in context.participants))
+        if context.agenda_items:
+            parts.append("Agenda Items:\n" + "\n".join(context.agenda_items))
+        if context.action_items:
+            parts.append("Action Items:\n" + "\n".join(context.action_items))
+        if context.decisions:
+            parts.append("Decisions:\n" + "\n".join(context.decisions))
+        return "\n".join(parts)
     
     def get_meeting_summary(self, meeting_id: str) -> Dict[str, Any]:
         """Generate comprehensive meeting summary"""
         if meeting_id not in self.active_meetings:
             return {"error": "Meeting not found"}
-        
+
         context = self.active_meetings[meeting_id]
-        
+
+        if self.summarizer:
+            meeting_text = self._compose_meeting_text(context)
+            try:
+                summary_text = self.summarizer.generate_summary(meeting_text, summary_type="meeting")
+            except Exception as e:
+                logger.warning(f"Summarization failed: {e}")
+                summary_text = self._generate_ai_summary(context)
+        else:
+            summary_text = self._generate_ai_summary(context)
+
+        if context.action_items:
+            summary_text += "\n\nAction Items:\n" + "\n".join(context.action_items)
+        if context.decisions:
+            summary_text += "\n\nDecisions:\n" + "\n".join(context.decisions)
+
+        if self.memory:
+            try:
+                self.memory.add_meeting_entry(
+                    meeting_id,
+                    summary_text,
+                    {"action_items": context.action_items, "decisions": context.decisions},
+                )
+            except Exception as e:
+                logger.warning(f"Failed to store meeting summary: {e}")
+
         return {
             "meeting_id": meeting_id,
             "meeting_type": context.meeting_type,
@@ -321,7 +378,7 @@ class MeetingIntelligence:
             "agenda_items": context.agenda_items,
             "duration": "unknown",  # Would calculate from start/end times
             "key_topics": list(set([topic for patterns in self.speaker_patterns.values() for topic in patterns["topics"]])),
-            "summary": self._generate_ai_summary(context)
+            "summary": summary_text,
         }
     
     def _generate_ai_summary(self, context: MeetingContext) -> str:

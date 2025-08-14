@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from typing import Set
 from backend.integrations.github_manager import GitHubManager
+from backend.memory_service import MemoryService
 from app.task_manager import Task, TaskManager
 
 # Setup logging
@@ -41,6 +42,7 @@ connected_clients: Set[_Any] = set()
 
 # Task manager instance for task operations
 task_manager = TaskManager()
+memory_service = MemoryService()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -504,6 +506,17 @@ def config_status():
     try:
         return jsonify(get_integration_status())
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- Meeting Notes ---
+@app.route("/api/meetings/<meeting_id>/notes", methods=['GET'])
+def get_meeting_notes(meeting_id: str):
+    """Retrieve stored notes for a meeting."""
+    try:
+        notes = memory_service.get_meeting_notes(meeting_id)
+        return jsonify({"meeting_id": meeting_id, "notes": notes})
+    except Exception as e:
+        log.error(f"Error retrieving notes for meeting {meeting_id}: {e}")
         return jsonify({"error": str(e)}), 500
 
 # --- WebSocket Support ---

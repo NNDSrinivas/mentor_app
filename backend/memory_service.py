@@ -110,6 +110,23 @@ class MemoryService:
             # Fallback search
             return {"documents": [self.search_memory(category="meeting", query=query, limit=n_results)]}
 
+    def get_meeting_notes(self, meeting_id: str) -> List[Dict[str, Any]]:
+        """Retrieve stored meeting summaries for a specific meeting."""
+        cursor = self.doc_conn.cursor()
+        cursor.execute(
+            "SELECT summary, metadata, created_at FROM summaries WHERE meeting_id = ? ORDER BY created_at DESC",
+            (meeting_id,),
+        )
+        rows = cursor.fetchall()
+        notes = []
+        for summary, metadata, created_at in rows:
+            try:
+                meta = json.loads(metadata) if metadata else {}
+            except Exception:
+                meta = {}
+            notes.append({"summary": summary, "metadata": meta, "created_at": created_at})
+        return notes
+
     def add_task(self, task_id: str, description: str, metadata: Optional[Dict] = None):
         """Add a task to memory"""
         if self.client:
