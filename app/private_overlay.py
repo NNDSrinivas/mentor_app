@@ -3,15 +3,27 @@
 This creates a private UI overlay that appears only on the user's screen,
 similar to how Zoom meeting controls are visible only to the host.
 Other meeting participants cannot see these AI interactions.
+
+The overlay attempts to detect active screen sharing sessions using
+platform-specific hooks.  When sharing is detected the window is marked so
+that it does not appear in the shared feed (when supported).  On platforms
+without such APIs the overlay falls back to standard behavior, which may
+include moving the window off screen or console output to avoid leaking
+content.
 """
 import asyncio
 import json
 import os
+import platform
+import subprocess
 import threading
 import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 import logging
+
+import psutil
+import ctypes
 
 # Try to import tkinter, fall back to file-based system if not available
 try:
@@ -77,6 +89,94 @@ class PrivateOverlay:
             self.root.bind_all('<Control-Shift-Down>', lambda _e: self.adjust_opacity(-0.1))
         except Exception as e:
             logger.error(f"Failed to bind hotkeys: {e}")
+
+    # ------------------------------------------------------------------
+    # Screen sharing detection
+    # ------------------------------------------------------------------
+    def _is_screen_sharing_active(self) -> bool:
+        """Return True if an active screen sharing session is detected.
+
+        Uses lightweight heuristics and OS specific hooks.  If detection
+        fails or is unsupported, False is returned so that normal overlay
+        behaviour continues.
+        """
+        try:
+            system = platform.system().lower()
+            if system == "darwin":
+                return self._check_macos_sharing()
+            if system == "windows":
+                return self._check_windows_sharing()
+            if system == "linux":
+                return self._check_linux_sharing()
+        except Exception as e:
+            logger.debug(f"Screen sharing check failed: {e}")
+        return False
+
+    def _check_macos_sharing(self) -> bool:
+        """Detect screen sharing on macOS via AppleScript hooks."""
+        try:
+            script = (
+                'tell application "System Events" to return (exists '
+                '(menu bar item "Stop Share" of menu 1 of menu bar item '
+                '"Meeting" of menu bar 1 of process "zoom.us"))'
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script], capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                return result.stdout.strip().lower() == "true"
+        except Exception:
+            pass
+        return False
+
+    def _check_windows_sharing(self) -> bool:
+        """Detect screen sharing on Windows by inspecting running processes."""
+        try:
+            for proc in psutil.process_iter(["name", "cmdline"]):
+                name = (proc.info.get("name") or "").lower()
+                cmd = " ".join(proc.info.get("cmdline") or []).lower()
+                if "zoom" in name and "sharing" in cmd:
+                    return True
+                if "teams" in name and ("sharing" in cmd or "--share" in cmd):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _check_linux_sharing(self) -> bool:
+        """Detect screen sharing on Linux using process heuristics."""
+        try:
+            for proc in psutil.process_iter(["name", "cmdline"]):
+                name = (proc.info.get("name") or "").lower()
+                cmd = " ".join(proc.info.get("cmdline") or []).lower()
+                if ("zoom" in name or "teams" in name) and (
+                    "--share" in cmd or "sharing" in cmd
+                ):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _apply_screen_share_exclusion(self):
+        """Ensure overlay is not captured when screen sharing is active."""
+        if not self.overlay_window:
+            return
+
+        system = platform.system().lower()
+        try:
+            if system == "windows":
+                hwnd = ctypes.windll.user32.GetParent(self.overlay_window.winfo_id())
+                # 0x11 == WDA_EXCLUDEFROMCAPTURE
+                ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x00000011)
+            elif system == "darwin":
+                self.overlay_window.attributes('-transparent', True)
+            else:
+                # Move the window off screen as a fallback to avoid capture
+                width = self.overlay_window.winfo_screenwidth()
+                height = self.overlay_window.winfo_screenheight()
+                self.overlay_window.geometry(f"+{width}+{height}")
+        except Exception as e:
+            logger.debug(f"Failed to apply screen share exclusion: {e}")
 
     def show_ai_response(self, content: str, response_type: str = "response"):
         """Show AI response in private overlay."""
@@ -243,6 +343,8 @@ class PrivateOverlay:
     def _show_window(self):
         """Show the overlay window."""
         if self.overlay_window:
+            if self._is_screen_sharing_active():
+                self._apply_screen_share_exclusion()
             self.overlay_window.deiconify()
             self.is_visible = True
 
