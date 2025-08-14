@@ -24,7 +24,7 @@ from app.config import Config
 
 # Import knowledge base functionality
 try:
-    from app.knowledge_base import KnowledgeBase, query_knowledge_base
+    from app.knowledge_base import KnowledgeBase
     KNOWLEDGE_BASE_AVAILABLE = True
 except ImportError as e:
     print(f"Knowledge base not available: {e}")
@@ -1200,7 +1200,7 @@ def search_knowledge_base():
             return jsonify({'error': 'Query cannot be empty'}), 400
         
         # Search knowledge base
-        results = knowledge_base.search(query, top_k, {'type': doc_type} if doc_type else None)
+        results = knowledge_base.query_knowledge_base(query, top_k, doc_type)
         
         # Format results for response
         formatted_results = []
@@ -1325,13 +1325,14 @@ def stream_session_events(session_id):
         def event_stream():
             """Generator function for SSE events"""
             # Send initial connection event
-            yield f"data: {json.dumps({
+            initial_event = {
                 'type': 'connected',
                 'session_id': session_id,
                 'timestamp': datetime.utcnow().isoformat(),
                 'message': 'Connected to real-time stream',
                 'participants': session_store.get_participants(session_id)
-            })}\\n\\n"
+            }
+            yield f"data: {json.dumps(initial_event)}\\n\\n"
             
             # Create a queue for this client if session doesn't exist
             if session_id not in session_queues:
@@ -1347,17 +1348,19 @@ def stream_session_events(session_id):
                         yield f"data: {json.dumps(event)}\\n\\n"
                     except queue.Empty:
                         # Send heartbeat to keep connection alive
-                        yield f"data: {json.dumps({
+                        heartbeat = {
                             'type': 'heartbeat',
                             'timestamp': datetime.utcnow().isoformat()
-                        })}\\n\\n"
+                        }
+                        yield f"data: {json.dumps(heartbeat)}\\n\\n"
                     except Exception as e:
                         # Send error event and break
-                        yield f"data: {json.dumps({
+                        error_event = {
                             'type': 'error',
                             'message': str(e),
                             'timestamp': datetime.utcnow().isoformat()
-                        })}\\n\\n"
+                        }
+                        yield f"data: {json.dumps(error_event)}\\n\\n"
                         break
             except GeneratorExit:
                 # Client disconnected

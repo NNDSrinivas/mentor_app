@@ -188,6 +188,24 @@ class KnowledgeBase:
         except Exception as e:
             logger.error(f"Knowledge base search failed: {str(e)}")
             return []
+
+    def query_knowledge_base(self, query: str, top_k: int = 5,
+                              doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Wrapper around :meth:`search` that accepts a document type filter.
+
+        This mirrors the interface used by earlier utility functions while
+        keeping the underlying search implementation in a single place.
+
+        Args:
+            query: Natural language query.
+            top_k: Number of results to return.
+            doc_type: Optional document type filter.
+
+        Returns:
+            List of search results.
+        """
+        filter_metadata = {"type": doc_type} if doc_type else None
+        return self.search(query, top_k, filter_metadata)
     
     def get_collection_info(self) -> Dict[str, Any]:
         """Get information about the knowledge base collection.
@@ -423,10 +441,7 @@ def query_knowledge_base(query: str, top_k: int = 3, doc_type: Optional[str] = N
     try:
         kb = KnowledgeBase()
         
-        # Build filter if doc_type specified
-        filter_metadata = {"type": doc_type} if doc_type else None
-        
-        results = kb.search(query, top_k, filter_metadata)
+        results = kb.query_knowledge_base(query, top_k, doc_type)
         
         logger.info(f"Knowledge base query returned {len(results)} results")
         return results
