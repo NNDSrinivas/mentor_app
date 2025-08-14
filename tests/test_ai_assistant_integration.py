@@ -103,3 +103,22 @@ def test_retrieve_context_snippets_empty(monkeypatch):
 
     monkeypatch.setattr("app.rag.KnowledgeBase", EmptyKB)
     assert retrieve_context_snippets("unknown") == ""
+
+
+def test_search_returns_metadata():
+    class MetaKB:
+        def search(self, query: str, top_k: int = 5, filter_metadata: Any | None = None):
+            return [
+                {"content": "Remember this note", "metadata": {"type": "note"}}
+            ]
+
+        def get_collection_info(self):
+            return {"document_count": 1, "last_type": "note"}
+
+    assistant = AIAssistant()
+    assistant.memory.kb = MetaKB()
+
+    results = assistant.memory.search_conversation_history("note")
+    assert results[0]["metadata"]["type"] == "note"
+    stats = assistant.memory.kb.get_collection_info()
+    assert stats["last_type"] == "note"
