@@ -5,12 +5,17 @@ Provides speaker identification, context extraction, and real-time assistance
 
 import json
 import logging
-logger = logging.getLogger(__name__)
-from typing import Dict, List, Optional, Any
+import os
+import sqlite3
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
+
+from app import screen_record
 from app.config import Config
 from backend.diarization_service import DiarizationService
+
+logger = logging.getLogger(__name__)
 try:
     from app.summarization import SummarizationService
 except Exception as e:  # pragma: no cover - optional dependency
@@ -338,11 +343,37 @@ class MeetingIntelligence:
         return "\n".join(parts)
     
     def get_meeting_summary(self, meeting_id: str) -> Dict[str, Any]:
-        """Generate comprehensive meeting summary"""
+        """Generate comprehensive meeting summary.
+
+        Recording path lookup priority:
+        1. Sessions table in the real-time database.
+        2. ``screen_record.get_recording_path`` JSON metadata fallback.
+        """
         if meeting_id not in self.active_meetings:
             return {"error": "Meeting not found"}
 
         context = self.active_meetings[meeting_id]
+
+        # Resolve recording path with DB-first priority
+        recording_path: Optional[str] = None
+        try:
+            db_path = os.getenv("REALTIME_DATABASE_PATH", "production_realtime.db")
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT recording_path FROM sessions WHERE id = ?", (meeting_id,)
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    recording_path = row[0]
+        except Exception as e:  # pragma: no cover - best effort
+            logger.debug(f"Recording path lookup in DB failed: {e}")
+
+        if not recording_path:
+            try:
+                recording_path = screen_record.get_recording_path(meeting_id)
+            except Exception as e:  # pragma: no cover - optional dependency
+                logger.debug(f"Recording path JSON lookup failed: {e}")
+                recording_path = None
 
         if self.summarizer:
             meeting_text = self._compose_meeting_text(context)
@@ -377,8 +408,13 @@ class MeetingIntelligence:
             "decisions": context.decisions,
             "agenda_items": context.agenda_items,
             "duration": "unknown",  # Would calculate from start/end times
-            "key_topics": list(set([topic for patterns in self.speaker_patterns.values() for topic in patterns["topics"]])),
+            "key_topics": list(
+                set(
+                    [topic for patterns in self.speaker_patterns.values() for topic in patterns["topics"]]
+                )
+            ),
             "summary": summary_text,
+            "recording_path": recording_path,
         }
     
     def _generate_ai_summary(self, context: MeetingContext) -> str:
