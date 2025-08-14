@@ -2,12 +2,18 @@ from __future__ import annotations
 import os, base64, requests, threading
 from typing import Dict, Any, Callable, Optional
 
+from backend.memory_service import MemoryService
+
 class JiraClient:
-    def __init__(self):
+    def __init__(self, dry_run: Optional[bool] = None):
         self.base = os.getenv('JIRA_BASE_URL', '')
         self.user = os.getenv('JIRA_USER', '')
         self.token = os.getenv('JIRA_TOKEN', '')
-        self.dry_run = True  # flip when approved
+        if dry_run is None:
+            self.dry_run = os.getenv('JIRA_DRY_RUN', 'false').lower() == 'true'
+        else:
+            self.dry_run = dry_run
+        self.memory = MemoryService()
         self._poll_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
 
@@ -31,7 +37,23 @@ class JiraClient:
         params = {'jql': f'assignee = "{assignee}" AND statusCategory != Done', 'maxResults': max_results}
         r = requests.get(url, headers=self._headers(), params=params, timeout=30)
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+        for issue in data.get('issues', []):
+            key = issue.get('key')
+            fields = issue.get('fields', {})
+            summary = fields.get('summary', '')
+            status = (fields.get('status') or {}).get('name', '')
+            assignee_name = (fields.get('assignee') or {}).get('displayName', '')
+            project = (fields.get('project') or {}).get('key', '')
+            text = f"[{key}] {summary} — status: {status} — assignee: {assignee_name}"
+            metadata = {
+                'project': project,
+                'status': status,
+                'assignee': assignee_name,
+                'jira_key': key,
+            }
+            self.memory.add_task(key, text, metadata=metadata)
+        return data
 
     def start_polling_assigned(self, assignee: str, interval: int, callback: Callable[[Dict[str, Any]], None]):
         """Poll assigned issues on a schedule and invoke callback with results."""
