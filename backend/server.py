@@ -414,6 +414,10 @@ def api_draft_adr():
     try:
         # Use explicit package path for editor/type checker compatibility
         from backend.doc_agent import draft_adr
+    except RuntimeError as e:
+        log.error(f"Doc agent initialization error: {e}")
+        return jsonify({"error": str(e)}), 500
+    try:
         d = request.get_json(force=True)
         md = draft_adr(d["title"], d.get("context",""), d.get("options",[]), d.get("decision",""), d.get("consequences",[]))
         return jsonify({"markdown": md})
@@ -427,6 +431,10 @@ def api_draft_runbook():
     """Generate operational runbook"""
     try:
         from backend.doc_agent import draft_runbook
+    except RuntimeError as e:
+        log.error(f"Doc agent initialization error: {e}")
+        return jsonify({"error": str(e)}), 500
+    try:
         d = request.get_json(force=True)
         md = draft_runbook(d["service"], d.get("incidents",[]), d.get("commands",[]), d.get("dashboards",[]))
         return jsonify({"markdown": md})
@@ -440,6 +448,10 @@ def api_draft_changelog():
     """Generate changelog from merged PRs"""
     try:
         from backend.doc_agent import draft_changelog
+    except RuntimeError as e:
+        log.error(f"Doc agent initialization error: {e}")
+        return jsonify({"error": str(e)}), 500
+    try:
         d = request.get_json(force=True)
         md = draft_changelog(d["repo"], d.get("merged_prs",[]))
         return jsonify({"markdown": md})
