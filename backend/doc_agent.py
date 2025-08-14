@@ -4,7 +4,11 @@ import os
 from typing import Dict, Any, List
 from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise RuntimeError("OPENAI_API_KEY environment variable is not set")
+
+client = OpenAI(api_key=api_key)
 
 ADR_SYSTEM = (
   "You generate engineering docs (ADR, runbook, changelog) from context. "
