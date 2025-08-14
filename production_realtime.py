@@ -1253,6 +1253,9 @@ def get_screen_recording(session_id):
         if not video_path:
             return jsonify({'message': 'Recording in progress or unavailable'}), 202
 
+        if not os.path.exists(video_path):
+            return jsonify({'error': 'Recording file not found'}), 404
+
         if request.args.get('analyze') == 'true':
             analysis = screen_record.analyze_screen_video(video_path)
             return jsonify({'video_path': video_path, 'analysis': analysis}), 200
