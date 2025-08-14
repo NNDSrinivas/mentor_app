@@ -80,3 +80,5 @@ test_*.py
 demo_*.py
 setup_*.sh
 data/*.db
+# Explicit test files
+!tests/test_recording_persistence.py

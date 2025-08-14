@@ -14,7 +14,7 @@ import queue
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Dict, Optional
-from flask import Flask, request, jsonify, g, Response
+from flask import Flask, request, jsonify, g, Response, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -1255,6 +1255,9 @@ def get_screen_recording(session_id):
         video_path = session_recordings.get(session_id)
         if not video_path:
             return jsonify({'message': 'Recording in progress or unavailable'}), 202
+
+        if request.args.get('download') == 'true':
+            return send_file(video_path, as_attachment=True)
 
         if request.args.get('analyze') == 'true':
             analysis = screen_record.analyze_screen_video(video_path)
