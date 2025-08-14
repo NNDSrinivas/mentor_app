@@ -58,6 +58,26 @@ if KNOWLEDGE_BASE_AVAILABLE:
 else:
     print("⚠️ Knowledge Base not available - responses will use conversation context only")
 
+# Optional advanced services
+ENABLE_SPEAKER_DIARIZATION = os.getenv('ENABLE_SPEAKER_DIARIZATION', 'false').lower() == 'true'
+ENABLE_MEMORY_SERVICE = os.getenv('ENABLE_MEMORY_SERVICE', 'false').lower() == 'true'
+
+diarization_service = None
+if ENABLE_SPEAKER_DIARIZATION:
+    try:
+        from backend.diarization_service import DiarizationService
+        diarization_service = DiarizationService()
+    except Exception as e:  # pragma: no cover - service optional
+        print(f"⚠️ Diarization service not available: {e}")
+
+memory_service = None
+if ENABLE_MEMORY_SERVICE:
+    try:
+        from backend.memory_service import MemoryService
+        memory_service = MemoryService()
+    except Exception as e:  # pragma: no cover - service optional
+        print(f"⚠️ Memory service not available: {e}")
+
 # Session storage for real-time events
 active_sessions: Dict[str, dict] = {}
 session_queues: Dict[str, queue.Queue] = {}
@@ -558,7 +578,31 @@ def generate_ai_response(session_id: str, question: str, question_analysis: dict
         
         # Get enhanced conversation context from memory
         conversation_context = get_conversation_context(session_id, max_interactions=15)
-        
+
+        # Retrieve additional context from external memory service
+        memory_context = ""
+        if memory_service:
+            try:
+                context_parts = []
+                meeting_context = memory_service.search_meeting_context(question, n_results=3)
+                if meeting_context and meeting_context.get('documents'):
+                    context_parts.append("Previous meeting context:")
+                    for doc in meeting_context['documents'][0][:2]:
+                        context_parts.append(f"- {doc}")
+                code_context = memory_service.search_code(question, n_results=2)
+                if code_context and code_context.get('documents'):
+                    context_parts.append("Code context:")
+                    for doc in code_context['documents'][0][:2]:
+                        context_parts.append(f"- {doc}")
+                task_context = memory_service.search_tasks(question, n_results=2)
+                if task_context and task_context.get('documents'):
+                    context_parts.append("Related tasks:")
+                    for doc in task_context['documents'][0][:2]:
+                        context_parts.append(f"- {doc}")
+                memory_context = "\n".join(context_parts)
+            except Exception as e:  # pragma: no cover - optional feature
+                print(f"Memory service search failed: {e}")
+
         # Get knowledge base context for enhanced responses
         knowledge_context = ""
         if knowledge_base:
@@ -669,6 +713,8 @@ Complexity Level: {complexity_guidance}
 
 {conversation_context}
 
+{memory_context}
+
 {knowledge_context}
 
 Current Question: {question}
@@ -676,7 +722,7 @@ Current Question: {question}
 Please provide a helpful, contextual response that:
 1. Directly answers the question using the type-specific guidance above
 2. Builds on previous conversation context when relevant
-3. Uses relevant knowledge base information when available
+3. Uses relevant memory or knowledge base information when available
 4. Considers the user's background and experience level
 5. Is appropriate for a {session['meeting_type']} context and {complexity} complexity level
 6. Helps the candidate succeed in their interview
@@ -709,7 +755,22 @@ Keep responses under 300 words and be practical and actionable. If this question
             },
             answer_importance
         )
-        
+
+        # Store Q&A pair in external memory service
+        if memory_service:
+            try:
+                memory_service.add_meeting_entry(
+                    session_id,
+                    f"Q: {question}\nA: {ai_answer}",
+                    {
+                        'type': 'qa_pair',
+                        'user_level': session['user_level'],
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                )
+            except Exception as e:  # pragma: no cover - optional feature
+                print(f"Memory service store failed: {e}")
+
         return ai_answer
         
     except Exception as e:
@@ -949,6 +1010,15 @@ def add_caption(session_id):
         
         text = data['text'].strip()
         speaker = data.get('speaker', 'unknown')
+
+        # Use diarization service to assign speaker if not provided
+        if speaker == 'unknown' and diarization_service:
+            try:
+                detected_speaker = diarization_service.assign_speaker_to_text(text)
+                if detected_speaker:
+                    speaker = detected_speaker
+            except Exception as e:  # pragma: no cover - optional feature
+                print(f"⚠️ Diarization failed: {e}")
         
         if not text:
             return jsonify({'error': 'Caption text cannot be empty'}), 400
@@ -971,8 +1041,23 @@ def add_caption(session_id):
             INSERT INTO captions (session_id, text, speaker, is_question)
             VALUES (?, ?, ?, ?)
         ''', (session_id, text, speaker, is_question))
-        
+
         db.commit()
+
+        # Store caption in external memory service if available
+        if memory_service:
+            try:
+                memory_service.add_meeting_entry(
+                    session_id,
+                    text,
+                    {
+                        'speaker': speaker,
+                        'timestamp': datetime.utcnow().isoformat(),
+                        'meeting_type': session['meeting_type']
+                    }
+                )
+            except Exception as e:  # pragma: no cover - optional feature
+                print(f"⚠️ Memory service store failed: {e}")
         
         # Add caption to conversation memory for enhanced context tracking
         caption_importance = analyze_conversation_importance(text, 'question' if is_question else 'context')
@@ -1325,20 +1410,21 @@ def stream_session_events(session_id):
         def event_stream():
             """Generator function for SSE events"""
             # Send initial connection event
-            yield f"data: {json.dumps({
+            initial_event = json.dumps({
                 'type': 'connected',
                 'session_id': session_id,
                 'timestamp': datetime.utcnow().isoformat(),
                 'message': 'Connected to real-time stream',
                 'participants': session_store.get_participants(session_id)
-            })}\\n\\n"
+            })
+            yield f"data: {initial_event}\\n\\n"
             
             # Create a queue for this client if session doesn't exist
             if session_id not in session_queues:
                 session_queues[session_id] = queue.Queue()
             
             client_queue = session_queues[session_id]
-            
+
             try:
                 while True:
                     try:
@@ -1347,17 +1433,19 @@ def stream_session_events(session_id):
                         yield f"data: {json.dumps(event)}\\n\\n"
                     except queue.Empty:
                         # Send heartbeat to keep connection alive
-                        yield f"data: {json.dumps({
+                        heartbeat = json.dumps({
                             'type': 'heartbeat',
                             'timestamp': datetime.utcnow().isoformat()
-                        })}\\n\\n"
+                        })
+                        yield f"data: {heartbeat}\\n\\n"
                     except Exception as e:
                         # Send error event and break
-                        yield f"data: {json.dumps({
+                        error_event = json.dumps({
                             'type': 'error',
                             'message': str(e),
                             'timestamp': datetime.utcnow().isoformat()
-                        })}\\n\\n"
+                        })
+                        yield f"data: {error_event}\\n\\n"
                         break
             except GeneratorExit:
                 # Client disconnected
