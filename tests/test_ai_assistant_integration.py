@@ -26,7 +26,9 @@ class DummySumm:
         pass
 
 
-sys.modules['app.knowledge_base'] = types.SimpleNamespace(KnowledgeBase=DummyKB)
+# Stub external dependencies so that the real modules can be imported
+sys.modules['chromadb'] = types.SimpleNamespace(PersistentClient=lambda *args, **kwargs: None)
+sys.modules['chromadb.config'] = types.SimpleNamespace(Settings=lambda *args, **kwargs: None)
 sys.modules['app.transcription'] = types.SimpleNamespace(TranscriptionService=DummyTS)
 sys.modules['app.summarization'] = types.SimpleNamespace(SummarizationService=DummySumm)
 sys.modules['openai'] = types.SimpleNamespace(OpenAI=object)
@@ -34,6 +36,7 @@ sys.modules['dotenv'] = types.SimpleNamespace(load_dotenv=lambda: None)
 
 from app.ai_assistant import AIAssistant
 from app.rag import retrieve_context_snippets
+from app.knowledge_base import KnowledgeBase
 
 
 def _run_segments(assistant: AIAssistant):
@@ -74,6 +77,22 @@ def test_ai_assistant_records_segments(monkeypatch):
     assert first.context["is_interviewer"] is True
     assert first.context["is_question"] is True
     assert second.context["is_interviewer"] is False
+
+
+def _get_client(tmp_path: Path) -> KnowledgeBase:
+    """Create a KnowledgeBase instance using a temporary directory."""
+    from app.config import Config
+
+    Config.CHROMA_PERSIST_DIR = str(tmp_path)
+    Config.OPENAI_API_KEY = None
+    return KnowledgeBase()
+
+
+def test_knowledge_base_add_and_search(tmp_path: Path):
+    kb = _get_client(tmp_path)
+    doc_id = kb.add_document("Python testing is fun", {"title": "Test"})
+    results = kb.search("Python", top_k=1)
+    assert results and results[0]["id"] == doc_id
 
 
 def test_retrieve_context_snippets_returns_snippets(monkeypatch):
