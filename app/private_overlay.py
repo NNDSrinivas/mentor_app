@@ -53,6 +53,7 @@ class PrivateOverlay:
         self.fallback_mode = not TKINTER_AVAILABLE
         self.opacity = Config.OVERLAY_OPACITY
         self.opacity_scale = None
+        self._was_screen_sharing = False
         
     def initialize(self):
         """Initialize the overlay system."""
@@ -165,9 +166,10 @@ class PrivateOverlay:
         system = platform.system().lower()
         try:
             if system == "windows":
-                hwnd = ctypes.windll.user32.GetParent(self.overlay_window.winfo_id())
-                # 0x11 == WDA_EXCLUDEFROMCAPTURE
-                ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x00000011)
+                hwnd = self.overlay_window.winfo_id()
+                success = ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x11)
+                if not success:
+                    logger.warning("Failed to set window display affinity")
             elif system == "darwin":
                 self.overlay_window.attributes('-transparent', True)
             else:
@@ -271,6 +273,9 @@ class PrivateOverlay:
         )
         self.opacity_scale.set(int(self.opacity * 100))
         self.opacity_scale.pack(anchor=tk.E, pady=(5, 0))
+
+        # Apply screen share exclusion in case sharing is already active
+        self._apply_screen_share_exclusion()
     
     def _update_content(self, content: str, content_type: str):
         """Update overlay content."""
@@ -396,9 +401,14 @@ class PrivateOverlay:
     def _monitor_overlays_fallback(self):
         """Monitor for overlay files using fallback system."""
         overlay_dir = f"{Config.TEMP_DIR}"
-        
+
         while True:
             try:
+                is_sharing = self._is_screen_sharing_active()
+                if is_sharing and not self._was_screen_sharing:
+                    self._apply_screen_share_exclusion()
+                self._was_screen_sharing = is_sharing
+
                 if not os.path.exists(overlay_dir):
                     time.sleep(1)
                     continue
@@ -437,9 +447,14 @@ class PrivateOverlay:
     def _monitor_overlays(self):
         """Monitor for overlay files and display them."""
         overlay_dir = f"{Config.TEMP_DIR}"
-        
+
         while True:
             try:
+                is_sharing = self._is_screen_sharing_active()
+                if is_sharing and not self._was_screen_sharing:
+                    self._apply_screen_share_exclusion()
+                self._was_screen_sharing = is_sharing
+
                 if not os.path.exists(overlay_dir):
                     time.sleep(1)
                     continue
