@@ -71,13 +71,13 @@ if [ ! -z "$REALTIME_PIDS" ]; then
 fi
 
 # Clean up any python processes running our scripts
-PYTHON_PIDS=$(pgrep -f "python.*simple_web.py\|python.*web_interface.py" 2>/dev/null || true)
+PYTHON_PIDS=$(pgrep -f "python.*production_backend.py\|python.*production_realtime.py" 2>/dev/null || true)
 if [ ! -z "$PYTHON_PIDS" ]; then
     echo -e "${YELLOW}🔧 Killing remaining Python service processes: $PYTHON_PIDS${NC}"
     echo "$PYTHON_PIDS" | xargs kill 2>/dev/null || true
     sleep 2
     # Force kill if still running
-    PYTHON_PIDS=$(pgrep -f "python.*simple_web.py\|python.*web_interface.py" 2>/dev/null || true)
+    PYTHON_PIDS=$(pgrep -f "python.*production_backend.py\|python.*production_realtime.py" 2>/dev/null || true)
     if [ ! -z "$PYTHON_PIDS" ]; then
         echo "$PYTHON_PIDS" | xargs kill -9 2>/dev/null || true
     fi

@@ -38,7 +38,7 @@ mkdir -p logs
 
 # Start Q&A Service (Port 8084)
 echo -e "${GREEN}🔧 Starting Q&A Service on port 8084...${NC}"
-nohup python simple_web.py > logs/qa_service.log 2>&1 &
+nohup python production_backend.py > logs/qa_service.log 2>&1 &
 QA_PID=$!
 echo $QA_PID > logs/qa_service.pid
 echo -e "${GREEN}✅ Q&A Service started (PID: $QA_PID)${NC}"
@@ -48,7 +48,7 @@ sleep 2
 
 # Start Realtime Service (Port 8080)
 echo -e "${GREEN}🔧 Starting Realtime Service on port 8080...${NC}"
-nohup python web_interface.py > logs/realtime_service.log 2>&1 &
+nohup python production_realtime.py > logs/realtime_service.log 2>&1 &
 REALTIME_PID=$!
 echo $REALTIME_PID > logs/realtime_service.pid
 echo -e "${GREEN}✅ Realtime Service started (PID: $REALTIME_PID)${NC}"
