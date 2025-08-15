@@ -136,7 +136,13 @@ If you implement a feature, reintroduce documentation with concrete details: end
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is proprietary software owned by Mounika Kapa. All rights reserved.
+See the [LICENSE](LICENSE) file for detailed terms and conditions.
+
+**Commercial Use:** Requires explicit written permission and commercial licensing.
+**Patents:** All patent rights are exclusively owned by Mounika Kapa.
+
+For licensing inquiries, please contact the owner.
 
 ---
 
