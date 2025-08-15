@@ -25,6 +25,9 @@ import logging
 import psutil
 import ctypes
 
+# Windows display affinity flag to exclude window from screen capture
+WDA_EXCLUDEFROMCAPTURE = 0x11
+
 # Try to import tkinter, fall back to file-based system if not available
 try:
     import tkinter as tk
@@ -53,6 +56,7 @@ class PrivateOverlay:
         self.fallback_mode = not TKINTER_AVAILABLE
         self.opacity = Config.OVERLAY_OPACITY
         self.opacity_scale = None
+        self._was_screen_sharing = False
         
     def initialize(self):
         """Initialize the overlay system."""
@@ -165,11 +169,25 @@ class PrivateOverlay:
         system = platform.system().lower()
         try:
             if system == "windows":
-                hwnd = ctypes.windll.user32.GetParent(self.overlay_window.winfo_id())
-                # 0x11 == WDA_EXCLUDEFROMCAPTURE
-                ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x00000011)
+                hwnd = self.overlay_window.winfo_id()
+                success = ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+                if not success:
+                    logger.warning("Failed to set window display affinity")
             elif system == "darwin":
-                self.overlay_window.attributes('-transparent', True)
+                try:
+                    from AppKit import NSApp, NSWindowSharingNone
+
+                    window_id = int(self.overlay_window.winfo_id())
+                    ns_window = NSApp().windowWithWindowNumber_(window_id)
+                    if ns_window is not None:
+                        ns_window.setSharingType_(NSWindowSharingNone)
+                    else:
+                        raise ValueError("NSWindow not found")
+                except Exception as exc:
+                    logger.debug(f"macOS exclusion failed: {exc}")
+                    width = self.overlay_window.winfo_screenwidth()
+                    height = self.overlay_window.winfo_screenheight()
+                    self.overlay_window.geometry(f"+{width}+{height}")
             else:
                 # Move the window off screen as a fallback to avoid capture
                 width = self.overlay_window.winfo_screenwidth()
@@ -271,6 +289,9 @@ class PrivateOverlay:
         )
         self.opacity_scale.set(int(self.opacity * 100))
         self.opacity_scale.pack(anchor=tk.E, pady=(5, 0))
+
+        # Apply screen share exclusion in case sharing is already active
+        self._apply_screen_share_exclusion()
     
     def _update_content(self, content: str, content_type: str):
         """Update overlay content."""
@@ -396,9 +417,14 @@ class PrivateOverlay:
     def _monitor_overlays_fallback(self):
         """Monitor for overlay files using fallback system."""
         overlay_dir = f"{Config.TEMP_DIR}"
-        
+
         while True:
             try:
+                is_sharing = self._is_screen_sharing_active()
+                if is_sharing:
+                    self._apply_screen_share_exclusion()
+                self._was_screen_sharing = is_sharing
+
                 if not os.path.exists(overlay_dir):
                     time.sleep(1)
                     continue
@@ -437,9 +463,14 @@ class PrivateOverlay:
     def _monitor_overlays(self):
         """Monitor for overlay files and display them."""
         overlay_dir = f"{Config.TEMP_DIR}"
-        
+
         while True:
             try:
+                is_sharing = self._is_screen_sharing_active()
+                if is_sharing:
+                    self._apply_screen_share_exclusion()
+                self._was_screen_sharing = is_sharing
+
                 if not os.path.exists(overlay_dir):
                     time.sleep(1)
                     continue
