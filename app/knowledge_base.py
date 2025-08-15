@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 import os
 import hashlib
+import sqlite3
+import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -231,6 +233,32 @@ class KnowledgeBase:
             return False
 
 
+class LongTermMemory:
+    """SQLite-backed retrieval layer for persisted summaries and tasks."""
+
+    def __init__(self, db_path: str = "data/documentation.db"):
+        self.conn = sqlite3.connect(db_path)
+        self.conn.row_factory = sqlite3.Row
+
+    def search(self, query: str, limit: int = 5) -> Dict[str, List[Dict[str, Any]]]:
+        cursor = self.conn.cursor()
+        like = f"%{query}%"
+        cursor.execute(
+            "SELECT meeting_id, summary, metadata, created_at FROM summaries WHERE summary LIKE ? ORDER BY created_at DESC LIMIT ?",
+            (like, limit),
+        )
+        summaries = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT task_id, description, metadata, created_at FROM tasks WHERE description LIKE ? ORDER BY created_at DESC LIMIT ?",
+            (like, limit),
+        )
+        tasks = [dict(row) for row in cursor.fetchall()]
+        for item in summaries + tasks:
+            if item.get("metadata"):
+                item["metadata"] = json.loads(item["metadata"])
+        return {"summaries": summaries, "tasks": tasks}
+
+
 def ingest_documents(docs: List[str], doc_type: str = "general") -> None:
     """Ingest a list of documents into the knowledge base.
 
@@ -406,6 +434,22 @@ def query_knowledge_base(query: str, top_k: int = 3, doc_type: Optional[str] = N
     except Exception as e:
         logger.error(f"Knowledge base query failed: {str(e)}")
         return [{"error": str(e)}]
+
+
+def query_long_term_memory(query: str, limit: int = 5) -> Dict[str, Any]:
+    """Query persisted summaries and tasks for long-term context."""
+    logger.info("Querying long-term memory: %s", query)
+
+    if not query.strip():
+        logger.warning("Empty long-term memory query provided")
+        return {"summaries": [], "tasks": []}
+
+    try:
+        ltm = LongTermMemory()
+        return ltm.search(query, limit)
+    except Exception as e:
+        logger.error(f"Long-term memory query failed: {str(e)}")
+        return {"error": str(e)}
 
 
 def get_knowledge_base_stats() -> Dict[str, Any]:

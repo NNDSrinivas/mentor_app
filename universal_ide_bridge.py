@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Any, Dict, Set
+from typing import Any, Dict, List, Set
 
 import websockets
 
@@ -46,7 +46,19 @@ class IDEBridge:
             else:
                 log.info("Action rejected: %s", data.get("action"))
         else:
-            log.info("Processing event: %s", data)
+            action = data.get("action")
+            if action == "apply_patch":
+                patch = data.get("patch", "")
+                await self.apply_patch(patch)
+            elif action == "run_tests":
+                cmd = data.get("cmd", "pytest")
+                await self.run_tests(cmd)
+            elif action == "git":
+                args: List[str] = data.get("args", [])
+                prompt = data.get("prompt", f"Run git {' '.join(args)}?")
+                await self.run_git_command(args, prompt)
+            else:
+                log.info("Processing event: %s", data)
 
     async def request_confirmation(self, prompt: str) -> bool:
         """Ask the connected client to confirm an action and await the reply."""
@@ -64,6 +76,72 @@ class IDEBridge:
 
         # Await the client's response while other events continue to be handled
         return await future
+
+    async def broadcast(self, payload: Dict[str, Any]) -> None:
+        """Send a JSON payload to all connected clients."""
+        if not self.clients:
+            return
+        message = json.dumps(payload)
+        await asyncio.gather(*(client.send(message) for client in self.clients))
+
+    async def apply_patch(self, patch: str) -> None:
+        """Apply a unified diff patch to the repository."""
+        if not patch:
+            return
+        proc = await asyncio.create_subprocess_exec(
+            "git", "apply", "-",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(patch.encode())
+        await self.broadcast({
+            "type": "apply_patch",
+            "returncode": proc.returncode,
+            "stdout": stdout.decode(),
+            "stderr": stderr.decode(),
+        })
+
+    async def run_tests(self, command: str) -> None:
+        """Run test command and broadcast the results."""
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        await self.broadcast({
+            "type": "test_results",
+            "command": command,
+            "returncode": proc.returncode,
+            "stdout": stdout.decode(),
+            "stderr": stderr.decode(),
+        })
+
+    async def run_git_command(self, args: List[str], prompt: str) -> None:
+        """Run a git command after prompting the user for confirmation."""
+        if not args:
+            return
+        approved = await self.request_confirmation(prompt)
+        if not approved:
+            await self.broadcast({
+                "type": "git", "args": args, "approved": False
+            })
+            return
+        proc = await asyncio.create_subprocess_exec(
+            "git", *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        await self.broadcast({
+            "type": "git",
+            "args": args,
+            "approved": True,
+            "returncode": proc.returncode,
+            "stdout": stdout.decode(),
+            "stderr": stderr.decode(),
+        })
 
     async def start(self, host: str = "0.0.0.0", port: int = 8765) -> None:
         """Start the bridge server and run indefinitely."""

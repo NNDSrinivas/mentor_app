@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from typing import Set
 from backend.integrations.github_manager import GitHubManager
+from backend.memory_service import MemoryService
 from app.task_manager import Task, TaskManager
 
 # Setup logging
@@ -21,6 +22,7 @@ app.register_blueprint(healthz_bp)
 # Ship-It PR: Add middleware for rate limiting and cost tracking
 from backend.middleware import rate_limit, record_cost
 from backend.webhook_signatures import verify_github, verify_jira
+from backend.payments import subscription_required, handle_webhook as handle_stripe_webhook
 
 # Import functions to avoid circular imports
 def get_backend_components():
@@ -40,6 +42,7 @@ connected_clients: Set[_Any] = set()
 
 # Task manager instance for task operations
 task_manager = TaskManager()
+memory_service = MemoryService()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -57,6 +60,7 @@ def health():
 
 # --- Approvals REST API ---
 @app.route("/api/approvals", methods=['GET'])
+@subscription_required
 def list_approvals():
     """List all pending approvals"""
     try:
@@ -67,6 +71,7 @@ def list_approvals():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/approvals/<approval_id>", methods=['GET'])
+@subscription_required
 def get_approval(approval_id: str):
     """Get specific approval details"""
     try:
@@ -79,6 +84,7 @@ def get_approval(approval_id: str):
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/approvals/resolve", methods=['POST'])
+@subscription_required
 def resolve_approval():
     """Resolve (approve/reject) an approval request"""
     try:
@@ -113,6 +119,7 @@ def resolve_approval():
 
 # --- GitHub Integration Endpoints ---
 @app.route("/api/github/pr", methods=['POST'])
+@subscription_required
 def github_pr():
     """Submit GitHub PR creation for approval"""
     try:
@@ -136,6 +143,7 @@ def github_pr():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/github/comment", methods=['POST'])
+@subscription_required
 def github_comment():
     """Submit GitHub comment for approval"""
     try:
@@ -152,6 +160,7 @@ def github_comment():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/github/issue", methods=['POST'])
+@subscription_required
 def github_issue():
     """Submit GitHub issue creation for approval"""
     try:
@@ -169,6 +178,7 @@ def github_issue():
 
 # --- Jira Integration Endpoints ---
 @app.route("/api/jira/create", methods=['POST'])
+@subscription_required
 def jira_create():
     """Submit Jira issue creation for approval"""
     try:
@@ -190,6 +200,7 @@ def jira_create():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/jira/update", methods=['POST'])
+@subscription_required
 def jira_update():
     """Submit Jira issue update for approval"""
     try:
@@ -206,6 +217,7 @@ def jira_update():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/jira/comment", methods=['POST'])
+@subscription_required
 def jira_comment():
     """Submit Jira comment for approval"""
     try:
@@ -223,6 +235,7 @@ def jira_comment():
 
 # --- Code Generation Endpoint ---
 @app.route("/api/codegen", methods=["POST"])
+@subscription_required
 def codegen():
     """Generate code for a task and open a PR"""
     try:
@@ -329,6 +342,19 @@ def verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
     provided_signature = signature_header[7:]  # Remove 'sha256=' prefix
     return hmac.compare_digest(expected_signature, provided_signature)
 
+# --- Stripe Webhook ---
+@app.route("/webhook/stripe", methods=['POST'])
+def stripe_webhook():
+    """Handle Stripe subscription and invoice webhooks"""
+    payload = request.get_data()
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        handle_stripe_webhook(payload, sig)
+    except Exception as e:
+        log.error(f"Error handling Stripe webhook: {e}")
+        return "", 400
+    return "", 204
+
 # --- Wave 6 PR Auto-Reply Webhook ---
 @app.route("/webhook/github/pr", methods=['POST'])
 def gh_pr_webhook():
@@ -361,7 +387,15 @@ def gh_pr_webhook():
         files = get_pr_files(owner, repo, pr_number)
         comments = get_pr_comments(owner, repo, pr_number)
 
-        suggestions = suggest_replies_and_patch(pr.get("title",""), pr.get("body","") or "", files, comments)
+        suggestions = suggest_replies_and_patch(
+            pr.get("title", ""),
+            pr.get("body", "") or "",
+            files,
+            comments,
+            owner,
+            repo,
+            pr_number,
+        )
         
         # Gate via approvals before posting anything
         item = approvals.submit("github.pr_auto_reply", {
@@ -384,11 +418,16 @@ def gh_pr_webhook():
 
 # --- Wave 6 Documentation API ---
 @app.route("/api/docs/adr", methods=['POST'])
+@subscription_required
 def api_draft_adr():
     """Generate ADR (Architecture Decision Record)"""
     try:
         # Use explicit package path for editor/type checker compatibility
         from backend.doc_agent import draft_adr
+    except RuntimeError as e:
+        log.error(f"Doc agent initialization error: {e}")
+        return jsonify({"error": str(e)}), 500
+    try:
         d = request.get_json(force=True)
         md = draft_adr(d["title"], d.get("context",""), d.get("options",[]), d.get("decision",""), d.get("consequences",[]))
         return jsonify({"markdown": md})
@@ -397,10 +436,15 @@ def api_draft_adr():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/docs/runbook", methods=['POST'])
+@subscription_required
 def api_draft_runbook():
     """Generate operational runbook"""
     try:
         from backend.doc_agent import draft_runbook
+    except RuntimeError as e:
+        log.error(f"Doc agent initialization error: {e}")
+        return jsonify({"error": str(e)}), 500
+    try:
         d = request.get_json(force=True)
         md = draft_runbook(d["service"], d.get("incidents",[]), d.get("commands",[]), d.get("dashboards",[]))
         return jsonify({"markdown": md})
@@ -409,10 +453,15 @@ def api_draft_runbook():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/docs/changelog", methods=['POST'])
+@subscription_required
 def api_draft_changelog():
     """Generate changelog from merged PRs"""
     try:
         from backend.doc_agent import draft_changelog
+    except RuntimeError as e:
+        log.error(f"Doc agent initialization error: {e}")
+        return jsonify({"error": str(e)}), 500
+    try:
         d = request.get_json(force=True)
         md = draft_changelog(d["repo"], d.get("merged_prs",[]))
         return jsonify({"markdown": md})
@@ -422,6 +471,7 @@ def api_draft_changelog():
 
 # --- Wave 7 Mobile Relay Endpoint ---
 @app.route("/api/relay/mobile", methods=['POST'])
+@subscription_required
 @rate_limit('meeting')
 def relay_mobile():
     """Relay messages to mobile WebSocket clients during stealth mode"""
@@ -464,6 +514,17 @@ def config_status():
     try:
         return jsonify(get_integration_status())
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- Meeting Notes ---
+@app.route("/api/meetings/<meeting_id>/notes", methods=['GET'])
+def get_meeting_notes(meeting_id: str):
+    """Retrieve stored notes for a meeting."""
+    try:
+        notes = memory_service.get_meeting_notes(meeting_id)
+        return jsonify({"meeting_id": meeting_id, "notes": notes})
+    except Exception as e:
+        log.error(f"Error retrieving notes for meeting {meeting_id}: {e}")
         return jsonify({"error": str(e)}), 500
 
 # --- WebSocket Support ---

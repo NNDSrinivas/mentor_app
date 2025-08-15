@@ -15,6 +15,9 @@ from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI
+import requests
+
+from backend.calendar_integration import CalendarIntegration
 
 # Import AI assistant functionality
 try:
@@ -94,6 +97,21 @@ def init_db():
             user_id TEXT PRIMARY KEY,
             resume_text TEXT NOT NULL,
             uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+
+    # Scheduled sessions table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            meeting_url TEXT,
+            calendar_event_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
@@ -209,6 +227,17 @@ def increment_usage(user_id):
     ''', (str(uuid.uuid4()), user_id, current_month, user_id, current_month))
     
     db.commit()
+
+
+def notify_clients(message: dict) -> None:
+    """Best-effort notification to external clients via HTTP API."""
+    url = os.getenv('CLIENT_NOTIFY_URL')
+    if not url:
+        return
+    try:  # pragma: no cover - network failures are ignored
+        requests.post(url, json=message, timeout=5)
+    except Exception:
+        pass
 
 # Routes
 
@@ -450,8 +479,67 @@ def delete_resume():
     
     cursor.execute('DELETE FROM resumes WHERE user_id = ?', (g.user_id,))
     db.commit()
-    
+
     return jsonify({'message': 'Resume deleted successfully'})
+
+
+@app.route('/api/sessions', methods=['POST'])
+@auth_required
+def create_session():
+    """Schedule a session and store it in the database."""
+    data = request.get_json() or {}
+    try:
+        title = data['title']
+        start_time = datetime.fromisoformat(data['start_time'])
+        end_time = datetime.fromisoformat(data['end_time'])
+    except KeyError:
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    attendees = data.get('attendees', [])
+    platform = data.get('platform', 'zoom')
+    description = data.get('description', '')
+    location = data.get('location', '')
+
+    calendar = CalendarIntegration()
+    event = calendar.schedule_event(
+        title=title,
+        start_time=start_time,
+        end_time=end_time,
+        attendees=attendees,
+        platform=platform,
+        description=description,
+        location=location,
+    )
+
+    db = get_db()
+    cursor = db.cursor()
+    session_id = str(uuid.uuid4())
+    cursor.execute(
+        'INSERT INTO sessions (id, user_id, title, start_time, end_time, meeting_url, calendar_event_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (
+            session_id,
+            g.user_id,
+            title,
+            start_time.isoformat(),
+            end_time.isoformat(),
+            event.meeting_url,
+            event.id,
+        ),
+    )
+    db.commit()
+
+    notify_clients({'session_id': session_id, 'meeting_url': event.meeting_url})
+
+    return (
+        jsonify(
+            {
+                'session_id': session_id,
+                'meeting_url': event.meeting_url,
+                'calendar_event_id': event.id,
+            }
+        ),
+        201,
+    )
 
 # Error handlers
 @app.errorhandler(404)

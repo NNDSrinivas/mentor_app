@@ -25,6 +25,7 @@ MANIFEST
 
 # Virtual environments
 .env
+.env.enc
 .venv
 env/
 venv/
@@ -78,3 +79,4 @@ check_*.py
 test_*.py
 demo_*.py
 setup_*.sh
+data/*.db

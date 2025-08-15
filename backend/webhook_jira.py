@@ -4,32 +4,49 @@ from typing import Dict, Any
 from backend.memory_service import MemoryService
 
 mem = MemoryService()
+local_tasks: Dict[str, Dict[str, Any]] = {}
 
 def handle_jira_webhook(payload: Dict[str, Any]):
-    """Handle Jira webhook events and mirror into memory service"""
+    """Handle Jira webhook events and keep local task state in sync."""
     issue = payload.get("issue", {})
     key = issue.get("key")
     fields = issue.get("fields", {})
     status = (fields.get("status") or {}).get("name", "")
-    summary = fields.get("summary","")
-    assignee = (fields.get("assignee") or {}).get("displayName","")
-    project = (fields.get("project") or {}).get("key","")
+    summary = fields.get("summary", "")
+    assignee = (fields.get("assignee") or {}).get("displayName", "")
+    project = (fields.get("project") or {}).get("key", "")
     event_type = payload.get("webhookEvent", "")
 
     if not key:
         return
 
-    # mirror into memory
+    if event_type == "jira:issue_deleted":
+        local_tasks.pop(key, None)
+        return
+
     text = f"[{key}] {summary} — status: {status} — assignee: {assignee}"
-    
+
     metadata = {
-        "project": project, 
-        "status": status, 
+        "project": project,
+        "status": status,
         "assignee": assignee,
         "event_type": event_type,
         "jira_key": key,
         "last_updated": payload.get("timestamp", "")
     }
-    
-    # Add or update task in memory
+
+    changelog = payload.get("changelog", {})
+    for item in changelog.get("items", []):
+        if item.get("field") == "status":
+            metadata["prev_status"] = item.get("fromString", "")
+            break
+
     mem.add_task(key, text, metadata=metadata)
+    local_tasks[key] = {
+        "summary": summary,
+        "status": status,
+        "assignee": assignee,
+        "project": project,
+    }
+    return local_tasks[key]
+
