@@ -136,11 +136,11 @@ If you implement a feature, reintroduce documentation with concrete details: end
 
 ## License
 
-This project is proprietary software owned by Mounika Kapa. All rights reserved.
+This project is proprietary software owned by NND Srinivas (NagaDurga S Nidamanuri). All rights reserved.
 See the [LICENSE](LICENSE) file for detailed terms and conditions.
 
 **Commercial Use:** Requires explicit written permission and commercial licensing.
-**Patents:** All patent rights are exclusively owned by Mounika Kapa.
+**Patents:** All patent rights are exclusively owned by NND Srinivas (NagaDurga S Nidamanuri).
 
 For licensing inquiries, please contact the owner.
 
