@@ -162,8 +162,15 @@ def auth_required(f):
     """Decorator to require authentication."""
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Allow browser extension requests in development
+        allow_browser_extension = os.getenv('ALLOW_BROWSER_EXTENSION', 'false').lower() == 'true'
+        
         token = request.headers.get('Authorization')
         if not token:
+            if allow_browser_extension:
+                # For browser extension compatibility, use a default user
+                g.user_id = 'browser_extension_user'
+                return f(*args, **kwargs)
             return jsonify({'error': 'No token provided'}), 401
         
         if token.startswith('Bearer '):
@@ -189,6 +196,10 @@ def get_usage_limits(subscription):
 
 def check_usage_limit(user_id):
     """Check if user has exceeded usage limit."""
+    # Allow unlimited usage for browser extension in development
+    if user_id == 'browser_extension_user':
+        return True
+        
     db = get_db()
     cursor = db.cursor()
     
@@ -215,6 +226,10 @@ def check_usage_limit(user_id):
 
 def increment_usage(user_id):
     """Increment usage count for user."""
+    # Skip usage tracking for browser extension in development
+    if user_id == 'browser_extension_user':
+        return
+        
     db = get_db()
     cursor = db.cursor()
     
