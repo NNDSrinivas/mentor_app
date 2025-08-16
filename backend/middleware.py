@@ -1,7 +1,7 @@
 from __future__ import annotations
 import time, os, threading
 from typing import Dict, Tuple
-from flask import request, jsonify
+from flask import request, jsonify, abort
 from .audit import audit
 
 _RATE = {"MEETING_EVENTS_PER_MIN": 600, "ANSWERS_PER_MIN": 30}
@@ -71,6 +71,9 @@ def record_cost(tokens: int):
     k = client_key()
     used = BUCKETS.add_tokens(k, tokens)
     status = BUCKETS.get_cost_status(k)
+    if not status["ok"]:
+        audit("cost_block", {"key": k, "used": status["used"], "limit": status["limit"]})
+        abort(402, description="token_limit_exceeded")
     if status["warn"]:
         audit("cost_warn", {"key": k, "used": status["used"], "limit": status["limit"]})
     return status
