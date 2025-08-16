@@ -6,6 +6,7 @@ from flask_cors import CORS
 from typing import Set
 from backend.integrations.github_manager import GitHubManager
 from backend.memory_service import MemoryService
+from backend.recording_service import RecordingService
 from app.task_manager import Task, TaskManager
 
 # Setup logging
@@ -43,6 +44,7 @@ connected_clients: Set[_Any] = set()
 # Task manager instance for task operations
 task_manager = TaskManager()
 memory_service = MemoryService()
+recording_service = RecordingService()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -295,6 +297,21 @@ def codegen():
     except Exception as e:
         log.error(f"Error generating code: {e}")
         return jsonify({"error": str(e)}), 500
+
+# --- Recording Upload Endpoint ---
+@app.route("/api/recording/upload", methods=["POST"])
+@subscription_required
+def recording_upload():
+    """Upload encrypted recording chunks with resume support."""
+    session_id = request.form.get("session_id")
+    chunk_index = request.form.get("chunk_index", type=int)
+    uploaded = request.files.get("chunk")
+    if not session_id or chunk_index is None or uploaded is None:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    data = uploaded.read()
+    path, stored = recording_service.save_chunk(session_id, data, chunk_index)
+    return jsonify({"stored": stored, "next": chunk_index + 1, "path": path})
 
 # --- GitHub Webhook for CI/status events ---
 @app.route("/webhook/github", methods=['POST'])
