@@ -3,7 +3,7 @@ import asyncio, json, os, logging, hmac, hashlib
 import websockets
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from typing import Set
+from typing import Set, Dict
 from backend.integrations.github_manager import GitHubManager
 from backend.memory_service import MemoryService
 from app.task_manager import Task, TaskManager
@@ -38,7 +38,11 @@ start_worker_thread()
 
 # WebSocket connections for real-time notifications
 from typing import Any as _Any
+# WebSocket connections for real-time notifications
 connected_clients: Set[_Any] = set()
+
+# Track preferred overlay channel per session
+session_overlay_channels: Dict[str, str] = {}
 
 # Task manager instance for task operations
 task_manager = TaskManager()
@@ -479,15 +483,21 @@ def relay_mobile():
         payload = request.get_json(force=True) or {}
         # Ship-It PR: Record cost for mobile relay
         record_cost(tokens=100)  # Estimate for mobile relay
-        
+
+        session_id = payload.get("sessionId")
+        if payload.get("fullscreen") and session_id:
+            session_overlay_channels[session_id] = "mobile"
+            log.info(f"Defaulting session {session_id} overlay channel to mobile")
+
         # broadcast to mobile WS clients
         notify_all({
             "channel": "mobile",
-            "type": payload.get("type", "answer"), 
+            "type": payload.get("type", "answer"),
             "text": payload.get("text", ""),
-            "meetingId": payload.get("meetingId", "")
+            "meetingId": payload.get("meetingId", ""),
+            "sessionId": session_id
         })
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "overlay": session_overlay_channels.get(session_id)})
     except Exception as e:
         log.error(f"Error relaying to mobile: {e}")
         return jsonify({"error": str(e)}), 500

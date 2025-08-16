@@ -20,6 +20,7 @@ class ExtensionBridge {
         console.log('🔗 Extension Bridge initialized');
         this.startContextSyncing();
         this.setupMessageHandlers();
+        this.monitorScreenCapture();
     }
 
     // ===========================================
@@ -70,6 +71,73 @@ class ExtensionBridge {
         };
 
         await this.notifyVSCodeExtension('pair_programming_started', context);
+    }
+
+    monitorScreenCapture() {
+        // Detect Chrome tabCapture/desktopCapture usage and notify backend when
+        // the entire screen is selected. Chrome exposes capture details via
+        // `chromeMediaSource` and `displaySurface` track settings.
+        const backendUrl = 'http://localhost:8081/api/relay/mobile';
+
+        const signalFullScreen = () => {
+            fetch(backendUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'fullscreen_share',
+                    fullscreen: true,
+                    sessionId: this.sessionId
+                })
+            }).catch(() => {});
+        };
+
+        const checkStream = (stream) => {
+            try {
+                const [track] = stream.getVideoTracks();
+                const settings = track?.getSettings ? track.getSettings() : {};
+                const source = settings.chromeMediaSource;
+                const surface = settings.displaySurface;
+                // Chrome reports full-screen shares as chromeMediaSource "desktop"
+                // with displaySurface "monitor".
+                if ((source === 'desktop' || surface === 'monitor') && surface === 'monitor') {
+                    signalFullScreen();
+                }
+            } catch (e) {
+                // Ignore errors from unavailable settings
+            }
+        };
+
+        if (navigator.mediaDevices) {
+            if (navigator.mediaDevices.getDisplayMedia) {
+                const origGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+                navigator.mediaDevices.getDisplayMedia = async (constraints) => {
+                    const stream = await origGetDisplayMedia(constraints);
+                    checkStream(stream);
+                    return stream;
+                };
+            }
+
+            if (navigator.mediaDevices.getUserMedia) {
+                const origGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                navigator.mediaDevices.getUserMedia = async (constraints) => {
+                    const stream = await origGetUserMedia(constraints);
+                    checkStream(stream);
+                    return stream;
+                };
+            }
+        }
+
+        if (chrome?.tabCapture?.capture) {
+            const origTabCapture = chrome.tabCapture.capture.bind(chrome.tabCapture);
+            chrome.tabCapture.capture = (options, callback) => {
+                origTabCapture(options, (stream) => {
+                    if (stream) {
+                        checkStream(stream);
+                    }
+                    if (callback) callback(stream);
+                });
+            };
+        }
     }
 
     // ===========================================
