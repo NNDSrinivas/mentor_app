@@ -12,6 +12,9 @@ import time
 import threading
 from datetime import datetime
 from typing import Any, Tuple, Optional
+import platform
+import shutil
+import subprocess
 
 # Optional audio processing imports
 try:
@@ -115,43 +118,147 @@ class AudioRecorder:
         return output_path
 
 
-def capture_meeting(meeting_id: str) -> Tuple[str, str]:
+class BaseSystemAudioRecorder:
+    """Base class for system audio recording using ffmpeg."""
+
+    def __init__(self, output_path: str) -> None:
+        self.output_path = output_path
+        self.process: Optional[subprocess.Popen] = None
+        self.ffmpeg = shutil.which("ffmpeg")
+        if not self.ffmpeg:
+            raise RuntimeError("ffmpeg is required for system audio recording")
+
+    def start(self) -> None:  # pragma: no cover - thin wrapper around subprocess
+        raise NotImplementedError
+
+    def stop(self) -> None:
+        if self.process:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=5)
+            except Exception:  # pragma: no cover - best effort cleanup
+                self.process.kill()
+
+
+class MacOSSystemAudioRecorder(BaseSystemAudioRecorder):
+    """System audio recorder for macOS using ScreenCaptureKit via ffmpeg."""
+
+    def start(self) -> None:
+        # ScreenCaptureKit is exposed through ffmpeg's avfoundation device
+        cmd = [
+            self.ffmpeg,
+            "-y",
+            "-f",
+            "avfoundation",
+            "-i",
+            "none:0",
+            self.output_path,
+        ]
+        self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+class WindowsSystemAudioRecorder(BaseSystemAudioRecorder):
+    """System audio recorder for Windows using WASAPI loopback."""
+
+    def start(self) -> None:
+        cmd = [
+            self.ffmpeg,
+            "-y",
+            "-f",
+            "wasapi",
+            "-i",
+            "default",
+            self.output_path,
+        ]
+        self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+class LinuxSystemAudioRecorder(BaseSystemAudioRecorder):
+    """System audio recorder for Linux using PulseAudio/PipeWire."""
+
+    def start(self) -> None:
+        cmd = [
+            self.ffmpeg,
+            "-y",
+            "-f",
+            "pulse",
+            "-i",
+            "default",
+            self.output_path,
+        ]
+        self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def get_system_audio_recorder(output_path: str) -> BaseSystemAudioRecorder:
+    """Return an OS-specific system audio recorder."""
+
+    system = platform.system()
+    if system == "Darwin":
+        return MacOSSystemAudioRecorder(output_path)
+    if system == "Windows":
+        return WindowsSystemAudioRecorder(output_path)
+    if system == "Linux":
+        return LinuxSystemAudioRecorder(output_path)
+    raise RuntimeError(f"System audio recording not supported on {system}")
+
+
+def capture_meeting(meeting_id: str, record_system_audio: bool = False) -> Tuple[str, str, Optional[str]]:
     """Capture audio and video from a meeting.
 
     Args:
         meeting_id: Identifier for the meeting (could be a Zoom meeting ID,
             a calendar event ID or a link).
+        record_system_audio: When ``True`` also capture system/loopback audio
+            using an OS specific backend.
 
     Returns:
-        A tuple `(audio_path, video_path)` pointing to recorded files.
+        A tuple ``(audio_path, video_path, system_audio_path)`` where the last
+        element is ``None`` when ``record_system_audio`` is ``False`` or
+        unsupported.
     """
     logger.info("Capturing meeting %s", meeting_id)
-    
+
     # Create timestamped filenames
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     audio_path = os.path.join(Config.RECORDINGS_DIR, f"{meeting_id}_{timestamp}_audio.wav")
     video_path = os.path.join(Config.RECORDINGS_DIR, f"{meeting_id}_{timestamp}_video.mp4")
-    
-    # For now, we'll just record audio
+    system_audio_path: Optional[str] = None
+    system_recorder: Optional[BaseSystemAudioRecorder] = None
+
+    # For now, we'll just record microphone audio
     recorder = AudioRecorder()
-    
+
     try:
+        if record_system_audio:
+            system_audio_path = os.path.join(
+                Config.RECORDINGS_DIR, f"{meeting_id}_{timestamp}_system.wav"
+            )
+            try:
+                system_recorder = get_system_audio_recorder(system_audio_path)
+                system_recorder.start()
+                logger.info("System audio recording started")
+            except Exception as exc:  # pragma: no cover - depends on OS
+                logger.error("System audio recording unavailable: %s", exc)
+                system_audio_path = None
+
         recorder.start_recording()
         logger.info("Recording in progress. Press Ctrl+C to stop...")
-        
+
         # In a real implementation, this would be controlled by meeting events
         # For demo purposes, record for 10 seconds
         time.sleep(10)
-        
+
     except KeyboardInterrupt:
         logger.info("Recording interrupted by user")
     finally:
         recorder.stop_recording(audio_path)
-    
+        if system_recorder:
+            system_recorder.stop()
+
     # Video recording placeholder - would need platform-specific implementation
     logger.debug("Video recording placeholder - would implement platform-specific capture")
-    
-    return audio_path, video_path
+
+    return audio_path, video_path, system_audio_path
 
 
 def capture_audio_only(meeting_id: str, duration: Optional[int] = None) -> str:
