@@ -2,8 +2,10 @@ import sys
 from typing import Any
 from pathlib import Path
 import types
+from datetime import datetime, timedelta
 
 import pytest
+import tiktoken
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -141,3 +143,48 @@ def test_search_returns_metadata():
     assert results[0]["metadata"]["type"] == "note"
     stats = assistant.memory.kb.get_collection_info()
     assert stats["last_type"] == "note"
+
+
+def test_search_recency_decay(tmp_path: Path):
+    kb = _get_client(tmp_path)
+    old_id = kb.add_document("Old doc", {"source": "repo"})
+    recent_id = kb.add_document("Recent doc", {"source": "repo"})
+
+    # Manually adjust timestamps to control recency
+    kb._in_memory_store[0]["metadata"]["timestamp"] = (
+        datetime.now() - timedelta(days=10)
+    ).isoformat()
+    kb._in_memory_store[1]["metadata"]["timestamp"] = datetime.now().isoformat()
+
+    results = kb.search("doc", top_k=2)
+    assert results[0]["id"] == recent_id
+    assert results[1]["id"] == old_id
+
+
+def test_retrieve_context_snippets_respects_priority_and_token_limit(monkeypatch):
+    class FakeKB:
+        def search(self, query: str, top_k: int = 5, filter_metadata: Any | None = None):
+            assert filter_metadata == {"source": {"$in": ["jira", "repo", "meetings"]}}
+            return [
+                {"content": "repo snippet", "metadata": {"source": "repo"}},
+                {"content": "jira snippet", "metadata": {"source": "jira"}},
+                {"content": "meetings snippet", "metadata": {"source": "meetings"}},
+            ][:top_k]
+
+    monkeypatch.setattr("app.rag.KnowledgeBase", FakeKB)
+
+    encoding = tiktoken.get_encoding("cl100k_base")
+    first_two = ["jira snippet", "repo snippet"]
+    separator = len(encoding.encode("\n\n"))
+    token_budget = sum(len(encoding.encode(s)) for s in first_two) + separator
+
+    result = retrieve_context_snippets(
+        "query",
+        top_k=3,
+        max_tokens=token_budget,
+        priority_order=["jira", "repo", "meetings"],
+        source_filters=["jira", "repo", "meetings"],
+    )
+
+    assert result.split("\n\n") == first_two
+
