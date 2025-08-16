@@ -49,6 +49,11 @@ class Config:
     AUDIO_CHUNK_DURATION = int(os.getenv("AUDIO_CHUNK_DURATION", "5"))  # seconds per chunk
     SCREEN_ANALYSIS_INTERVAL = int(os.getenv("SCREEN_ANALYSIS_INTERVAL", "30"))  # seconds
     AI_ASSISTANCE_THRESHOLD = float(os.getenv("AI_ASSISTANCE_THRESHOLD", "0.7"))  # confidence threshold
+
+    # Question boundary detector settings
+    QUESTION_SILENCE_MS_MIN = int(os.getenv("QUESTION_SILENCE_MS_MIN", "700"))
+    QUESTION_SILENCE_MS_MAX = int(os.getenv("QUESTION_SILENCE_MS_MAX", "900"))
+    QUESTION_MAX_LEN_CHARS = int(os.getenv("QUESTION_MAX_LEN_CHARS", "2000"))
     
     # Audio recording settings
     SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "44100"))
