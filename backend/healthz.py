@@ -2,6 +2,8 @@ from __future__ import annotations
 import os
 from flask import Blueprint, jsonify
 from .middleware import BUCKETS
+from .memory_service import MemoryService
+from .approvals import approvals
 
 bp = Blueprint("healthz", __name__)
 
@@ -9,9 +11,26 @@ bp = Blueprint("healthz", __name__)
 def full():
     checks = {}
     checks["OPENAI_API_KEY"] = bool(os.getenv("OPENAI_API_KEY"))
-    db_path = os.getenv("MEMORY_DB_PATH", "./memory_db")
-    checks["VECTOR_DB_PATH_EXISTS"] = os.path.exists(db_path) or os.path.exists("./data/chroma_db")
-    checks["GITHUB_WEBHOOK_SECRET"] = bool(os.getenv("GITHUB_WEBHOOK_SECRET"))
+
+    # Vector DB connectivity
+    try:
+        ms = MemoryService()
+        if ms.client:
+            ms.client.list_collections()
+        checks["VECTOR_DB_CONNECTED"] = True
+    except Exception:
+        checks["VECTOR_DB_CONNECTED"] = False
+
+    # Approvals queue depth
+    checks["APPROVALS_QUEUE_DEPTH"] = approvals.q.qsize()
+
+    # Webhook secret presence (GitHub/Jira/Stripe)
+    checks["WEBHOOK_SECRET_PRESENT"] = bool(
+        os.getenv("GITHUB_WEBHOOK_SECRET")
+        or os.getenv("JIRA_WEBHOOK_SECRET")
+        or os.getenv("STRIPE_WEBHOOK_SECRET")
+    )
+
     checks["RATE_BUCKETS"] = len(BUCKETS.buckets)
     healthy = all(v if isinstance(v, bool) else True for v in checks.values())
     return jsonify({"ok": healthy, "checks": checks})

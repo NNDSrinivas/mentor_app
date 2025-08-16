@@ -22,6 +22,7 @@ app.register_blueprint(healthz_bp)
 
 # Ship-It PR: Add middleware for rate limiting and cost tracking
 from backend.middleware import rate_limit, record_cost
+from backend.audit import audit
 from backend.webhook_signatures import verify_github, verify_jira
 from backend.payments import subscription_required, handle_webhook as handle_stripe_webhook
 
@@ -111,8 +112,9 @@ def resolve_approval():
             "approval": resolved_item,
             "decision": decision
         })
-        
+
         log.info(f"Approval {item_id} {decision}d: {resolved_item.get('action')}")
+        audit("approval_resolve", {"id": item_id, "decision": decision})
         return jsonify(resolved_item)
         
     except Exception as e:
@@ -138,7 +140,8 @@ def github_pr():
             "type": "new_approval",
             "approval": vars(item)
         })
-        
+
+        audit("github_pr_submit", {"approval_id": item.id})
         return jsonify({"submitted": True, "approvalId": item.id})
     except Exception as e:
         log.error(f"Error submitting GitHub PR: {e}")
@@ -156,7 +159,8 @@ def github_comment():
             "type": "new_approval",
             "approval": vars(item)
         })
-        
+
+        audit("github_comment_submit", {"approval_id": item.id})
         return jsonify({"submitted": True, "approvalId": item.id})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -173,7 +177,8 @@ def github_issue():
             "type": "new_approval",
             "approval": vars(item)
         })
-        
+
+        audit("github_issue_submit", {"approval_id": item.id})
         return jsonify({"submitted": True, "approvalId": item.id})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -196,7 +201,8 @@ def jira_create():
             "type": "new_approval",
             "approval": vars(item)
         })
-        
+
+        audit("jira_create_submit", {"approval_id": item.id})
         return jsonify({"submitted": True, "approvalId": item.id})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -213,7 +219,8 @@ def jira_update():
             "type": "new_approval",
             "approval": vars(item)
         })
-        
+
+        audit("jira_update_submit", {"approval_id": item.id})
         return jsonify({"submitted": True, "approvalId": item.id})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -230,7 +237,8 @@ def jira_comment():
             "type": "new_approval",
             "approval": vars(item)
         })
-        
+
+        audit("jira_comment_submit", {"approval_id": item.id})
         return jsonify({"submitted": True, "approvalId": item.id})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -293,6 +301,7 @@ def codegen():
             "comments": comments,
         })
 
+        audit("codegen_pr", {"task_id": task.task_id, "pr_number": pr.get("number")})
         return jsonify({"pr": pr, "status": status, "comments": comments})
     except Exception as e:
         log.error(f"Error generating code: {e}")
@@ -339,7 +348,8 @@ def gh_webhook():
             "event": event,
             "repository": payload.get("repository", {}).get("full_name", "unknown")
         })
-        
+
+        audit("github_webhook", {"event": event})
         return "", 204
     except Exception as e:
         log.error(f"Error handling GitHub webhook: {e}")
@@ -353,6 +363,7 @@ def stripe_webhook():
     sig = request.headers.get("Stripe-Signature", "")
     try:
         handle_stripe_webhook(payload, sig)
+        audit("stripe_webhook", {})
     except Exception as e:
         log.error(f"Error handling Stripe webhook: {e}")
         return "", 400
@@ -414,7 +425,8 @@ def gh_pr_webhook():
             "type": "new_approval",
             "approval": vars(item)
         })
-        
+
+        audit("github_pr_webhook", {"event": event, "pr_number": pr_number})
         return "", 204
     except Exception as e:
         log.error(f"Error handling PR webhook: {e}")
@@ -434,6 +446,7 @@ def api_draft_adr():
     try:
         d = request.get_json(force=True)
         md = draft_adr(d["title"], d.get("context",""), d.get("options",[]), d.get("decision",""), d.get("consequences",[]))
+        audit("draft_adr", {"title": d.get("title")})
         return jsonify({"markdown": md})
     except Exception as e:
         log.error(f"Error drafting ADR: {e}")
@@ -451,6 +464,7 @@ def api_draft_runbook():
     try:
         d = request.get_json(force=True)
         md = draft_runbook(d["service"], d.get("incidents",[]), d.get("commands",[]), d.get("dashboards",[]))
+        audit("draft_runbook", {"service": d.get("service")})
         return jsonify({"markdown": md})
     except Exception as e:
         log.error(f"Error drafting runbook: {e}")
@@ -468,6 +482,7 @@ def api_draft_changelog():
     try:
         d = request.get_json(force=True)
         md = draft_changelog(d["repo"], d.get("merged_prs",[]))
+        audit("draft_changelog", {"repo": d.get("repo")})
         return jsonify({"markdown": md})
     except Exception as e:
         log.error(f"Error drafting changelog: {e}")
@@ -491,6 +506,7 @@ def relay_mobile():
             "text": payload.get("text", ""),
             "meetingId": payload.get("meetingId", "")
         })
+        audit("relay_mobile", {"meetingId": payload.get("meetingId", "")})
         return jsonify({"ok": True})
     except Exception as e:
         log.error(f"Error relaying to mobile: {e}")
@@ -522,7 +538,8 @@ def set_dry_run():
         data = request.get_json(force=True)
         enabled = data.get("enabled", True)
         set_dry_run_mode(enabled)
-        
+
+        audit("set_dry_run", {"enabled": enabled})
         return jsonify({
             "dry_run_enabled": enabled,
             "message": f"Dry run mode {'enabled' if enabled else 'disabled'}"
