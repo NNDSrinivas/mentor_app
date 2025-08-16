@@ -11,7 +11,7 @@ import os
 import hashlib
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
 # External libraries are imported unconditionally so type checkers can resolve
@@ -136,21 +136,55 @@ class KnowledgeBase:
             raise
     
     def search(self, query: str, top_k: int = 5, filter_metadata: Optional[Dict] = None) -> List[Dict[str, Any]]:
-        """Search the knowledge base.
-        
+        """Search the knowledge base applying optional filters and recency decay.
+
         Args:
             query: Search query.
             top_k: Number of results to return.
             filter_metadata: Optional metadata filters.
-            
+
         Returns:
-            List of search results.
+            List of search results ordered by combined similarity and recency.
         """
+
+        def _matches_filter(metadata: Dict[str, Any]) -> bool:
+            if not filter_metadata:
+                return True
+            for key, expected in filter_metadata.items():
+                value = metadata.get(key)
+                if isinstance(expected, dict) and "$in" in expected:
+                    if value not in expected["$in"]:
+                        return False
+                elif value != expected:
+                    return False
+            return True
+
+        def _apply_recency(results: List[Dict[str, Any]]) -> None:
+            now = datetime.now(timezone.utc)
+            for res in results:
+                ts = res.get("metadata", {}).get("timestamp")
+                if ts:
+                    try:
+                        dt = datetime.fromisoformat(ts)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        age_days = (now - dt).total_seconds() / 86400
+                    except Exception:
+                        age_days = 0.0
+                else:
+                    age_days = 0.0
+                recency = 1 / (1 + age_days)
+                res["recency_weight"] = recency
+                res["score"] = res.get("similarity_score", 0.0) * recency
+            results.sort(key=lambda r: r["score"], reverse=True)
+
         if self.collection is None:
             # Simple substring search over the in-memory store
             results: List[Dict[str, Any]] = []
             q = query.lower()
             for item in self._in_memory_store:
+                if not _matches_filter(item["metadata"]):
+                    continue
                 if q in item["content"].lower():
                     results.append({
                         "content": item["content"],
@@ -158,6 +192,7 @@ class KnowledgeBase:
                         "similarity_score": 1.0,
                         "id": item["id"]
                     })
+            _apply_recency(results)
             return results[:top_k]
 
         try:
@@ -182,8 +217,11 @@ class KnowledgeBase:
                     "id": results["ids"][0][i] if "ids" in results else None
                 })
 
-            logger.info(f"Knowledge base search returned {len(formatted_results)} results")
-            return formatted_results
+            _apply_recency(formatted_results)
+            logger.info(
+                f"Knowledge base search returned {len(formatted_results)} results"
+            )
+            return formatted_results[:top_k]
 
         except Exception as e:
             logger.error(f"Knowledge base search failed: {str(e)}")
