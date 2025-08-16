@@ -328,20 +328,6 @@ def gh_webhook():
         log.error(f"Error handling GitHub webhook: {e}")
         return "Internal error", 500
 
-def verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
-    """Verify GitHub webhook signature"""
-    if not signature_header.startswith("sha256="):
-        return False
-    
-    expected_signature = hmac.new(
-        GITHUB_WEBHOOK_SECRET.encode(),
-        payload_body,
-        hashlib.sha256
-    ).hexdigest()
-    
-    provided_signature = signature_header[7:]  # Remove 'sha256=' prefix
-    return hmac.compare_digest(expected_signature, provided_signature)
-
 # --- Stripe Webhook ---
 @app.route("/webhook/stripe", methods=['POST'])
 def stripe_webhook():
@@ -364,6 +350,7 @@ def gh_pr_webhook():
         signature = request.headers.get("X-Hub-Signature-256", "")
         body = request.get_data()
         if not verify_github(signature, body):
+            log.warning("Invalid GitHub webhook signature")
             return "", 401
             
         # Import Wave 6 components
