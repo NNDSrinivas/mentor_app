@@ -22,6 +22,7 @@ app.register_blueprint(healthz_bp)
 # Ship-It PR: Add middleware for rate limiting and cost tracking
 from backend.middleware import rate_limit, record_cost
 from backend.webhook_signatures import verify_github, verify_jira
+from backend.webhook_jira import handle_jira_webhook
 from backend.payments import subscription_required, handle_webhook as handle_stripe_webhook
 
 # Import functions to avoid circular imports
@@ -296,6 +297,32 @@ def codegen():
         log.error(f"Error generating code: {e}")
         return jsonify({"error": str(e)}), 500
 
+# --- Jira Webhook ---
+@app.route("/webhook/jira", methods=['POST'])
+def jira_webhook():
+    """Handle Jira webhook events"""
+    try:
+        signature = request.headers.get("X-Jira-Signature", "")
+        body = request.get_data()
+        if not verify_jira(signature, body):
+            log.warning("Invalid Jira webhook signature")
+            return "", 401
+
+        payload = request.get_json(force=True) or {}
+        handle_jira_webhook(payload)
+
+        # Notify WebSocket clients about the event
+        notify_all({
+            "type": "webhook_received",
+            "event": payload.get("webhookEvent", ""),
+            "issue": payload.get("issue", {}).get("key", "")
+        })
+
+        return "", 204
+    except Exception as e:
+        log.error(f"Error handling Jira webhook: {e}")
+        return "", 500
+
 # --- GitHub Webhook for CI/status events ---
 @app.route("/webhook/github", methods=['POST'])
 def gh_webhook():
@@ -307,22 +334,22 @@ def gh_webhook():
         if not verify_github(signature, body):
             log.warning("Invalid GitHub webhook signature")
             return "", 401
-        
+
         event = request.headers.get("X-GitHub-Event", "unknown")
         payload = request.get_json(force=True) or {}
-        
+
         log.info(f"Received GitHub webhook: {event}")
-        
+
         # Handle the webhook event
         handle_github_webhook(event, payload)
-        
+
         # Notify WebSocket clients about the event
         notify_all({
             "type": "webhook_received",
             "event": event,
             "repository": payload.get("repository", {}).get("full_name", "unknown")
         })
-        
+
         return "", 204
     except Exception as e:
         log.error(f"Error handling GitHub webhook: {e}")
