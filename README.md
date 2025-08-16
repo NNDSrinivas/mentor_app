@@ -79,6 +79,10 @@ curl -s http://localhost:8080/api/sessions/$SID/answers
 
 Tip: On the same network, push captions using the realtime API (or via the Chrome extension) so answers appear on mobile.
 
+### Minimal permissions
+
+The TestFlight build uses Expo's internal distribution settings. Android `permissions` are explicitly empty and iOS uses default capabilities only, keeping the app lightweight and minimizing review friction.
+
 ## Browser extension
 
 1) Open Chrome → chrome://extensions → Enable Developer mode → Load unpacked → select `browser_extension/`.
