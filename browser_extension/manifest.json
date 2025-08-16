@@ -3,6 +3,7 @@
   "name": "AI Interview Assistant - ULTRA STEALTH",
   "version": "1.4.0",
   "description": "Ultra stealth AI assistant - invisible to screen capture with auto-listening",
+  "minimum_chrome_version": "109",
   
   "permissions": [
     "storage",
@@ -31,12 +32,17 @@
       "matches": ["https://meet.google.com/*"]
     }
   ],
-  
+
   "action": {
-    "default_title": "AI Interview Assistant - ULTRA STEALTH"
+    "default_title": "AI Interview Assistant - ULTRA STEALTH",
+    "default_popup": "popup.html"
   },
-  
+
   "background": {
     "service_worker": "background.js"
+  },
+
+  "icons": {
+    "128": "icons/icon.svg"
   }
 }
