@@ -2,10 +2,12 @@
 from __future__ import annotations
 import logging
 import os
+import difflib
 from typing import Dict, Any, List, Optional
 
 import requests
 from backend.build_monitor import BuildMonitor
+from backend.patch_apply import PatchApplier
 
 log = logging.getLogger(__name__)
 
@@ -19,6 +21,50 @@ except Exception:  # pragma: no cover - realtime not available in some contexts
 def get_approvals():
     from backend.approvals import approvals
     return approvals
+
+
+def compute_minimal_patch(patch_content: str) -> str:
+    """Compute a minimal unified diff from the provided patch content."""
+    try:
+        applier = PatchApplier()
+        changes = applier.parse_unified_diff(patch_content)
+        minimal_parts: List[str] = []
+        for old_path, new_path, lines in changes:
+            original: List[str] = []
+            updated: List[str] = []
+            for line in lines:
+                if line.startswith(' '):
+                    original.append(line[1:])
+                    updated.append(line[1:])
+                elif line.startswith('-'):
+                    original.append(line[1:])
+                elif line.startswith('+'):
+                    updated.append(line[1:])
+            diff = difflib.unified_diff(
+                original,
+                updated,
+                fromfile=old_path,
+                tofile=new_path,
+                lineterm='',
+            )
+            minimal_parts.append('\n'.join(diff))
+        return '\n'.join(minimal_parts) if minimal_parts else patch_content
+    except Exception as e:  # pragma: no cover - defensive
+        log.debug(f"Failed to compute minimal patch: {e}")
+        return patch_content
+
+
+def _enqueue_patch_pr(repository: str, patch_content: str) -> None:
+    """Submit an apply-patch PR request via approvals queue."""
+    approvals = get_approvals()
+    minimal = compute_minimal_patch(patch_content)
+    payload = {
+        "patch_content": minimal,
+        "branch_name": f"ci-fix-{os.urandom(4).hex()}",
+        "commit_message": "Apply CI suggested patch",
+        "pr_title": f"Automated CI fix for {repository}",
+    }
+    approvals.submit("github.apply_patch", payload)
 
 def handle_github_webhook(event: str, payload: Dict[str, Any]):
     """
@@ -71,6 +117,10 @@ def handle_check_suite(payload: Dict[str, Any]):
             try:
                 analysis = monitor.monitor_repository(repo, branch)
                 failure_context["analysis"] = analysis
+                for failure in analysis.get("recent_failures", []):
+                    patch = (failure.get("analysis") or {}).get("proposed_patch")
+                    if patch:
+                        _enqueue_patch_pr(repo, patch)
             except Exception as e:
                 log.error(f"Failed to analyze build: {e}")
 
@@ -118,6 +168,9 @@ def handle_workflow_run(payload: Dict[str, Any]):
             try:
                 analysis = monitor._analyze_workflow_failure(repo, workflow_run.get("id"))
                 failure_context["analysis"] = analysis
+                patch = analysis.get("proposed_patch")
+                if patch:
+                    _enqueue_patch_pr(repo, patch)
             except Exception as e:
                 log.error(f"Failed to analyze workflow: {e}")
 
