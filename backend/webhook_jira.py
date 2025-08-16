@@ -1,13 +1,14 @@
 # webhook_jira.py
 from __future__ import annotations
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from backend.memory_service import MemoryService
 
 mem = MemoryService()
 local_tasks: Dict[str, Dict[str, Any]] = {}
 
-def handle_jira_webhook(payload: Dict[str, Any]):
+def handle_jira_webhook(payload: Dict[str, Any], mem_service: Optional[MemoryService] = None):
     """Handle Jira webhook events and keep local task state in sync."""
+    mem_service = mem_service or mem
     issue = payload.get("issue", {})
     key = issue.get("key")
     fields = issue.get("fields", {})
@@ -41,7 +42,7 @@ def handle_jira_webhook(payload: Dict[str, Any]):
             metadata["prev_status"] = item.get("fromString", "")
             break
 
-    mem.add_task(key, text, metadata=metadata)
+    mem_service.add_task(key, text, metadata=metadata)
     local_tasks[key] = {
         "summary": summary,
         "status": status,

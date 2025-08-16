@@ -1,5 +1,5 @@
 # backend/server.py
-import asyncio, json, os, logging, hmac, hashlib
+import asyncio, json, os, logging
 import websockets
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -44,9 +44,6 @@ connected_clients: Set[_Any] = set()
 # Task manager instance for task operations
 task_manager = TaskManager()
 memory_service = MemoryService()
-
-# GitHub webhook secret for verification
-GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
 # --- Health Check ---
 @app.route('/api/health', methods=['GET'])
@@ -309,7 +306,7 @@ def jira_webhook():
             return "", 401
 
         payload = request.get_json(force=True) or {}
-        handle_jira_webhook(payload)
+        handle_jira_webhook(payload, memory_service)
 
         # Notify WebSocket clients about the event
         notify_all({
@@ -354,20 +351,6 @@ def gh_webhook():
     except Exception as e:
         log.error(f"Error handling GitHub webhook: {e}")
         return "Internal error", 500
-
-def verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
-    """Verify GitHub webhook signature"""
-    if not signature_header.startswith("sha256="):
-        return False
-    
-    expected_signature = hmac.new(
-        GITHUB_WEBHOOK_SECRET.encode(),
-        payload_body,
-        hashlib.sha256
-    ).hexdigest()
-    
-    provided_signature = signature_header[7:]  # Remove 'sha256=' prefix
-    return hmac.compare_digest(expected_signature, provided_signature)
 
 # --- Stripe Webhook ---
 @app.route("/webhook/stripe", methods=['POST'])
