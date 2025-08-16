@@ -18,3 +18,20 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 ```
+
+## Full display sharing fallback
+
+The extension now detects when the user shares their *entire display* using
+`navigator.mediaDevices.getDisplayMedia`.  When this happens the in-page
+overlay is suppressed to avoid leaking answers into the meeting stream.
+
+* If an Electron helper is running locally, answers are relayed to it via
+  `http://localhost:8081/api/relay/electron` and shown in an always-on-top
+  click-through window.  Use **Ctrl+Shift+O** to toggle the helper's
+  visibility.
+* If the helper is unavailable the extension falls back to the mobile relay
+  endpoint described above.
+
+For privacy, users should prefer sharing a single window or tab instead of the
+entire display.  Full-display sharing will always trigger the helper/mobile
+fallback behavior.

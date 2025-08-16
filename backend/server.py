@@ -483,13 +483,31 @@ def relay_mobile():
         # broadcast to mobile WS clients
         notify_all({
             "channel": "mobile",
-            "type": payload.get("type", "answer"), 
+            "type": payload.get("type", "answer"),
             "text": payload.get("text", ""),
             "meetingId": payload.get("meetingId", "")
         })
         return jsonify({"ok": True})
     except Exception as e:
         log.error(f"Error relaying to mobile: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# --- Wave 7 Electron Overlay Relay ---
+@app.route("/api/relay/electron", methods=['POST'])
+@subscription_required
+@rate_limit('meeting')
+def relay_electron():
+    """Relay answers to local Electron overlay."""
+    try:
+        payload = request.get_json(force=True) or {}
+        record_cost(tokens=50)
+
+        from app.private_overlay import show_ai_response
+        show_ai_response(payload.get("text", ""), payload.get("type", "answer"))
+        return jsonify({"ok": True})
+    except Exception as e:
+        log.error(f"Error relaying to electron overlay: {e}")
         return jsonify({"error": str(e)}), 500
 
 # --- Configuration Endpoints ---
