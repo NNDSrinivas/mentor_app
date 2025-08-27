@@ -16,7 +16,8 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <intellij.version>2023.2</intellij.version>
+        <intellij.version>2023.1</intellij.version>
+        <intellij.plugin.version>1.13.3</intellij.plugin.version>
     </properties>
 
     <repositories>
@@ -24,16 +25,14 @@
             <id>intellij-repository</id>
             <url>https://www.jetbrains.com/intellij-repository/releases</url>
         </repository>
+        <repository>
+            <id>central</id>
+            <url>https://repo1.maven.org/maven2</url>
+        </repository>
     </repositories>
 
     <dependencies>
-        <dependency>
-            <groupId>com.jetbrains.intellij.idea</groupId>
-            <artifactId>ideaIC</artifactId>
-            <version>${intellij.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        
+        <!-- No explicit IntelliJ dependency needed with intellij-maven-plugin -->
         <dependency>
             <groupId>org.jetbrains</groupId>
             <artifactId>annotations</artifactId>
@@ -64,22 +63,13 @@
             <plugin>
                 <groupId>org.jetbrains.intellij</groupId>
                 <artifactId>intellij-maven-plugin</artifactId>
-                <version>1.15.0</version>
+                <version>${intellij.plugin.version}</version>
                 <configuration>
                     <version>${intellij.version}</version>
                     <type>IC</type>
                     <downloadSources>true</downloadSources>
                     <updateSinceUntilBuild>false</updateSinceUntilBuild>
                 </configuration>
-                <executions>
-                    <execution>
-                        <id>prepare-sandbox</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>prepareSandbox</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
             
             <plugin>
