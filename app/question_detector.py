@@ -1,49 +1,64 @@
 from __future__ import annotations
+
+"""Utilities for detecting end‑of‑question boundaries."""
+
+from dataclasses import dataclass
 from typing import Optional
-import time
+import os
 
-from app.config import Config
+try:  # Allow importing without optional dependencies during tests
+    from app.config import Config
+except Exception:  # pragma: no cover - used only when config deps missing
+    class Config:  # type: ignore
+        QUESTION_SILENCE_MS_MIN = 800
 
-class QuestionBoundaryDetector:
-    """End-of-question detector using silence and punctuation."""
 
-    def __init__(
-        self,
-        min_gap_ms: int = Config.QUESTION_SILENCE_MS_MIN,
-        max_gap_ms: int = Config.QUESTION_SILENCE_MS_MAX,
-        max_len_chars: int = Config.QUESTION_MAX_LEN_CHARS,
-    ):
-        self.min_gap_ms = min_gap_ms
-        self.max_gap_ms = max_gap_ms
-        self.max_len_chars = max_len_chars
-        self._last_token_time = None
+@dataclass
+class AnswerJob:
+    meeting_id: str
+    question: str
+    timestamp: int
+
+
+class QuestionDetector:
+    """Detect question boundaries from caption text.
+
+    A boundary is triggered when any of the following are true *and* the
+    speaker is labelled ``other``:
+    * silence gap >= ``silence_ms``
+    * last character is '?' or '!'
+    * classifier score >= ``threshold``
+    """
+
+    def __init__(self,
+                 silence_ms: int = Config.QUESTION_SILENCE_MS_MIN,
+                 threshold: float = float(os.getenv("QUESTION_CLASSIFIER_THRESHOLD", "0.5"))):
+        self.silence_ms = silence_ms
+        self.threshold = threshold
+        self._last_ts: Optional[int] = None
         self._buffer: list[str] = []
 
-    def add_token(self, text: str) -> Optional[str]:
-        now = int(time.time() * 1000)
-        if self._last_token_time is None:
-            self._last_token_time = now
-        gap = now - self._last_token_time
-        self._last_token_time = now
-
-        self._buffer.append(text)
-
-        # Heuristic: gap within threshold or ending punctuation
-        joined = ''.join(self._buffer)
-        if len(joined) >= self.max_len_chars:
-            out = joined
+    def add_chunk(self, speaker: str, text: str, ts: int, score: float = 0.0) -> Optional[str]:
+        if speaker != "other":
+            # only interviewer questions end up as jobs
             self._buffer = []
-            return out
+            self._last_ts = ts
+            return None
 
-        stripped = text.strip()
-        if stripped.endswith( ('?', '？', '.', '!', '！', '。') ):
-            out = joined.strip()
+        if text:
+            self._buffer.append(text)
+
+        gap = None if self._last_ts is None else ts - self._last_ts
+        self._last_ts = ts
+
+        joined = " ".join(self._buffer).strip()
+        if not joined:
+            return None
+
+        last_char = joined[-1]
+        if (gap is not None and gap >= self.silence_ms) or \
+           last_char in {"?", "!"} or \
+           score >= self.threshold:
             self._buffer = []
-            return out
-
-        if self.min_gap_ms <= gap <= self.max_gap_ms or gap > self.max_gap_ms:
-            out = joined.strip()
-            self._buffer = []
-            return out
-
+            return joined
         return None
