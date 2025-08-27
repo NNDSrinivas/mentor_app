@@ -1,0 +1,4 @@
+Team meeting today.
+DECISION: We'll adopt microservices architecture.
+ACTION: @alice implement the API gateway due 2023-10-01.
+ACTION ITEM: finalize budget @bob due 2023-09-15.

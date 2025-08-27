@@ -60,6 +60,34 @@ def health():
         'integrations': status
     })
 
+# --- Recordings & Transcripts -----------------------------------------
+@app.route('/api/recordings/<meeting_id>', methods=['GET'])
+def list_recordings(meeting_id: str):
+    """List encrypted recording chunks for a meeting."""
+    dir_path = os.path.join('data', 'recordings')
+    files = []
+    if os.path.isdir(dir_path):
+        files = [f for f in os.listdir(dir_path) if f.startswith(meeting_id)]
+    return jsonify({'chunks': files})
+
+@app.route('/api/transcripts/<meeting_id>', methods=['GET'])
+def get_transcript(meeting_id: str):
+    """Return transcript JSONL entries for a meeting."""
+    path = os.path.join('data', 'transcripts', f'{meeting_id}.jsonl')
+    if not os.path.exists(path):
+        return jsonify([])
+    entries = []
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except Exception:
+                continue
+    return jsonify(entries)
+
 # --- Approvals REST API ---
 @app.route("/api/approvals", methods=['GET'])
 @subscription_required
