@@ -81,6 +81,52 @@ class MemoryService:
         )
         self.doc_conn.commit()
 
+    # Transcript snippets -------------------------------------------------
+    def upsert_transcript_snippet(
+        self,
+        session_id: str,
+        snippet: Dict[str, Any],
+        jsonl_path: str = "data/transcripts/snippets.jsonl",
+    ) -> str:
+        """Store a transcript snippet and upsert it into memory.
+
+        The snippet dictionary should contain at least a ``text`` field. An
+        ``id`` is generated if missing. Snippets are appended to a JSONL file
+        and upserted into the meeting memory collection.
+        """
+        os.makedirs(os.path.dirname(jsonl_path), exist_ok=True)
+        snippet_id = snippet.get("id") or f"{session_id}_{datetime.now().isoformat()}"
+        snippet["id"] = snippet_id
+
+        text = snippet.get("text", "")
+        metadata = {k: v for k, v in snippet.items() if k not in {"id", "text"}}
+
+        if self.client:
+            self.meeting_collection.upsert(
+                documents=[text],
+                metadatas=[metadata],
+                ids=[snippet_id],
+            )
+        else:
+            self.store_event("transcript_snippet", {"session_id": session_id, "text": text, **metadata})
+
+        with open(jsonl_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(snippet) + "\n")
+
+        return snippet_id
+
+    def upsert_transcript_snippets(
+        self,
+        session_id: str,
+        snippets: List[Dict[str, Any]],
+        jsonl_path: str = "data/transcripts/snippets.jsonl",
+    ) -> List[str]:
+        """Upsert multiple transcript snippets."""
+        ids = []
+        for snippet in snippets:
+            ids.append(self.upsert_transcript_snippet(session_id, snippet, jsonl_path))
+        return ids
+
     def add_meeting_entry(self, meeting_id: str, text: str, metadata: Optional[Dict] = None, persist: bool = True):
         """Add a meeting entry to memory"""
         if self.client:

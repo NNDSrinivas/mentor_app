@@ -29,6 +29,7 @@ class MeetingDetector {
     this.isRecording = false;
     this.currentMeeting = null;
     this.stealthMode = false; // Wave 7: Track stealth mode state
+    this.fullDisplayShare = false; // Track full display sharing state
 
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       if (changeInfo.status === 'complete') {
@@ -72,22 +73,55 @@ class MeetingDetector {
       case 'aim_stealth_mode':
         this.stealthMode = !!(message.data && message.data.on);
         break;
+      case 'aim_full_display_share':
+        // True when the user shares an entire display
+        this.fullDisplayShare = (message.data && message.data.mode === 'display');
+        break;
 
       // Wave 7: Answer relay (when stealth mode is on)
       case 'aim_answer':
-        if (this.stealthMode && message && message.data && message.data.text) {
-          try {
-            await fetch('http://localhost:8081/api/relay/mobile', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'answer',
-                text: message.data.text,
-                meetingId: message.data.meetingId || (this.currentMeeting && this.currentMeeting.id) || null
-              })
-            });
-          } catch (e) {
-            console.warn('Mobile relay failed:', e && e.message);
+        if (message && message.data && message.data.text) {
+          if (this.stealthMode) {
+            try {
+              await fetch('http://localhost:8081/api/relay/mobile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'answer',
+                  text: message.data.text,
+                  meetingId: message.data.meetingId || (this.currentMeeting && this.currentMeeting.id) || null
+                })
+              });
+            } catch (e) {
+              console.warn('Mobile relay failed:', e && e.message);
+            }
+          } else if (this.fullDisplayShare) {
+            try {
+              await fetch('http://localhost:8081/api/relay/electron', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'answer',
+                  text: message.data.text,
+                  meetingId: message.data.meetingId || (this.currentMeeting && this.currentMeeting.id) || null
+                })
+              });
+            } catch (e) {
+              console.warn('Electron relay failed:', e && e.message);
+              try {
+                await fetch('http://localhost:8081/api/relay/mobile', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    type: 'answer',
+                    text: message.data.text,
+                    meetingId: message.data.meetingId || (this.currentMeeting && this.currentMeeting.id) || null
+                  })
+                });
+              } catch (err) {
+                console.warn('Fallback mobile relay failed:', err && err.message);
+              }
+            }
           }
         }
         break;

@@ -36,6 +36,9 @@ if (window.aiInterviewAssistantLoaded) {
             
             // Set up hotkeys
             this.setupHotkeys();
+
+            // Detect display sharing to avoid leaking overlay
+            this.setupDisplayShareDetection();
             
             // Auto-start listening after initialization
             setTimeout(() => {
@@ -75,6 +78,36 @@ if (window.aiInterviewAssistantLoaded) {
                     e.preventDefault();
                     this.toggleStealthLevel();
                     console.log('🥷 Stealth level toggled');
+                }
+            });
+        }
+
+        setupDisplayShareDetection() {
+            // Inject in-page hook for getDisplayMedia to detect full screen sharing
+            const script = document.createElement('script');
+            script.textContent = `(() => {
+                const orig = navigator.mediaDevices.getDisplayMedia;
+                if (!orig) return;
+                navigator.mediaDevices.getDisplayMedia = async function(...args){
+                    const stream = await orig.apply(this, args);
+                    try {
+                        const track = stream.getVideoTracks()[0];
+                        const label = (track && track.label || '').toLowerCase();
+                        const mode = label.includes('screen') ? 'display' : 'window';
+                        window.postMessage({type: '__aim_share_mode', mode}, '*');
+                    } catch(e){}
+                    return stream;
+                };
+            })();`;
+            document.documentElement.appendChild(script);
+            script.remove();
+
+            window.addEventListener('message', (event) => {
+                if (event.data && event.data.type === '__aim_share_mode') {
+                    chrome.runtime.sendMessage({
+                        type: 'aim_full_display_share',
+                        data: { mode: event.data.mode }
+                    });
                 }
             });
         }

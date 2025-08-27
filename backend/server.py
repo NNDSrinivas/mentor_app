@@ -6,6 +6,7 @@ from flask_cors import CORS
 from typing import Set
 from backend.integrations.github_manager import GitHubManager
 from backend.memory_service import MemoryService
+from backend.recording_service import RecordingService
 from app.task_manager import Task, TaskManager
 
 # Setup logging
@@ -43,6 +44,7 @@ connected_clients: Set[_Any] = set()
 # Task manager instance for task operations
 task_manager = TaskManager()
 memory_service = MemoryService()
+recording_service = RecordingService()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -296,6 +298,21 @@ def codegen():
         log.error(f"Error generating code: {e}")
         return jsonify({"error": str(e)}), 500
 
+# --- Recording Upload Endpoint ---
+@app.route("/api/recording/upload", methods=["POST"])
+@subscription_required
+def recording_upload():
+    """Upload encrypted recording chunks with resume support."""
+    session_id = request.form.get("session_id")
+    chunk_index = request.form.get("chunk_index", type=int)
+    uploaded = request.files.get("chunk")
+    if not session_id or chunk_index is None or uploaded is None:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    data = uploaded.read()
+    path, stored = recording_service.save_chunk(session_id, data, chunk_index)
+    return jsonify({"stored": stored, "next": chunk_index + 1, "path": path})
+
 # --- GitHub Webhook for CI/status events ---
 @app.route("/webhook/github", methods=['POST'])
 def gh_webhook():
@@ -328,20 +345,6 @@ def gh_webhook():
         log.error(f"Error handling GitHub webhook: {e}")
         return "Internal error", 500
 
-def verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
-    """Verify GitHub webhook signature"""
-    if not signature_header.startswith("sha256="):
-        return False
-    
-    expected_signature = hmac.new(
-        GITHUB_WEBHOOK_SECRET.encode(),
-        payload_body,
-        hashlib.sha256
-    ).hexdigest()
-    
-    provided_signature = signature_header[7:]  # Remove 'sha256=' prefix
-    return hmac.compare_digest(expected_signature, provided_signature)
-
 # --- Stripe Webhook ---
 @app.route("/webhook/stripe", methods=['POST'])
 def stripe_webhook():
@@ -364,6 +367,7 @@ def gh_pr_webhook():
         signature = request.headers.get("X-Hub-Signature-256", "")
         body = request.get_data()
         if not verify_github(signature, body):
+            log.warning("Invalid GitHub webhook signature")
             return "", 401
             
         # Import Wave 6 components
@@ -483,13 +487,31 @@ def relay_mobile():
         # broadcast to mobile WS clients
         notify_all({
             "channel": "mobile",
-            "type": payload.get("type", "answer"), 
+            "type": payload.get("type", "answer"),
             "text": payload.get("text", ""),
             "meetingId": payload.get("meetingId", "")
         })
         return jsonify({"ok": True})
     except Exception as e:
         log.error(f"Error relaying to mobile: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# --- Wave 7 Electron Overlay Relay ---
+@app.route("/api/relay/electron", methods=['POST'])
+@subscription_required
+@rate_limit('meeting')
+def relay_electron():
+    """Relay answers to local Electron overlay."""
+    try:
+        payload = request.get_json(force=True) or {}
+        record_cost(tokens=50)
+
+        from app.private_overlay import show_ai_response
+        show_ai_response(payload.get("text", ""), payload.get("type", "answer"))
+        return jsonify({"ok": True})
+    except Exception as e:
+        log.error(f"Error relaying to electron overlay: {e}")
         return jsonify({"error": str(e)}), 500
 
 # --- Configuration Endpoints ---
