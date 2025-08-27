@@ -7,9 +7,10 @@ log = logging.getLogger(__name__)
 # Import managers to avoid circular imports
 def get_managers():
     from backend.integrations.github_manager import GitHubManager
-    from backend.integrations.jira_manager import JiraManager
+    from integrations.jira_client import JiraClient
     from backend.approvals import approvals
-    return GitHubManager(dry_run=True), JiraManager(dry_run=True), approvals
+    dry_run = os.getenv("APP_ENV", "").lower() != "prod"
+    return GitHubManager(dry_run=dry_run), JiraClient(dry_run=dry_run), approvals
 
 # Initialize managers (dry_run=True by default for safety)
 github, jira, approvals = get_managers()

@@ -1,7 +1,7 @@
 # backend/approvals.py
 from __future__ import annotations
 import time, threading, queue
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Iterable
 
 from backend.integrations.github_manager import GitHubManager
 from backend.integrations.jira_manager import JiraManager
@@ -49,6 +49,31 @@ approvals = ApprovalsQueue()
 # Expose integration managers for convenience across the backend
 github = GitHubManager(dry_run=True)
 jira = JiraManager(dry_run=True)
+
+
+def propose_jira_from_notes(project_key: str, notes: Iterable[Any]):
+    """Create Jira issue approval items from meeting notes.
+
+    Each entry in ``notes`` can be either a string or a mapping with
+    ``summary`` and optional ``description`` fields.  A ``jira.create``
+    approval is queued for every note and the created ``ApprovalItem``
+    objects are returned as a list.
+    """
+    items = []
+    for note in notes:
+        if isinstance(note, dict):
+            summary = note.get("summary") or note.get("text") or ""
+            description = note.get("description", summary)
+        else:
+            summary = str(note)
+            description = summary
+        payload = {
+            "project_key": project_key,
+            "summary": summary,
+            "description": description,
+        }
+        items.append(approvals.submit("jira.create", payload))
+    return items
 
 def request_pr_auto_reply(owner: str, repo: str, pr_number: int, jira_issue: Optional[str] = None):
     """Generate auto-reply suggestions for a PR and enqueue for approval.
