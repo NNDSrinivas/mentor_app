@@ -45,6 +45,7 @@ def _install_stub_dependencies() -> None:
         SimpleNamespace(DiarizationService=_StubDiarizationService),
     )
     sys.modules.pop("app.meeting_intelligence", None)
+    sys.modules.setdefault("app.meeting_intelligence", SimpleNamespace())
 
     class _StubJWTExceptions(Exception):
         pass
