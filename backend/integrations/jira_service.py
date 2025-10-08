@@ -320,7 +320,7 @@ class JiraIntegrationService:
             discovered_cloud_id: Optional[str] = None
             try:
                 discovered_cloud_id = self._discover_cloud_id(tokens.access_token, cloud_base_url)
-            except Exception:
+            except requests.RequestException:
                 discovered_cloud_id = None
             fallback_cloud_id = self._cloud_id_from_base(cloud_base_url)
             resolved_cloud_id = discovered_cloud_id or (connection.cloud_id if connection else None) or fallback_cloud_id
