@@ -125,6 +125,11 @@ def jira_search():
         top_k = int(request.args.get("top_k", 10))
     except ValueError:
         top_k = 10
+    # Cap top_k to prevent excessive resource usage
+    if top_k < 1:
+        top_k = 1
+    elif top_k > 100:
+        top_k = 100
     results = service.search(org_id, query, project, top_k=top_k)
     return jsonify(results)
 
