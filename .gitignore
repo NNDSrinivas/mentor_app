@@ -89,6 +89,7 @@ test_*.py
 demo_*.py
 setup_*.sh
 data/*.db
+!tests/test_meeting_intelligence.py
 
 # Internal documentation
 INTERNAL_README.md

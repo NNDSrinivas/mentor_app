@@ -22,6 +22,9 @@ from openai import OpenAI
 from app import screen_record
 from app.config import Config
 from backend.meeting_events import MeetingEventRouter
+from backend.db.base import session_scope
+from backend.db.utils import ensure_schema
+from backend.meeting_repository import add_transcript_segment, ensure_meeting
 
 # Import knowledge base functionality
 try:
@@ -81,6 +84,8 @@ active_sessions: Dict[str, dict] = {}
 session_queues: Dict[str, queue.Queue] = {}
 session_recordings: Dict[str, Optional[str]] = {}
 meeting_event_router = MeetingEventRouter()
+
+ensure_schema()
 
 
 class SessionStore:
@@ -836,6 +841,19 @@ def create_session():
         }
         session_store.add_participant(session_id, user_id)
 
+        try:
+            with session_scope() as knowledge_session:
+                ensure_meeting(
+                    knowledge_session,
+                    session_id=uuid.UUID(session_id),
+                    title=data.get('title') or meeting_type,
+                    provider='realtime',
+                    started_at=datetime.utcnow(),
+                    participants=data.get('participants') or [str(user_id)],
+                )
+        except Exception as exc:  # pragma: no cover - defensive log
+            print(f"⚠️ Failed to mirror meeting in knowledge store: {exc}")
+
         # Initialize event queue for this session
         session_queues[session_id] = queue.Queue()
         session_recordings[session_id] = None
@@ -1054,6 +1072,21 @@ def add_caption(session_id):
         ''', (session_id, text, speaker, is_question))
 
         db.commit()
+
+        ts_start_ms = int(data.get('ts_start_ms') or data.get('timestamp_ms') or int(time.time() * 1000))
+        ts_end_ms = int(data.get('ts_end_ms') or ts_start_ms)
+        try:
+            with session_scope() as knowledge_session:
+                add_transcript_segment(
+                    knowledge_session,
+                    session_id=uuid.UUID(session_id),
+                    text=text,
+                    speaker=speaker,
+                    ts_start_ms=ts_start_ms,
+                    ts_end_ms=ts_end_ms,
+                )
+        except Exception as exc:  # pragma: no cover - defensive log
+            print(f"⚠️ Failed to store transcript segment: {exc}")
 
         # Store caption in external memory service if available
         if memory_service:
