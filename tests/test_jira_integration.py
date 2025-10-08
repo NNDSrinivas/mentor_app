@@ -364,7 +364,9 @@ def test_load_sync_scalability(monkeypatch):
                 },
             }
 
-    service._fetch_updated_issues = lambda *args, **kwargs: generator()  # type: ignore[attr-defined]
+    def mock_fetch_updated_issues(*args, **kwargs):
+        return generator()
+    monkeypatch.setattr(service, "_fetch_updated_issues", mock_fetch_updated_issues)
     result = service.perform_sync(org_id)
     assert result["processed"] == 5000
     assert service.vector_store.count == 5000
