@@ -37,14 +37,23 @@ def _install_stub_dependencies() -> None:
         def assign_speaker_to_text(self, text):
             return None
 
+    class _StubMeetingIntelligence:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def analyze(self, *args, **kwargs):
+            return None
+
     sys.modules.pop("backend.diarization_service", None)
     sys.modules.setdefault(
         "backend.diarization_service",
         SimpleNamespace(DiarizationService=_StubDiarizationService),
     )
     sys.modules.pop("app.meeting_intelligence", None)
-
-
+    sys.modules.setdefault(
+        "app.meeting_intelligence",
+        SimpleNamespace(MeetingIntelligence=_StubMeetingIntelligence),
+    )
 def test_backend_register_login_and_resume_flow(tmp_path, monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "test-secret")
     backend_db = tmp_path / "backend.db"
