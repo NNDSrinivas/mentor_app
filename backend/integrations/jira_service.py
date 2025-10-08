@@ -691,25 +691,31 @@ class JiraIntegrationService:
             scored: Dict[str, Tuple[float, JiraIssue]] = {}
             for issue in text_matches:
                 scored[issue.issue_key] = (0.0, issue)
-            for issue_key, distance in vector_scores.items():
-                issue_query = session.query(JiraIssue).join(
+            # Bulk fetch all issues for vector search results in one query
+            vector_issue_keys = list(vector_scores.keys())
+            if vector_issue_keys:
+                vector_query = session.query(JiraIssue).join(
                     JiraProjectConfig,
                     JiraProjectConfig.connection_id == JiraIssue.connection_id,
                 )
-                issue_query = issue_query.filter(
+                vector_query = vector_query.filter(
                     JiraProjectConfig.org_id == org_id,
-                    JiraIssue.issue_key == issue_key,
+                    JiraIssue.issue_key.in_(vector_issue_keys),
                 )
-                issue_query = self._apply_issue_filters(
-                    issue_query, project, statuses, since_dt, assignee_value
+                vector_query = self._apply_issue_filters(
+                    vector_query, project, statuses, since_dt, assignee_value
                 )
-                issue = issue_query.one_or_none()
-                if issue is None:
-                    continue
-                score = distance
-                if issue.issue_key in scored:
-                    score = min(score, scored[issue.issue_key][0])
-                scored[issue.issue_key] = (score, issue)
+                vector_issues = vector_query.all()
+                # Map issue_key to JiraIssue object
+                issue_map = {issue.issue_key: issue for issue in vector_issues}
+                for issue_key, distance in vector_scores.items():
+                    issue = issue_map.get(issue_key)
+                    if issue is None:
+                        continue
+                    score = distance
+                    if issue.issue_key in scored:
+                        score = min(score, scored[issue.issue_key][0])
+                    scored[issue.issue_key] = (score, issue)
 
             ranked = sorted(scored.values(), key=lambda item: item[0])[:top_k]
             return [self._issue_to_dict(issue) for _, issue in ranked]
