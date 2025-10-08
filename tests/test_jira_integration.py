@@ -3,8 +3,9 @@ from __future__ import annotations
 import copy
 import importlib
 import sys
-import uuid
 import time
+import types
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -175,10 +176,65 @@ def test_sync_upsert_and_status(jira_env, monkeypatch):
     with jira.session_scope() as session:
         issue = (
             session.query(models.JiraIssue)
-            .filter(models.JiraIssue.issue_key == "PROJ-1")
+            .filter(
+                models.JiraIssue.connection_id == connection_id,
+                models.JiraIssue.issue_key == "PROJ-1",
+            )
             .one()
         )
         assert issue.summary.endswith("(updated)")
+
+
+def test_sync_allows_duplicate_issue_keys_per_connection(jira_env, monkeypatch):
+    env = jira_env
+    jira = env.jira_module
+    models = env.models
+    monkeypatch.delenv("MOCK_JIRA", raising=False)
+
+    org_a = uuid.uuid4()
+    org_b = uuid.uuid4()
+    user_a = uuid.uuid4()
+    user_b = uuid.uuid4()
+
+    connection_a = _create_connection(env, org_a, user_a, cloud_base_url="https://alpha.atlassian.net")
+    connection_b = _create_connection(env, org_b, user_b, cloud_base_url="https://beta.atlassian.net")
+    _create_config(env, org_a, connection_a, ["PROJ"])
+    _create_config(env, org_b, connection_b, ["PROJ"])
+
+    payloads = {
+        connection_a: [
+            {"key": "PROJ-1", "fields": {"project": {"key": "PROJ"}, "summary": "Alpha summary"}},
+        ],
+        connection_b: [
+            {"key": "PROJ-1", "fields": {"project": {"key": "PROJ"}, "summary": "Beta summary"}},
+        ],
+    }
+
+    def _fake_fetch(self, connection, access_token, jql, mock_mode=False, max_results=100):
+        for item in payloads[connection.id]:
+            yield item
+
+    monkeypatch.setattr(
+        jira.integration_service,
+        "_fetch_issues",
+        types.MethodType(_fake_fetch, jira.integration_service),
+    )
+
+    jira.integration_service.sync_now(org_a)
+    jira.integration_service.sync_now(org_b)
+
+    with jira.session_scope() as session:
+        issues = (
+            session.query(models.JiraIssue)
+            .filter(models.JiraIssue.issue_key == "PROJ-1")
+            .order_by(models.JiraIssue.connection_id)
+            .all()
+        )
+
+    assert len(issues) == 2
+    summaries = {issue.connection_id: issue.summary for issue in issues}
+    assert summaries[connection_a] == "Alpha summary"
+    assert summaries[connection_b] == "Beta summary"
 
 
 def test_fetch_pagination_handles_multiple_pages(jira_env, monkeypatch):

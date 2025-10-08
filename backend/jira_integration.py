@@ -519,8 +519,8 @@ class JiraIntegrationService:
         issue = (
             session.execute(
                 select(JiraIssue).where(
-                    JiraIssue.issue_key == issue_key,
                     JiraIssue.connection_id == connection.id,
+                    JiraIssue.issue_key == issue_key,
                 )
             )
             .scalars()
