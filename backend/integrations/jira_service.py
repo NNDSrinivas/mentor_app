@@ -199,7 +199,7 @@ class JiraIntegrationService:
         if assignee:
             if assignee.lower() == "me":
                 assignee_value = me_identifier or (
-                    str(connection.user_id) if connection is not None else None
+                    getattr(connection, "account_id", None) if connection is not None else None
                 )
             else:
                 assignee_value = assignee
