@@ -79,8 +79,8 @@ PhaseFocusETA
 
 Naga Durga Srinivas Nidamanuri
 📧 srinivasn7779@gmail.com
- | LinkedIn
- | GitHub
+ | LinkedIn:https://www.linkedin.com/in/nnd-srinivas/
+ | GitHub:https://github.com/NNDSrinivas
 
 ⚠️ Notice
 
