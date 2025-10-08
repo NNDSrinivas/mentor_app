@@ -98,6 +98,17 @@ def _install_stub_dependencies() -> None:
             InvalidTokenError=_StubInvalidTokenError,
         ),
     )
+
+    class _StubOpenAIChat:
+        def __init__(self):
+            self.completions = SimpleNamespace(create=lambda *args, **kwargs: _mock_chat_completion("stub"))
+
+    class _StubOpenAIClient:
+        def __init__(self, *args, **kwargs):
+            self.chat = _StubOpenAIChat()
+
+    sys.modules.pop("openai", None)
+    sys.modules.setdefault("openai", SimpleNamespace(OpenAI=_StubOpenAIClient))
 def test_backend_register_login_and_resume_flow(tmp_path, monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "test-secret")
     backend_db = tmp_path / "backend.db"
