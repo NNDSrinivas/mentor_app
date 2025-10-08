@@ -396,14 +396,15 @@ class JiraIntegrationService:
                     "status": issue.status or "",
                     "assignee": issue.assignee or "",
                     "project": issue.project_key or "",
+                    "issue_key": issue.issue_key,
                 }
-                indexed_payload.append((issue.issue_key, doc, metadata))
+                indexed_payload.append((str(issue.id), doc, metadata))
             config.last_sync_at = now
             session.add(config)
             session.flush()
 
-        for issue_key, document, metadata in indexed_payload:
-            self._vector_store.index_issue(issue_key, document, metadata)
+        for issue_id, document, metadata in indexed_payload:
+            self._vector_store.index_issue(issue_id, document, metadata)
             indexed += 1
 
         return JiraSyncResult(fetched=fetched, updated=updated, indexed=indexed)
@@ -622,13 +623,15 @@ class JiraIntegrationService:
         if not query.strip():
             return [self._issue_to_dict(issue) for issue in issues[:top_k]]
 
-        vector_scores = {res.issue_key: res.score for res in self._vector_store.search(query, limit=top_k * 2)}
+        vector_scores = {
+            res.issue_id: res.score for res in self._vector_store.search(query, limit=top_k * 2)
+        }
         ranked: List[Tuple[float, JiraIssue]] = []
         lowered_query = query.lower()
         for issue in issues:
             text = " ".join(filter(None, [issue.summary, issue.description, " ".join(issue.labels or [])])).lower()
             lexical = -2.0 if lowered_query and lowered_query in text else 0.0
-            vector = vector_scores.get(issue.issue_key, 0.0)
+            vector = vector_scores.get(str(issue.id), 0.0)
             combined = lexical + vector
             ranked.append((combined, issue))
 

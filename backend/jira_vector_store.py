@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class JiraVectorResult:
-    issue_key: str
+    issue_id: str
     score: float
 
 
@@ -56,25 +56,25 @@ class JiraVectorStore:
             self._client = None
             self._collection = None
 
-    def index_issue(self, issue_key: str, document: str, metadata: Dict[str, str]) -> None:
+    def index_issue(self, issue_id: str, document: str, metadata: Dict[str, str]) -> None:
         if not document.strip():
             document = metadata.get("summary", "")
 
         if self._collection is not None:
             self._collection.upsert(
-                ids=[issue_key],
+                ids=[issue_id],
                 documents=[document],
                 metadatas=[metadata],
             )
         else:
             combined = " ".join([document, metadata.get("summary", ""), metadata.get("status", "")])
-            self._fallback_store[issue_key] = combined
+            self._fallback_store[issue_id] = combined
 
-    def delete_issue(self, issue_key: str) -> None:
+    def delete_issue(self, issue_id: str) -> None:
         if self._collection is not None:
-            self._collection.delete(ids=[issue_key])
+            self._collection.delete(ids=[issue_id])
         else:
-            self._fallback_store.pop(issue_key, None)
+            self._fallback_store.pop(issue_id, None)
 
     def search(self, query: str, limit: int = 10) -> List[JiraVectorResult]:
         if not query.strip():
@@ -84,19 +84,19 @@ class JiraVectorStore:
             results = self._collection.query(query_texts=[query], n_results=limit)
             ids = results.get("ids", [[]])[0]
             distances = results.get("distances", [[]])[0] or []
-            return [JiraVectorResult(issue_key=_id, score=float(distance)) for _id, distance in zip(ids, distances)]
+            return [JiraVectorResult(issue_id=_id, score=float(distance)) for _id, distance in zip(ids, distances)]
 
         scores: List[Tuple[str, float]] = []
         lower_query = query.lower()
-        for issue_key, text in self._fallback_store.items():
+        for issue_id, text in self._fallback_store.items():
             text_lower = text.lower()
             if lower_query in text_lower:
                 score = float(text_lower.count(lower_query)) * -1.0
             else:
                 continue
-            scores.append((issue_key, score))
+            scores.append((issue_id, score))
         scores.sort(key=lambda item: item[1])
-        return [JiraVectorResult(issue_key=issue_key, score=score) for issue_key, score in scores[:limit]]
+        return [JiraVectorResult(issue_id=issue_id, score=score) for issue_id, score in scores[:limit]]
 
 
 __all__ = ["JiraVectorStore", "JiraVectorResult"]
