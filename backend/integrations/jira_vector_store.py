@@ -8,8 +8,13 @@ try:
     import chromadb  # type: ignore
     from chromadb.config import Settings  # type: ignore
     from chromadb.utils.embedding_functions import DefaultEmbeddingFunction  # type: ignore
-except Exception:  # pragma: no cover - fallback for tests without chromadb
+    try:
+        from chromadb import errors as chroma_errors  # type: ignore[attr-defined]
+    except ImportError:  # pragma: no cover - optional dependency details
+        chroma_errors = None  # type: ignore[assignment]
+except ImportError:  # pragma: no cover - fallback for tests without chromadb
     chromadb = None
+    chroma_errors = None  # type: ignore[assignment]
 
     class Settings:  # type: ignore[override]
         def __init__(self, persist_directory: Optional[str] = None) -> None:
@@ -18,6 +23,14 @@ except Exception:  # pragma: no cover - fallback for tests without chromadb
     class DefaultEmbeddingFunction:  # type: ignore[override]
         def __call__(self, texts: List[str]) -> List[List[float]]:
             return [[float(len(text))] for text in texts]
+
+
+_CHROMA_CLIENT_EXCEPTIONS = (RuntimeError, OSError, ValueError)
+if chroma_errors is not None and hasattr(chroma_errors, "ChromaError"):
+    _CHROMA_CLIENT_EXCEPTIONS = (
+        chroma_errors.ChromaError,
+        *_CHROMA_CLIENT_EXCEPTIONS,
+    )
 
 
 log = logging.getLogger(__name__)
@@ -40,7 +53,7 @@ class JiraIssueVectorStore:
                 collection,
                 embedding_function=DefaultEmbeddingFunction(),
             )
-        except Exception as exc:  # pragma: no cover - fallback path
+        except _CHROMA_CLIENT_EXCEPTIONS as exc:  # pragma: no cover - fallback path
             log.warning("Falling back to in-memory Chroma store: %s", exc)
             self._client = chromadb.Client(Settings())
             self._collection = self._client.get_or_create_collection(
