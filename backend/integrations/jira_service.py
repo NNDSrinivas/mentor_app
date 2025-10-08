@@ -472,13 +472,15 @@ class JiraIntegrationService:
 
     def _request_with_retry(self, method: str, url: str, **kwargs: Any) -> requests.Response:
         backoff_sequence = list(DEFAULT_RETRY_BACKOFF)
-        for attempt in range(len(backoff_sequence) + 1):
+        for attempt in range(len(backoff_sequence)):
             response = requests.request(method, url, timeout=30, **kwargs)
             if response.status_code != 429:
                 return response
             retry_after = response.headers.get("Retry-After")
-            delay = float(retry_after) if retry_after else backoff_sequence[min(attempt, len(backoff_sequence) - 1)]
+            delay = float(retry_after) if retry_after else backoff_sequence[attempt]
             time.sleep(min(delay, 5))
+        # Final attempt after all backoff intervals
+        response = requests.request(method, url, timeout=30, **kwargs)
         return response
 
     def _cloud_id_from_base(self, base_url: str) -> str:
