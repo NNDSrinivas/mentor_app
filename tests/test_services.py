@@ -27,7 +27,7 @@ def _mock_chat_completion(content: str):
     )
 
 
-def _install_stub_dependencies() -> None:
+def _install_stub_dependencies(monkeypatch: "pytest.MonkeyPatch") -> None:
     """Install lightweight stubs for optional heavy dependencies."""
     class _StubDiarizationService:
         def __init__(self, *args, **kwargs):
@@ -46,13 +46,13 @@ def _install_stub_dependencies() -> None:
         def analyze(self, *args, **kwargs):
             return None
 
-    sys.modules.pop("backend.diarization_service", None)
-    sys.modules.setdefault(
+    monkeypatch.setitem(
+        sys.modules,
         "backend.diarization_service",
         SimpleNamespace(DiarizationService=_StubDiarizationService),
     )
-    sys.modules.pop("app.meeting_intelligence", None)
-    sys.modules.setdefault(
+    monkeypatch.setitem(
+        sys.modules,
         "app.meeting_intelligence",
         SimpleNamespace(
             MeetingIntelligence=_StubMeetingIntelligence,
@@ -88,8 +88,8 @@ def _install_stub_dependencies() -> None:
             raise _StubExpiredSignatureError("Token expired")
         return payload
 
-    sys.modules.pop("jwt", None)
-    sys.modules.setdefault(
+    monkeypatch.setitem(
+        sys.modules,
         "jwt",
         SimpleNamespace(
             encode=_stub_encode,
@@ -98,13 +98,27 @@ def _install_stub_dependencies() -> None:
             InvalidTokenError=_StubInvalidTokenError,
         ),
     )
+
+    class _StubOpenAIChat:
+        def __init__(self):
+            self.completions = SimpleNamespace(create=lambda *args, **kwargs: _mock_chat_completion("stub"))
+
+    class _StubOpenAIClient:
+        def __init__(self, *args, **kwargs):
+            self.chat = _StubOpenAIChat()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(OpenAI=_StubOpenAIClient),
+    )
 def test_backend_register_login_and_resume_flow(tmp_path, monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "test-secret")
     backend_db = tmp_path / "backend.db"
     monkeypatch.setenv("DATABASE_PATH", str(backend_db))
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    _install_stub_dependencies()
+    _install_stub_dependencies(monkeypatch)
     _reset_module("production_backend")
     backend = importlib.import_module("production_backend")
 
@@ -167,7 +181,7 @@ def test_realtime_session_flow(tmp_path, monkeypatch):
     monkeypatch.setenv("REALTIME_DATABASE_PATH", str(realtime_db))
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    _install_stub_dependencies()
+    _install_stub_dependencies(monkeypatch)
     _reset_module("production_backend")
     backend = importlib.import_module("production_backend")
     with backend.app.app_context():

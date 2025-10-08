@@ -1,0 +1,19 @@
+{
+  "issues": [
+    {
+      "id": "10003",
+      "key": "PROJ-3",
+      "fields": {
+        "summary": "Improve dashboard performance",
+        "description": "Optimize queries for analytics dashboard",
+        "status": {"name": "Done"},
+        "priority": {"name": "Low"},
+        "assignee": {"displayName": "Alice"},
+        "reporter": {"displayName": "Evan"},
+        "labels": ["performance"],
+        "updated": "2024-04-28T08:00:00.000+0000"
+      }
+    }
+  ],
+  "total": 3
+}

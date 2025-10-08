@@ -1,0 +1,33 @@
+{
+  "issues": [
+    {
+      "id": "10001",
+      "key": "PROJ-1",
+      "fields": {
+        "summary": "Implement authentication",
+        "description": "Add OAuth support to application",
+        "status": {"name": "In Progress"},
+        "priority": {"name": "High"},
+        "assignee": {"displayName": "Alice"},
+        "reporter": {"displayName": "Bob"},
+        "labels": ["backend", "oauth"],
+        "updated": "2024-04-30T10:00:00.000+0000"
+      }
+    },
+    {
+      "id": "10002",
+      "key": "PROJ-2",
+      "fields": {
+        "summary": "Fix onboarding bug",
+        "description": "Resolve issue affecting new signups",
+        "status": {"name": "In Progress"},
+        "priority": {"name": "Medium"},
+        "assignee": {"displayName": "Charlie"},
+        "reporter": {"displayName": "Dana"},
+        "labels": ["bug"],
+        "updated": "2024-04-29T09:00:00.000+0000"
+      }
+    }
+  ],
+  "total": 3
+}
