@@ -191,7 +191,7 @@ class MeetingEventRouter:
                 return int(raw)
             if raw > 10**9:
                 return int(raw * 1000)
-        return int(datetime.utcnow().timestamp() * 1000)
+        return int(datetime.now(timezone.utc).timestamp() * 1000)
 
     @staticmethod
     def _normalise_speaker_for_detector(speaker: str) -> str:
