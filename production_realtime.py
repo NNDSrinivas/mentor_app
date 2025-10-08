@@ -21,6 +21,7 @@ from openai import OpenAI
 
 from app import screen_record
 from app.config import Config
+from backend.meeting_events import MeetingEventRouter
 
 # Import knowledge base functionality
 try:
@@ -79,6 +80,7 @@ if ENABLE_MEMORY_SERVICE:
 active_sessions: Dict[str, dict] = {}
 session_queues: Dict[str, queue.Queue] = {}
 session_recordings: Dict[str, Optional[str]] = {}
+meeting_event_router = MeetingEventRouter()
 
 
 class SessionStore:
@@ -786,6 +788,18 @@ def health_check():
         'timestamp': datetime.utcnow().isoformat(),
         'active_sessions': len(active_sessions)
     }), 200
+
+
+@app.route('/api/meeting-events', methods=['POST'])
+def realtime_meeting_events():
+    """Accept meeting intelligence events from capture clients."""
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = meeting_event_router.handle_event(payload)
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    return jsonify({'ok': True, 'result': result})
 
 @app.route('/api/sessions', methods=['POST'])
 @require_auth

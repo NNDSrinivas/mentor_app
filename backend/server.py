@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from typing import Set
 from backend.integrations.github_manager import GitHubManager
+from backend.meeting_events import MeetingEventRouter
 from backend.memory_service import MemoryService
 from backend.recording_service import RecordingService
 from app.task_manager import Task, TaskManager
@@ -47,6 +48,7 @@ connected_clients: Set[_Any] = set()
 task_manager = TaskManager()
 memory_service = MemoryService()
 recording_service = RecordingService()
+meeting_event_router = MeetingEventRouter()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -89,6 +91,28 @@ def get_transcript(meeting_id: str):
             except Exception:
                 continue
     return jsonify(entries)
+
+
+@app.route('/api/meeting-events', methods=['POST'])
+@rate_limit('meeting')
+def post_meeting_event():
+    """Ingest structured meeting events from capture clients."""
+
+    payload = request.get_json(silent=True) or {}
+
+    tokens_raw = payload.get('tokens', 0)
+    try:
+        tokens = int(tokens_raw)
+    except (TypeError, ValueError):
+        tokens = 0
+    record_cost(tokens=tokens)
+
+    try:
+        result = meeting_event_router.handle_event(payload)
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+
+    return jsonify({'ok': True, 'result': result})
 
 # --- Approvals REST API ---
 @app.route("/api/approvals", methods=['GET'])
