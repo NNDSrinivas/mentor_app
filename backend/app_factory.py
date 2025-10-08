@@ -1,6 +1,7 @@
 from __future__ import annotations
 from flask import Flask, jsonify, request
 from .healthz import bp as healthz_bp
+from .meeting_events import MeetingEventRouter
 from .middleware import rate_limit, record_cost
 
 
@@ -10,6 +11,8 @@ def create_app():
     # Register health check blueprint
     app.register_blueprint(healthz_bp)
 
+    router = MeetingEventRouter()
+
     @app.post("/api/meeting-events")
     @rate_limit("meeting")
     def meeting_events():
@@ -17,6 +20,10 @@ def create_app():
         # track token usage; default to 0 if not provided
         tokens = int(payload.get("tokens", 0)) if isinstance(payload.get("tokens"), int) else 0
         record_cost(tokens=tokens)
-        return jsonify({"ok": True})
+        try:
+            result = router.handle_event(payload)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"ok": True, "result": result})
 
     return app
