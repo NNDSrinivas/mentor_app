@@ -11,7 +11,7 @@ try:  # pragma: no cover - optional dependency
     from chromadb.utils.embedding_functions import (  # type: ignore
         DefaultEmbeddingFunction,
     )
-except Exception:  # pragma: no cover - fallback when chromadb unavailable
+except (ImportError, ModuleNotFoundError):  # pragma: no cover - fallback when chromadb unavailable
     chromadb = None
 
     class Settings:  # type: ignore[override]
