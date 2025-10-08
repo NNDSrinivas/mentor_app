@@ -588,7 +588,7 @@ class JiraIntegrationService:
             if status:
                 query = query.where(func.lower(func.coalesce(JiraIssue.status, "")) == status.lower())
             if updated_since:
-                query = query.where(JiraIssue.updated != None, JiraIssue.updated >= updated_since)  # noqa: E711
+                query = query.where(JiraIssue.updated is not None, JiraIssue.updated >= updated_since)
 
             query = query.order_by(JiraIssue.updated.desc().nullslast())
             issues = session.execute(query).scalars().all()
