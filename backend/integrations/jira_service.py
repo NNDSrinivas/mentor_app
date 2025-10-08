@@ -541,7 +541,13 @@ class JiraIntegrationService:
             if response.status_code != 429:
                 return response
             retry_after = response.headers.get("Retry-After")
-            delay = float(retry_after) if retry_after else backoff_sequence[min(attempt, len(backoff_sequence) - 1)]
+            if retry_after:
+                delay = float(retry_after)
+            else:
+                if attempt < len(backoff_sequence):
+                    delay = backoff_sequence[attempt]
+                else:
+                    delay = backoff_sequence[-1]
             time.sleep(min(delay, 5))
         return response
 
