@@ -42,7 +42,7 @@ def _parse_datetime(value: Optional[str]) -> Optional[dt.datetime]:
         return None
     try:
         return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except Exception:
+    except ValueError:
         return None
 
 
