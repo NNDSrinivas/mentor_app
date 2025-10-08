@@ -50,7 +50,7 @@ try:
     from backend.db.utils import ensure_schema
     from backend.meeting_repository import add_transcript_segment, ensure_meeting
     DB_INTEGRATION_AVAILABLE = True
-except Exception:  # pragma: no cover - optional integration for tests
+except ImportError:  # pragma: no cover - optional integration for tests
     from contextlib import contextmanager
     from types import SimpleNamespace
 
