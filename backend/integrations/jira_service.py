@@ -71,32 +71,33 @@ def _parse_updated_since(value: Optional[str]) -> Optional[dt.datetime]:
 def _collect_adf_text(node: Any, parts: List[str]) -> None:
     """Extract readable text from Atlassian document format nodes."""
 
-    if isinstance(node, list):
-        for child in node:
-            _collect_adf_text(child, parts)
-        return
-
-    if not isinstance(node, dict):
-        return
-
-    node_type = node.get("type")
-
-    if node_type == "text":
-        text = node.get("text")
-        if text:
-            parts.append(str(text))
-
-    if node_type == "hardBreak":
-        parts.append("\n")
-
-    content = node.get("content")
-    if content:
-        before_len = len(parts)
-        _collect_adf_text(content, parts)
-        if node_type in {"paragraph", "heading"} and len(parts) > before_len:
+    stack = [(node, None)]  # (current node, parent_type)
+    while stack:
+        current, parent_type = stack.pop()
+        if isinstance(current, list):
+            # Push children in reverse order to preserve original order
+            for child in reversed(current):
+                stack.append((child, parent_type))
+            continue
+        if not isinstance(current, dict):
+            continue
+        node_type = current.get("type")
+        if node_type == "text":
+            text = current.get("text")
+            if text:
+                parts.append(str(text))
+        if node_type == "hardBreak":
             parts.append("\n")
-
-
+        content = current.get("content")
+        if content:
+            before_len = len(parts)
+            stack.append((("CONTENT_MARKER", node_type, before_len), None))
+            stack.append((content, node_type))
+        elif isinstance(current, tuple) and current and current[0] == "CONTENT_MARKER":
+            # This is a marker to check after processing content
+            _, node_type, before_len = current
+            if node_type in {"paragraph", "heading"} and len(parts) > before_len:
+                parts.append("\n")
 def _normalize_description(value: Any) -> Optional[str]:
     """Convert Jira description payloads to a plain string."""
 
