@@ -89,3 +89,6 @@ test_*.py
 demo_*.py
 setup_*.sh
 data/*.db
+
+# Internal documentation
+INTERNAL_README.md
