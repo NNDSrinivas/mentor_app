@@ -3,7 +3,12 @@
 This module handles environment variables and application settings.
 """
 import os
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
+    def load_dotenv(*_args, **_kwargs):
+        return False
 
 # Load environment variables from .env file
 load_dotenv()
