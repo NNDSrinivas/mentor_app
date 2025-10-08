@@ -1,0 +1,49 @@
+{
+  "issues": [
+    {
+      "id": "1",
+      "key": "PROJ-1",
+      "fields": {
+        "summary": "Implement OAuth flow",
+        "description": "Implement endpoints for Jira integration",
+        "status": {"name": "In Progress"},
+        "priority": {"name": "High"},
+        "assignee": {"displayName": "Alice Doe"},
+        "reporter": {"displayName": "Bob Doe"},
+        "labels": ["integration", "oauth"],
+        "project": {"key": "PROJ"},
+        "updated": "2024-03-14T10:00:00.000+0000"
+      }
+    },
+    {
+      "id": "2",
+      "key": "PROJ-2",
+      "fields": {
+        "summary": "Design search ranking",
+        "description": "Blend lexical and semantic scores",
+        "status": {"name": "To Do"},
+        "priority": {"name": "Medium"},
+        "assignee": {"displayName": "Bob Doe"},
+        "reporter": {"displayName": "Alice Doe"},
+        "labels": ["search"],
+        "project": {"key": "PROJ"},
+        "updated": "2024-03-13T08:30:00.000+0000"
+      }
+    },
+    {
+      "id": "3",
+      "key": "OPS-7",
+      "fields": {
+        "summary": "Stabilize integration worker",
+        "description": "Ensure retry logic for rate limits",
+        "status": {"name": "In Progress"},
+        "priority": {"name": "High"},
+        "assignee": {"displayName": "Ops Bot"},
+        "reporter": {"displayName": "Ops Lead"},
+        "labels": ["ops", "worker"],
+        "project": {"key": "OPS"},
+        "updated": "2024-03-15T12:45:00.000+0000"
+      }
+    }
+  ]
+}

@@ -20,8 +20,10 @@ CORS(app)
 # Ship-It PR: Add healthz blueprint
 from backend.healthz import bp as healthz_bp
 from backend.webhooks_jira import bp as jira_bp
+from backend.jira_api import bp as jira_integration_bp
 app.register_blueprint(healthz_bp)
 app.register_blueprint(jira_bp)
+app.register_blueprint(jira_integration_bp)
 
 # Ship-It PR: Add middleware for rate limiting and cost tracking
 from backend.middleware import rate_limit, record_cost
