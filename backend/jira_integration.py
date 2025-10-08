@@ -516,7 +516,12 @@ class JiraIntegrationService:
         url = f"{connection.cloud_base_url.rstrip('/')}/browse/{issue_key}"
 
         issue = (
-            session.execute(select(JiraIssue).where(JiraIssue.issue_key == issue_key))
+            session.execute(
+                select(JiraIssue).where(
+                    JiraIssue.issue_key == issue_key,
+                    JiraIssue.connection_id == connection.id,
+                )
+            )
             .scalars()
             .first()
         )

@@ -55,7 +55,7 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column("connection_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("jira_connection.id"), nullable=False),
         sa.Column("project_key", sa.Text(), nullable=False),
-        sa.Column("issue_key", sa.Text(), nullable=False, unique=True),
+        sa.Column("issue_key", sa.Text(), nullable=False),
         sa.Column("summary", sa.Text(), nullable=True),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("status", sa.Text(), nullable=True),
@@ -69,6 +69,7 @@ def upgrade() -> None:
         sa.Column("url", sa.Text(), nullable=True),
         sa.Column("raw", jsonb, nullable=True),
         sa.Column("indexed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.UniqueConstraint("connection_id", "issue_key", name="uq_jira_issue_connection_issue"),
     )
 
 

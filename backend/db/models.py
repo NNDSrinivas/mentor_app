@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.types import JSON, TypeDecorator
 
@@ -120,11 +120,12 @@ class JiraProjectConfig(Base):
 
 class JiraIssue(Base):
     __tablename__ = "jira_issue"
+    __table_args__ = (UniqueConstraint("connection_id", "issue_key", name="uq_jira_issue_connection_issue"),)
 
     id = Column(UUID_TYPE, primary_key=True, default=uuid.uuid4)
     connection_id = Column(UUID_TYPE, ForeignKey("jira_connection.id"), nullable=False)
     project_key = Column(Text, nullable=False)
-    issue_key = Column(Text, unique=True, nullable=False)
+    issue_key = Column(Text, nullable=False)
     summary = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
     status = Column(Text, nullable=True)
