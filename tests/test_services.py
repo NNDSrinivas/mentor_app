@@ -1,6 +1,8 @@
 import importlib
 import os
 import sys
+import uuid
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -52,7 +54,49 @@ def _install_stub_dependencies() -> None:
     sys.modules.pop("app.meeting_intelligence", None)
     sys.modules.setdefault(
         "app.meeting_intelligence",
-        SimpleNamespace(MeetingIntelligence=_StubMeetingIntelligence),
+        SimpleNamespace(
+            MeetingIntelligence=_StubMeetingIntelligence,
+            meeting_intelligence=_StubMeetingIntelligence(),
+        ),
+    )
+
+    class _StubJWTExceptions(Exception):
+        pass
+
+    class _StubExpiredSignatureError(_StubJWTExceptions):
+        pass
+
+    class _StubInvalidTokenError(_StubJWTExceptions):
+        pass
+
+    token_store = {}
+
+    def _stub_encode(payload, secret, algorithm="HS256"):
+        token = f"stub-token-{uuid.uuid4()}"
+        token_store[token] = (payload, secret)
+        return token
+
+    def _stub_decode(token, secret, algorithms=None):
+        stored = token_store.get(token)
+        if not stored:
+            raise _StubInvalidTokenError("Unknown token")
+        payload, stored_secret = stored
+        if stored_secret != secret:
+            raise _StubInvalidTokenError("Secret mismatch")
+        exp = payload.get("exp")
+        if isinstance(exp, datetime) and exp < datetime.utcnow():
+            raise _StubExpiredSignatureError("Token expired")
+        return payload
+
+    sys.modules.pop("jwt", None)
+    sys.modules.setdefault(
+        "jwt",
+        SimpleNamespace(
+            encode=_stub_encode,
+            decode=_stub_decode,
+            ExpiredSignatureError=_StubExpiredSignatureError,
+            InvalidTokenError=_StubInvalidTokenError,
+        ),
     )
 def test_backend_register_login_and_resume_flow(tmp_path, monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "test-secret")
