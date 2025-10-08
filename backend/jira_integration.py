@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import hashlib
 import json
 import os
@@ -20,6 +21,9 @@ from sqlalchemy.orm import Session
 from backend.db.base import session_scope
 from backend.db.models import JiraConnection, JiraIssue, JiraProjectConfig
 from backend.jira_vector_store import JiraVectorStore
+
+
+logger = logging.getLogger(__name__)
 
 
 JIRA_OAUTH_AUTHORIZE_URL = "https://auth.atlassian.com/authorize"
@@ -347,8 +351,7 @@ class JiraIntegrationService:
             try:
                 self.sync_now(org_id)
             except Exception:
-                # swallow exceptions to avoid crashing the worker thread
-                pass
+                logger.exception("Failed to sync Jira issues for org %s", org_id)
 
     def sync_now(self, org_id: uuid.UUID) -> JiraSyncResult:
         mock_mode = os.getenv("MOCK_JIRA", "false").lower() == "true"
