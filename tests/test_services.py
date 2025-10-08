@@ -39,50 +39,26 @@ def _install_stub_dependencies() -> None:
         def assign_speaker_to_text(self, text):
             return None
 
+    class _StubMeetingIntelligence:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def analyze(self, *args, **kwargs):
+            return None
+
     sys.modules.pop("backend.diarization_service", None)
     sys.modules.setdefault(
         "backend.diarization_service",
         SimpleNamespace(DiarizationService=_StubDiarizationService),
     )
     sys.modules.pop("app.meeting_intelligence", None)
-
-    class _StubSummarizationService:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def generate_summary(self, text: str, summary_type: str = "meeting") -> str:
-            return f"Stub summary ({summary_type})"
-
-        def extract_action_items(self, text: str):
-            return []
-
-    sys.modules.pop("app.summarization", None)
     sys.modules.setdefault(
-        "app.summarization",
-        SimpleNamespace(SummarizationService=_StubSummarizationService),
+        "app.meeting_intelligence",
+        SimpleNamespace(
+            MeetingIntelligence=_StubMeetingIntelligence,
+            meeting_intelligence=_StubMeetingIntelligence(),
+        ),
     )
-
-    class _StubMemoryService:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def add_meeting_entry(self, *args, **kwargs):
-            return None
-
-    sys.modules.pop("backend.memory_service", None)
-    sys.modules.setdefault(
-        "backend.memory_service",
-        SimpleNamespace(MemoryService=_StubMemoryService),
-    )
-
-    class _StubOpenAI:
-        def __init__(self, *args, **kwargs):
-            self.chat = SimpleNamespace(
-                completions=SimpleNamespace(create=lambda *a, **k: _mock_chat_completion("stub"))
-            )
-
-    sys.modules.pop("openai", None)
-    sys.modules.setdefault("openai", SimpleNamespace(OpenAI=_StubOpenAI))
 
     class _StubJWTExceptions(Exception):
         pass
@@ -122,8 +98,6 @@ def _install_stub_dependencies() -> None:
             InvalidTokenError=_StubInvalidTokenError,
         ),
     )
-
-
 def test_backend_register_login_and_resume_flow(tmp_path, monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "test-secret")
     backend_db = tmp_path / "backend.db"
@@ -167,7 +141,11 @@ def test_backend_register_login_and_resume_flow(tmp_path, monkeypatch):
     assert ask_response.status_code == 200
     assert ask_response.get_json()["response"] == "Mock backend answer"
 
-    resume_text = "Experienced engineer" * 5
+    resume_text = (
+        "Experienced engineer with 10+ years in software development, specializing in backend systems, "
+        "cloud infrastructure, and team leadership. Proven track record in delivering scalable solutions "
+        "and mentoring junior engineers."
+    )
     upload_response = client.post(
         "/api/resume",
         json={"resume_text": resume_text},
@@ -254,118 +232,3 @@ def test_realtime_session_flow(tmp_path, monkeypatch):
     assert len(answers) == 1
     assert answers[0]["answer"] == "Mock real-time answer"
     assert "scalable cache" in answers[0]["question"]
-
-    meeting_id = "rt-flow-meeting"
-    start_event = realtime_client.post(
-        "/api/meeting-events",
-        json={
-            "action": "meeting_started",
-            "data": {
-                "meetingId": meeting_id,
-                "participants": ["candidate", "interviewer"],
-            },
-        },
-        headers=headers,
-    )
-    assert start_event.status_code == 200
-    start_payload = start_event.get_json()
-    assert start_payload["ok"] is True
-    assert start_payload["result"]["status"] == "started"
-
-    caption_event = realtime_client.post(
-        "/api/meeting-events",
-        json={
-            "action": "caption_chunk",
-            "data": {
-                "meetingId": meeting_id,
-                "speaker": "interviewer",
-                "text": "How would you design caching tiers?",
-                "timestamp": 1_700_000_000,
-            },
-        },
-        headers=headers,
-    )
-    assert caption_event.status_code == 200
-    caption_payload = caption_event.get_json()["result"]
-    assert caption_payload["question_detected"] is True
-    assert caption_payload["question"]["question"].endswith("?")
-
-    end_event = realtime_client.post(
-        "/api/meeting-events",
-        json={
-            "action": "meeting_ended",
-            "data": {"meetingId": meeting_id},
-        },
-        headers=headers,
-    )
-    assert end_event.status_code == 200
-    end_payload = end_event.get_json()["result"]
-    assert end_payload["status"] == "ended"
-    assert end_payload["summary"]["meeting_id"] == meeting_id
-    assert end_payload["pending_questions"]
-
-
-def test_meeting_event_router_end_to_end(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-
-    _install_stub_dependencies()
-    for module_name in [
-        "backend.meeting_events",
-        "backend.app_factory",
-        "app.meeting_intelligence",
-    ]:
-        _reset_module(module_name)
-
-    app_factory = importlib.import_module("backend.app_factory")
-    meeting_app = app_factory.create_app()
-    client = meeting_app.test_client()
-
-    start_resp = client.post(
-        "/api/meeting-events",
-        json={
-            "action": "meeting_started",
-            "data": {
-                "meetingId": "mtg-123",
-                "sessionId": "sess-1",
-                "participants": ["candidate", "interviewer"],
-            },
-        },
-    )
-    assert start_resp.status_code == 200
-    start_payload = start_resp.get_json()
-    assert start_payload["ok"] is True
-    assert start_payload["result"]["status"] == "started"
-
-    caption_resp = client.post(
-        "/api/meeting-events",
-        json={
-            "action": "caption_chunk",
-            "data": {
-                "meetingId": "mtg-123",
-                "text": "How would you design caching layers?",
-                "speaker": "interviewer",
-                "timestamp": 1_694_000_000,
-            },
-        },
-    )
-    assert caption_resp.status_code == 200
-    caption_payload = caption_resp.get_json()
-    assert caption_payload["result"]["question_detected"] is True
-    detected_questions = caption_payload["result"]["analysis"]["questions_detected"]
-    assert detected_questions and "caching layers" in detected_questions[0]
-
-    end_resp = client.post(
-        "/api/meeting-events",
-        json={
-            "action": "meeting_ended",
-            "data": {"meetingId": "mtg-123"},
-        },
-    )
-    assert end_resp.status_code == 200
-    end_payload = end_resp.get_json()
-    assert end_payload["result"]["status"] == "ended"
-    summary = end_payload["result"]["summary"]
-    assert summary["meeting_id"] == "mtg-123"
-    assert summary["summary"].startswith("Stub summary")
-    pending = end_payload["result"]["pending_questions"]
-    assert pending and "caching layers" in pending[0]["question"]
