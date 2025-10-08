@@ -30,7 +30,7 @@ class JiraTokenCipher:
             candidate = base64.urlsafe_b64encode(digest)
         try:
             return Fernet(candidate)
-        except Exception:  # pragma: no cover - invalid key fallback
+        except (ValueError, TypeError):  # pragma: no cover - invalid key fallback
             return None
 
     def encrypt(self, value: Optional[str]) -> Optional[str]:
