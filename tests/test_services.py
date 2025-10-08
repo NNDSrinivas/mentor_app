@@ -97,7 +97,11 @@ def test_backend_register_login_and_resume_flow(tmp_path, monkeypatch):
     assert ask_response.status_code == 200
     assert ask_response.get_json()["response"] == "Mock backend answer"
 
-    resume_text = "Experienced engineer" * 5
+    resume_text = (
+        "Experienced engineer with 10+ years in software development, specializing in backend systems, "
+        "cloud infrastructure, and team leadership. Proven track record in delivering scalable solutions "
+        "and mentoring junior engineers."
+    )
     upload_response = client.post(
         "/api/resume",
         json={"resume_text": resume_text},
