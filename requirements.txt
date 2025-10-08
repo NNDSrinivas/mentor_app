@@ -40,9 +40,6 @@ librosa==0.10.1
 websockets==12.0
 PyYAML==6.0.1
 
-# Fallback dependencies
-sqlite3
-
 # Optional advanced features
 # whisperx  # Commented out due to Python 3.13 compatibility issues
 pydub>=0.25.1
