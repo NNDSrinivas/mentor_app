@@ -11,6 +11,20 @@ def _auth():
     raw = f"{JIRA_USER}:{JIRA_TOKEN}".encode()
     return {"Authorization": "Basic " + base64.b64encode(raw).decode(), "Content-Type":"application/json"}
 
+
+def _json_or_empty(response: requests.Response) -> Dict[str, Any]:
+    """Return response JSON when present, otherwise an empty payload.
+
+    Jira returns HTTP 204 (No Content) for some successful operations. Calling
+    ``response.json()`` on these responses raises ``JSONDecodeError``. This
+    helper shields callers by returning an empty dictionary when there is no
+    payload to decode.
+    """
+
+    if response.status_code == 204 or not response.content:
+        return {}
+    return response.json()
+
 class JiraManager:
     def __init__(self, dry_run=True):
         self.dry_run = dry_run
@@ -36,9 +50,14 @@ class JiraManager:
     def update_issue(self, key: str, fields: Dict[str, Any]) -> Dict[str, Any]:
         if self.dry_run:
             return {"dry_run": True, "key": key, "fields": fields}
-        r = requests.put(f"{JIRA_BASE}/rest/api/3/issue/{key}", headers=_auth(), json={"fields": fields}, timeout=30)
+        r = requests.put(
+            f"{JIRA_BASE}/rest/api/3/issue/{key}",
+            headers=_auth(),
+            json={"fields": fields},
+            timeout=30,
+        )
         r.raise_for_status()
-        return r.json()
+        return _json_or_empty(r)
 
     def get_issue(self, key: str) -> Dict[str, Any]:
         """Get issue details (read-only, no approval needed)"""
@@ -89,9 +108,14 @@ class JiraManager:
         if self.dry_run:
             return {"dry_run": True, "key": key, "transition_id": transition_id, "comment": comment}
 
-        r = requests.post(f"{JIRA_BASE}/rest/api/3/issue/{key}/transitions", headers=_auth(), json=payload, timeout=30)
+        r = requests.post(
+            f"{JIRA_BASE}/rest/api/3/issue/{key}/transitions",
+            headers=_auth(),
+            json=payload,
+            timeout=30,
+        )
         r.raise_for_status()
-        return r.json()
+        return _json_or_empty(r)
 
     def get_transitions(self, key: str) -> Dict[str, Any]:
         """Get available transitions for an issue (read-only)"""
