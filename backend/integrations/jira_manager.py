@@ -21,7 +21,7 @@ def _json_or_empty(response: requests.Response) -> Dict[str, Any]:
     payload to decode.
     """
 
-    if response.status_code == 204 or not response.content:
+    if response.status_code == 204 or response.text.strip() == '':
         return {}
     return response.json()
 
