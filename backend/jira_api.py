@@ -64,7 +64,7 @@ def jira_oauth_callback():
         return jsonify({"error": "Missing authorization code"}), 400
     try:
         result = integration_service.complete_oauth(code, state=state)
-    except Exception as exc:  # pragma: no cover - error path
+    except (ValueError, RuntimeError) as exc:  # pragma: no cover - error path
         return jsonify({"error": str(exc)}), 400
     return jsonify(result)
 
