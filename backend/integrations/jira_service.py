@@ -114,7 +114,7 @@ def _normalize_description(value: Any) -> Optional[str]:
 
     try:
         return json.dumps(value)
-    except TypeError:
+    except (TypeError, ValueError):
         return str(value)
 
 
