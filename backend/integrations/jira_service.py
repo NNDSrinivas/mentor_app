@@ -555,8 +555,12 @@ class JiraIntegrationService:
                 try:
                     since_dt = dt.datetime.fromisoformat(updated_since)
                 except ValueError:
-                    since_dt = dt.datetime.fromisoformat(updated_since + "T00:00:00")
-                query = query.filter(JiraIssue.updated >= since_dt)
+                    try:
+                        since_dt = dt.datetime.fromisoformat(updated_since + "T00:00:00")
+                    except ValueError:
+                        since_dt = None
+                if since_dt is not None:
+                    query = query.filter(JiraIssue.updated >= since_dt)
 
             assignee_value = assignee
             if assignee == "me":
