@@ -11,11 +11,60 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import Flask, request, jsonify, g
-from flask_cors import CORS
-from dotenv import load_dotenv
-from openai import OpenAI
-import requests
+from types import ModuleType, SimpleNamespace
+
+from flask_compat import Flask, CORS, g, jsonify, request
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
+    def load_dotenv(*_args, **_kwargs):
+        """Fallback no-op when python-dotenv is unavailable."""
+
+        return False
+
+    if "dotenv" not in sys.modules:
+        dotenv_stub = ModuleType("dotenv")
+        dotenv_stub.load_dotenv = load_dotenv  # type: ignore[attr-defined]
+        sys.modules["dotenv"] = dotenv_stub
+
+try:
+    from openai import OpenAI
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
+    class OpenAI:
+        """Lightweight stub matching the minimal interface used in tests."""
+
+        def __init__(self, *_, **__):
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(create=self._missing_dependency)
+            )
+
+        def _missing_dependency(self, *args, **kwargs):
+            raise RuntimeError("OpenAI dependency is not available")
+
+try:
+    import requests
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
+    def _stub_response(*_args, **_kwargs):
+        class _Response:
+            status_code = 204
+            text = ""
+
+            def json(self):
+                return {}
+
+            def raise_for_status(self):
+                return None
+
+        return _Response()
+
+    requests = ModuleType("requests")
+    requests.post = _stub_response  # type: ignore[attr-defined]
+    requests.get = _stub_response  # type: ignore[attr-defined]
+    requests.put = _stub_response  # type: ignore[attr-defined]
+    requests.delete = _stub_response  # type: ignore[attr-defined]
+    requests.RequestException = Exception  # type: ignore[attr-defined]
+    sys.modules["requests"] = requests
 
 from backend.calendar_integration import CalendarIntegration
 

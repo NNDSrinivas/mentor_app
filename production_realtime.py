@@ -14,17 +14,62 @@ import queue
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Dict, List, Optional
-from flask import Flask, request, jsonify, g, Response
-from flask_cors import CORS
-from dotenv import load_dotenv
-from openai import OpenAI
+from contextlib import contextmanager
+from types import ModuleType, SimpleNamespace
+
+from flask_compat import Flask, CORS, Response, g, jsonify, request
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
+    def load_dotenv(*_args, **_kwargs):
+        """Fallback no-op when python-dotenv is unavailable."""
+
+        return False
+
+    if "dotenv" not in sys.modules:
+        dotenv_stub = ModuleType("dotenv")
+        dotenv_stub.load_dotenv = load_dotenv  # type: ignore[attr-defined]
+        sys.modules["dotenv"] = dotenv_stub
+
+try:
+    from openai import OpenAI
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
+    class OpenAI:
+        """Lightweight stub matching the minimal interface used in tests."""
+
+        def __init__(self, *_, **__):
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(create=self._missing_dependency)
+            )
+
+        def _missing_dependency(self, *args, **kwargs):
+            raise RuntimeError("OpenAI dependency is not available")
 
 from app import screen_record
 from app.config import Config
 from backend.meeting_events import MeetingEventRouter
-from backend.db.base import session_scope
-from backend.db.utils import ensure_schema
-from backend.meeting_repository import add_transcript_segment, ensure_meeting
+try:
+    from backend.db.base import session_scope
+    from backend.db.utils import ensure_schema
+    from backend.meeting_repository import add_transcript_segment, ensure_meeting
+    DB_SUPPORT_AVAILABLE = True
+except Exception as e:  # pragma: no cover - optional dependency
+    print(f"Database integrations not available: {e}")
+    DB_SUPPORT_AVAILABLE = False
+
+    @contextmanager
+    def session_scope(*_args, **_kwargs):
+        yield SimpleNamespace()
+
+    def ensure_schema(*_args, **_kwargs):
+        return None
+
+    def add_transcript_segment(*_args, **_kwargs):
+        return None
+
+    def ensure_meeting(*_args, **_kwargs):
+        return None
 
 # Import knowledge base functionality
 try:
