@@ -16,7 +16,7 @@ import codeReducer from './slices/codeSlice';
 import analyticsReducer from './slices/analyticsSlice';
 import settingsReducer from './slices/settingsSlice';
 import aiReducer from './slices/aiSlice';
-import syncReducer from './slices/syncSlice';
+import { syncReducer } from './slices';
 
 const persistConfig = {
   key: 'root',
