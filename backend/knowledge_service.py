@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import os
@@ -158,7 +159,63 @@ def _github_issue_search(query: str, top_k: int) -> List[Dict[str, Any]]:
 
 
 def _llm_client(*, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
-    raise RuntimeError("llm_client_not_configured")
+    """Call a JSON-constrained chat completion endpoint."""
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY not set for llm client")
+
+    api_base = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
+    model = os.getenv("OPENAI_API_MODEL", "gpt-4o-mini")
+
+    url = f"{api_base}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a concise meeting assistant that must respond in JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 600,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "GroundedAnswer",
+                "schema": schema,
+            },
+        },
+    }
+
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:  # pragma: no cover - network error surface
+        raise RuntimeError(f"LLM API error: {exc}") from exc
+
+    data = response.json()
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError("LLM API returned no choices")
+
+    message = choices[0].get("message") or {}
+    content = message.get("content")
+    if not content:
+        raise RuntimeError("LLM API returned empty content")
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("LLM API returned invalid JSON") from exc
+
+    if not isinstance(parsed, dict):
+        raise RuntimeError("LLM API returned non-object JSON")
+
+    return parsed
 
 
 _stream_broker = AnswerStreamBroker()
@@ -178,6 +235,8 @@ def _service_factory() -> AnswerGenerationService:
 
 
 _job_queue = AnswerJobQueue(_service_factory, get_session)
+_job_queue.start()
+atexit.register(_job_queue.close)
 
 
 @app.get("/api/health")
@@ -211,8 +270,9 @@ def ingest_caption(
     if not text:
         raise HTTPException(status_code=400, detail="empty_caption")
 
-    ts_start = payload.ts_start_ms or int(time.time() * 1000)
-    ts_end = payload.ts_end_ms or ts_start
+    now_ms = int(time.time() * 1000)
+    ts_start = payload.ts_start_ms if payload.ts_start_ms is not None else now_ms
+    ts_end = payload.ts_end_ms if payload.ts_end_ms is not None else ts_start
 
     segment = add_transcript_segment(
         db,
@@ -374,15 +434,9 @@ def generate_answer_endpoint(
     db: Session = Depends(_get_db),
 ) -> GenerateAnswerResponse:
     service = _service_factory()
-    job = AnswerJob(
-        session_id=payload.session_id,
-        segment_id=uuid.uuid4(),
-        text="",
-        ts_ms=int(time.time() * 1000),
-    )
-    result = service.process_job(
+    result = service.generate_direct_answer(
         db,
-        job,
+        session_id=payload.session_id,
         window_seconds=payload.window_seconds,
         topk_jira=payload.topk_jira,
         topk_code=payload.topk_code,

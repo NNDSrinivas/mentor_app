@@ -299,18 +299,20 @@ class AnswerGenerationService:
         return response
 
     # --- public API --------------------------------------------------
-    def process_job(
+    def _generate_and_record(
         self,
         session: Session,
-        job: AnswerJob,
         *,
-        window_seconds: int = 180,
-        topk_jira: int = 5,
-        topk_code: int = 5,
-        topk_prs: int = 5,
+        session_id: uuid.UUID,
+        latest_text: str,
+        enqueued_at: float,
+        window_seconds: int,
+        topk_jira: int,
+        topk_code: int,
+        topk_prs: int,
     ) -> Dict[str, Any]:
-        segments = self._load_segments(session, job.session_id, window_seconds)
-        latest_text = job.text or (segments[-1]["text"] if segments else "")
+        segments = self._load_segments(session, session_id, window_seconds)
+        latest_text = latest_text or (segments[-1]["text"] if segments else "")
         keywords = extract_noun_phrases(latest_text)
         context_bundle = self._retrieve_context(
             keywords,
@@ -343,12 +345,12 @@ class AnswerGenerationService:
             confidence = 0.1
             answer_text = "I'm still loading the latest context. I'll provide details shortly."
 
-        latency_ms = int((time.perf_counter() - job.enqueued_at) * 1000)
+        latency_ms = int((time.perf_counter() - enqueued_at) * 1000)
         token_count = len(answer_text.split())
 
         record = record_session_answer(
             session,
-            session_id=job.session_id,
+            session_id=session_id,
             answer=answer_text,
             citations=citations,
             confidence=confidence,
@@ -359,7 +361,7 @@ class AnswerGenerationService:
 
         payload = {
             "id": str(record.id),
-            "session_id": str(job.session_id),
+            "session_id": str(session_id),
             "answer": answer_text,
             "citations": citations,
             "confidence": confidence,
@@ -368,28 +370,96 @@ class AnswerGenerationService:
             "created_at": record.created_at.isoformat() if record.created_at else datetime.utcnow().isoformat(),
         }
 
-        self._stream.publish(job.session_id, {"event": "answer", "data": payload})
+        self._stream.publish(session_id, {"event": "answer", "data": payload})
         return payload
+
+    def process_job(
+        self,
+        session: Session,
+        job: AnswerJob,
+        *,
+        window_seconds: int = 180,
+        topk_jira: int = 5,
+        topk_code: int = 5,
+        topk_prs: int = 5,
+    ) -> Dict[str, Any]:
+        return self._generate_and_record(
+            session,
+            session_id=job.session_id,
+            latest_text=job.text,
+            enqueued_at=job.enqueued_at,
+            window_seconds=window_seconds,
+            topk_jira=topk_jira,
+            topk_code=topk_code,
+            topk_prs=topk_prs,
+        )
+
+    def generate_direct_answer(
+        self,
+        session: Session,
+        *,
+        session_id: uuid.UUID,
+        latest_text: str = "",
+        window_seconds: int = 180,
+        topk_jira: int = 5,
+        topk_code: int = 5,
+        topk_prs: int = 5,
+    ) -> Dict[str, Any]:
+        start = time.perf_counter()
+        return self._generate_and_record(
+            session,
+            session_id=session_id,
+            latest_text=latest_text,
+            enqueued_at=start,
+            window_seconds=window_seconds,
+            topk_jira=topk_jira,
+            topk_code=topk_code,
+            topk_prs=topk_prs,
+        )
 
 
 class AnswerJobQueue:
     """Simple background worker consuming ``AnswerJob``s."""
 
     def __init__(self, service_factory: Callable[[], AnswerGenerationService], session_factory: Callable[[], Session]):
-        self._queue: "queue.Queue[AnswerJob]" = queue.Queue()
+        self._queue: "queue.Queue[Optional[AnswerJob]]" = queue.Queue()
         self._service_factory = service_factory
         self._session_factory = session_factory
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self._lock = threading.Lock()
+
+    def start(self) -> None:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                return
+            if self._stop_event.is_set():
+                self._stop_event = threading.Event()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+    def close(self) -> None:
+        with self._lock:
+            thread = self._thread
+            if thread is None:
+                return
+            self._stop_event.set()
+            self._thread = None
+        self._queue.put(None)
+        thread.join(timeout=5)
 
     def enqueue(self, job: AnswerJob) -> None:
+        self.start()
         self._queue.put(job)
 
     def _run(self) -> None:
         while True:
             job = self._queue.get()
-            if job is None:  # pragma: no cover - graceful shutdown hook
-                break
+            if job is None:
+                if self._stop_event.is_set():
+                    self._stop_event.clear()
+                    break
+                continue
             service = self._service_factory()
             session = self._session_factory()
             try:
