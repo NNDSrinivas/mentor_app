@@ -450,8 +450,8 @@ def ask_question():
             {
                 "role": "system", 
                 "content": ("You are an expert AI assistant helping with interview preparation, "
-                           "coding questions, and technical discussions. Provide clear, "
-                           "concise, and accurate answers.")
+                            "coding questions, and technical discussions. Provide clear, "
+                            "concise, and accurate answers.")
             }
         ]
         
@@ -459,14 +459,14 @@ def ask_question():
             messages.append({
                 "role": "system", 
                 "content": (f"User's background (from resume): {resume_text[:1000]}... "
-                           f"Use this context to personalize your response.")
+                            f"Use this context to personalize your response.")
             })
         
         if interview_mode:
             messages.append({
                 "role": "system", 
                 "content": ("You are helping with interview preparation. "
-                           "Focus on clear explanations and practical examples.")
+                            "Focus on clear explanations and practical examples.")
             })
         
         messages.append({"role": "user", "content": question})

@@ -373,11 +373,9 @@ def detect_question(text: str) -> dict:
         confidence += 0.5
     
     # Check for basic question indicators
-    basic_indicator_found = False
     for indicator in basic_indicators:
         if indicator in text_clean:
             confidence += 0.4
-            basic_indicator_found = True
             break
     
     # Determine question type and add type-specific confidence
@@ -438,7 +436,7 @@ def detect_question(text: str) -> dict:
     }
 
 def add_to_conversation_memory(session_id: str, interaction_type: str, content: str, 
-                              speaker: str = None, metadata: dict = None, importance_score: float = 1.0):
+                               speaker: str = None, metadata: dict = None, importance_score: float = 1.0):
     """Add an interaction to conversation memory for enhanced context tracking"""
     try:
         db = get_db()
@@ -789,7 +787,7 @@ comprehensive guidance."""
                 {
                     "role": "system", 
                     "content": ("You are a helpful AI mentor providing intelligent "
-                               "interview assistance with conversation awareness.")
+                                "interview assistance with conversation awareness.")
                 },
                 {"role": "user", "content": system_prompt}
             ],
@@ -1398,13 +1396,13 @@ def search_knowledge_base():
             similarity_score = result.get('similarity_score', 0)
             formatted_results.append({
                 'content': (result['content'][:500] + '...' 
-                           if len(result['content']) > 500 
-                           else result['content']),
+                            if len(result['content']) > 500 
+                            else result['content']),
                 'similarity_score': similarity_score,
                 'metadata': result.get('metadata', {}),
                 'relevance': ('high' if similarity_score > 0.8 
-                             else 'medium' if similarity_score > 0.6 
-                             else 'low')
+                              else 'medium' if similarity_score > 0.6 
+                              else 'low')
             })
         
         return jsonify({
