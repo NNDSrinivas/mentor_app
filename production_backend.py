@@ -6,6 +6,7 @@ import os
 import sys
 import sqlite3
 import jwt
+import json
 import hashlib
 import uuid
 from datetime import datetime, timedelta
