@@ -417,8 +417,6 @@ export class CalendarService {
         timestamp: Date.now(),
       };
       
-      // This would call AIService in a real implementation
-      // For now, generate basic suggestions
       const topics = this.generateBasicTopics(event);
       const questions = this.generateBasicQuestions(event, context);
       const materials = this.generateBasicMaterials(event, context);
