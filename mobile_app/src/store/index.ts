@@ -9,7 +9,7 @@ import { combineReducers } from '@reduxjs/toolkit';
 
 // Reducers
 import appReducer from './slices/appSlice';
-import dashboardReducer from './slices/dashboardSlice';
+import { dashboardReducer } from './slices';
 import tasksReducer from './slices/tasksSlice';
 import meetingsReducer from './slices/meetingsSlice';
 import codeReducer from './slices/codeSlice';
