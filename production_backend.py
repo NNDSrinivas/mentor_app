@@ -77,7 +77,12 @@ if not JWT_SECRET:
 app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["https://meet.google.com", "https://teams.microsoft.com", "https://*.zoom.us", "http://localhost:*"],
+        "origins": [
+            "https://meet.google.com", 
+            "https://teams.microsoft.com", 
+            "https://*.zoom.us", 
+            "http://localhost:*"
+        ],
         "methods": ["GET", "POST", "PUT", "DELETE"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
@@ -442,14 +447,27 @@ def ask_question():
         
         # Generate response using OpenAI directly (simplified for production)
         messages = [
-            {"role": "system", "content": "You are an expert AI assistant helping with interview preparation, coding questions, and technical discussions. Provide clear, concise, and accurate answers."}
+            {
+                "role": "system", 
+                "content": ("You are an expert AI assistant helping with interview preparation, "
+                           "coding questions, and technical discussions. Provide clear, "
+                           "concise, and accurate answers.")
+            }
         ]
         
         if resume_text and interview_mode:
-            messages.append({"role": "system", "content": f"User's background (from resume): {resume_text[:1000]}... Use this context to personalize your response."})
+            messages.append({
+                "role": "system", 
+                "content": (f"User's background (from resume): {resume_text[:1000]}... "
+                           f"Use this context to personalize your response.")
+            })
         
         if interview_mode:
-            messages.append({"role": "system", "content": "You are helping with interview preparation. Focus on clear explanations and practical examples."})
+            messages.append({
+                "role": "system", 
+                "content": ("You are helping with interview preparation. "
+                           "Focus on clear explanations and practical examples.")
+            })
         
         messages.append({"role": "user", "content": question})
         
@@ -571,7 +589,8 @@ def create_session():
     cursor = db.cursor()
     session_id = str(uuid.uuid4())
     cursor.execute(
-        'INSERT INTO sessions (id, user_id, title, start_time, end_time, meeting_url, calendar_event_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        ('INSERT INTO sessions (id, user_id, title, start_time, end_time, '
+         'meeting_url, calendar_event_id) VALUES (?, ?, ?, ?, ?, ?, ?)'),
         (
             session_id,
             g.user_id,

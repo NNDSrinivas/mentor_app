@@ -51,22 +51,22 @@ const meetingsSlice = createSlice({
   reducers: {
     setMeetings: (state, action: PayloadAction<MeetingData[]>) => {
       state.meetings = action.payload;
-      meetingsSlice.caseReducers.categorizeeMeetings(state);
+      meetingsSlice.caseReducers.categorizeMeetings(state);
     },
     addMeeting: (state, action: PayloadAction<MeetingData>) => {
       state.meetings.push(action.payload);
-      meetingsSlice.caseReducers.categorizeeMeetings(state);
+      meetingsSlice.caseReducers.categorizeMeetings(state);
     },
     updateMeeting: (state, action: PayloadAction<MeetingData>) => {
       const index = state.meetings.findIndex(meeting => meeting.id === action.payload.id);
       if (index !== -1) {
         state.meetings[index] = action.payload;
-        meetingsSlice.caseReducers.categorizeeMeetings(state);
+        meetingsSlice.caseReducers.categorizeMeetings(state);
       }
     },
     deleteMeeting: (state, action: PayloadAction<string>) => {
       state.meetings = state.meetings.filter(meeting => meeting.id !== action.payload);
-      meetingsSlice.caseReducers.categorizeeMeetings(state);
+      meetingsSlice.caseReducers.categorizeMeetings(state);
     },
     updatePreparationStatus: (state, action: PayloadAction<{
       meetingId: string;
@@ -75,7 +75,7 @@ const meetingsSlice = createSlice({
       const meeting = state.meetings.find(m => m.id === action.payload.meetingId);
       if (meeting) {
         meeting.preparationStatus = action.payload.preparationStatus;
-        meetingsSlice.caseReducers.categorizeeMeetings(state);
+        meetingsSlice.caseReducers.categorizeMeetings(state);
       }
     },
     setCurrentMeeting: (state, action: PayloadAction<MeetingData | null>) => {
@@ -106,7 +106,7 @@ const meetingsSlice = createSlice({
       state.searchQuery = '';
       meetingsSlice.caseReducers.applyFilters(state);
     },
-    categorizeeMeetings: (state) => {
+    categorizeMeetings: (state) => {
       const now = new Date();
       const upcoming: MeetingData[] = [];
       const past: MeetingData[] = [];
@@ -135,7 +135,7 @@ const meetingsSlice = createSlice({
     applyFilters: (state) => {
       // This would filter meetings based on current filters
       // For now, we'll just call categorize which handles the basic filtering
-      meetingsSlice.caseReducers.categorizeeMeetings(state);
+      meetingsSlice.caseReducers.categorizeMeetings(state);
     },
     generatePreparationTasks: (state, action: PayloadAction<string>) => {
       const meeting = state.meetings.find(m => m.id === action.payload);

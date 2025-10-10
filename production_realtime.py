@@ -400,7 +400,11 @@ def detect_question(text: str) -> dict:
         confidence += min(max_score * 0.15, 0.4)  # Increased type bonus
     
     # Sentence structure analysis
-    if any(text_clean.startswith(phrase) for phrase in ['how would', 'what if', 'can you', 'could you', 'tell me', 'describe', 'give me']):
+    question_starters = [
+        'how would', 'what if', 'can you', 'could you', 
+        'tell me', 'describe', 'give me'
+    ]
+    if any(text_clean.startswith(phrase) for phrase in question_starters):
         confidence += 0.2
     
     # Length analysis - very short texts are less likely to be questions
@@ -774,13 +778,19 @@ Please provide a helpful, contextual response that:
 5. Is appropriate for a {session['meeting_type']} context and {complexity} complexity level
 6. Helps the candidate succeed in their interview
 
-Keep responses under 300 words and be practical and actionable. If this question relates to previous discussions or available knowledge, acknowledge that context and provide more comprehensive guidance."""
+Keep responses under 300 words and be practical and actionable. If this question relates to \
+previous discussions or available knowledge, acknowledge that context and provide more \
+comprehensive guidance."""
 
         # Call OpenAI API
         response = openai_client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are a helpful AI mentor providing intelligent interview assistance with conversation awareness."},
+                {
+                    "role": "system", 
+                    "content": ("You are a helpful AI mentor providing intelligent "
+                               "interview assistance with conversation awareness.")
+                },
                 {"role": "user", "content": system_prompt}
             ],
             max_tokens=400,
@@ -1099,7 +1109,10 @@ def add_caption(session_id):
         db = get_db()
         
         # Verify session exists and user owns it
-        cursor = db.execute('SELECT * FROM sessions WHERE id = ? AND user_id = ? AND is_active = 1', (session_id, user_id))
+        cursor = db.execute(
+            'SELECT * FROM sessions WHERE id = ? AND user_id = ? AND is_active = 1', 
+            (session_id, user_id)
+        )
         session = cursor.fetchone()
         
         if not session:
@@ -1382,11 +1395,16 @@ def search_knowledge_base():
         # Format results for response
         formatted_results = []
         for result in results:
+            similarity_score = result.get('similarity_score', 0)
             formatted_results.append({
-                'content': result['content'][:500] + '...' if len(result['content']) > 500 else result['content'],
-                'similarity_score': result.get('similarity_score', 0),
+                'content': (result['content'][:500] + '...' 
+                           if len(result['content']) > 500 
+                           else result['content']),
+                'similarity_score': similarity_score,
                 'metadata': result.get('metadata', {}),
-                'relevance': 'high' if result.get('similarity_score', 0) > 0.8 else 'medium' if result.get('similarity_score', 0) > 0.6 else 'low'
+                'relevance': ('high' if similarity_score > 0.8 
+                             else 'medium' if similarity_score > 0.6 
+                             else 'low')
             })
         
         return jsonify({
