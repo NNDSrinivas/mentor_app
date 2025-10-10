@@ -484,10 +484,13 @@ const DashboardScreen: React.FC = () => {
         {data.recentTasks.length > 0 && (
           <View style={styles.section}>
             <Title style={styles.sectionTitle}>Recent Tasks</Title>
-            <TaskQuickView
-              tasks={data.recentTasks.slice(0, 5)}
-              onTaskPress={(task) => {/* Navigate to task details */}}
-            />
+            {data.recentTasks.slice(0, 5).map((task, index) => (
+              <TaskQuickView
+                key={task.id || index}
+                task={task}
+                onPress={() => {/* Navigate to task details */}}
+              />
+            ))}
           </View>
         )}
 
