@@ -355,7 +355,7 @@ const DashboardScreen: React.FC = () => {
             </Paragraph>
           </View>
           <View style={styles.headerActions}>
-            <StatusIndicator status={connectionStatus} />
+            <StatusIndicator status={getStatusObject(connectionStatus)} />
             <IconButton
               icon="refresh"
               iconColor="#fff"
