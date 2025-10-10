@@ -355,7 +355,7 @@ const DashboardScreen: React.FC = () => {
             </Paragraph>
           </View>
           <View style={styles.headerActions}>
-            <StatusIndicator status={connectionStatus} />
+            <StatusIndicator status={getStatusObject(connectionStatus)} />
             <IconButton
               icon="refresh"
               iconColor="#fff"
@@ -378,30 +378,38 @@ const DashboardScreen: React.FC = () => {
           <Title style={styles.sectionTitle}>Today's Overview</Title>
           <View style={styles.metricsGrid}>
             <MetricCard
-              title="Meetings"
-              value={data.metrics.todaysMeetings}
-              icon="calendar"
-              color="#ff6b6b"
+              metric={{
+                title: "Meetings",
+                value: data.metrics.todaysMeetings,
+                icon: "calendar",
+                color: "#ff6b6b"
+              }}
               onPress={() => handleQuickAction('start_meeting')}
             />
             <MetricCard
-              title="Active Tasks"
-              value={data.metrics.activeTasks}
-              icon="checkbox-marked-circle"
-              color="#4ecdc4"
+              metric={{
+                title: "Active Tasks",
+                value: data.metrics.activeTasks,
+                icon: "checkbox-marked-circle",
+                color: "#4ecdc4"
+              }}
               onPress={() => handleQuickAction('create_task')}
             />
             <MetricCard
-              title="Code Reviews"
-              value={data.metrics.codeReviews}
-              icon="code-braces"
-              color="#45b7d1"
+              metric={{
+                title: "Code Reviews",
+                value: data.metrics.codeReviews,
+                icon: "code-braces",
+                color: "#45b7d1"
+              }}
             />
             <MetricCard
-              title="AI Insights"
-              value={data.metrics.aiInsights}
-              icon="brain"
-              color="#96ceb4"
+              metric={{
+                title: "AI Insights",
+                value: data.metrics.aiInsights,
+                icon: "brain",
+                color: "#96ceb4"
+              }}
               onPress={() => handleQuickAction('ai_assist')}
             />
           </View>
@@ -476,10 +484,13 @@ const DashboardScreen: React.FC = () => {
         {data.recentTasks.length > 0 && (
           <View style={styles.section}>
             <Title style={styles.sectionTitle}>Recent Tasks</Title>
-            <TaskQuickView
-              tasks={data.recentTasks.slice(0, 5)}
-              onTaskPress={(task) => {/* Navigate to task details */}}
-            />
+            {data.recentTasks.slice(0, 5).map((task, index) => (
+              <TaskQuickView
+                key={task.id || index}
+                task={task}
+                onPress={() => {/* Navigate to task details */}}
+              />
+            ))}
           </View>
         )}
 

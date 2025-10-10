@@ -122,13 +122,21 @@ class AdvancedPopup {
             const url = tab.url;
             
             let platform = 'unknown';
-            if (url.includes('meet.google.com')) platform = 'meet';
-            else if (url.includes('atlassian.net') || url.includes('jira')) platform = 'jira';
-            else if (url.includes('github.com')) platform = 'github';
-            else if (url.includes('linear.app')) platform = 'linear';
-            else if (url.includes('slack.com')) platform = 'slack';
-            else if (url.includes('zoom.us')) platform = 'zoom';
-            else if (url.includes('teams.microsoft.com')) platform = 'teams';
+            let hostname;
+            try {
+                hostname = (new URL(url)).hostname;
+            } catch (e) {
+                hostname = '';
+            }
+
+            // Match directly on hostname or subdomain as appropriate
+            if (hostname === 'meet.google.com') platform = 'meet';
+            else if (hostname === 'atlassian.net' || hostname.endsWith('.atlassian.net') || hostname === 'jira' || hostname.endsWith('.jira')) platform = 'jira';
+            else if (hostname === 'github.com' || hostname.endsWith('.github.com')) platform = 'github';
+            else if (hostname === 'linear.app' || hostname.endsWith('.linear.app')) platform = 'linear';
+            else if (hostname === 'slack.com' || hostname.endsWith('.slack.com')) platform = 'slack';
+            else if (hostname === 'zoom.us' || hostname.endsWith('.zoom.us')) platform = 'zoom';
+            else if (hostname === 'teams.microsoft.com' || hostname.endsWith('.teams.microsoft.com')) platform = 'teams';
 
             this.currentPlatform = platform;
             this.updatePlatformDisplay();
