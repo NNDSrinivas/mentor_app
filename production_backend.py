@@ -608,8 +608,8 @@ def create_session():
     cursor = db.cursor()
     session_id = str(uuid.uuid4())
     cursor.execute(
-        ('INSERT INTO sessions (id, user_id, title, start_time, end_time, '
-         'meeting_url, calendar_event_id) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+        """INSERT INTO sessions (id, user_id, title, start_time, end_time, meeting_url, calendar_event_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
             session_id,
             g.user_id,
