@@ -143,6 +143,71 @@ def list_transcript_segments(session: Session, meeting_id: uuid.UUID) -> List[mo
     )
 
 
+def list_recent_segments(
+    session: Session,
+    *,
+    session_id: uuid.UUID,
+    window_seconds: int,
+) -> List[models.TranscriptSegment]:
+    meeting = get_meeting_by_session(session, session_id)
+    if meeting is None:
+        return []
+
+    threshold_ms = max(0, window_seconds * 1000)
+    query = (
+        select(models.TranscriptSegment)
+        .where(models.TranscriptSegment.meeting_id == meeting.id)
+        .order_by(models.TranscriptSegment.ts_start_ms.desc())
+    )
+
+    segments = session.execute(query).scalars().all()
+    if threshold_ms == 0:
+        return list(reversed(segments))
+
+    latest_ts = segments[0].ts_end_ms if segments else 0
+    min_ts = latest_ts - threshold_ms
+    filtered = [seg for seg in segments if seg.ts_end_ms >= min_ts]
+    return list(reversed(filtered))
+
+
+def record_session_answer(
+    session: Session,
+    *,
+    session_id: uuid.UUID,
+    answer: str,
+    citations: Optional[List[dict]] = None,
+    confidence: Optional[float] = None,
+    token_count: Optional[int] = None,
+    latency_ms: Optional[int] = None,
+) -> models.SessionAnswer:
+    record = models.SessionAnswer(
+        id=uuid.uuid4(),
+        session_id=session_id,
+        answer=answer,
+        citations=citations or [],
+        confidence=confidence,
+        token_count=token_count,
+        latency_ms=latency_ms,
+        created_at=datetime.utcnow(),
+    )
+    session.add(record)
+    return record
+
+
+def list_session_answers(
+    session: Session,
+    session_id: uuid.UUID,
+    limit: int = 20,
+) -> List[models.SessionAnswer]:
+    query = (
+        select(models.SessionAnswer)
+        .where(models.SessionAnswer.session_id == session_id)
+        .order_by(models.SessionAnswer.created_at.desc())
+        .limit(limit)
+    )
+    return list(session.execute(query).scalars().all())
+
+
 def mark_meeting_completed(session: Session, meeting_id: uuid.UUID) -> None:
     meeting = session.get(models.Meeting, meeting_id)
     if meeting:
@@ -179,6 +244,9 @@ __all__ = [
     "replace_action_items",
     "list_action_items",
     "list_transcript_segments",
+    "list_recent_segments",
+    "record_session_answer",
+    "list_session_answers",
     "mark_meeting_completed",
     "search_meetings",
 ]

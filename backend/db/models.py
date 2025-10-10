@@ -8,6 +8,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -46,6 +47,22 @@ class TranscriptSegment(Base):
     ts_end_ms = Column(Integer, nullable=False)
     speaker = Column(String(255))
     text = Column(Text, nullable=False)
+
+
+class SessionAnswer(Base):
+    __tablename__ = "session_answer"
+    __table_args__ = (
+        Index("ix_session_answer_session_created", "session_id", "created_at", postgresql_using="btree"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id = Column(UUID(as_uuid=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    answer = Column(Text, nullable=False)
+    citations = _jsonb_column("citations")
+    confidence = Column(Numeric)
+    token_count = Column(Integer)
+    latency_ms = Column(Integer)
 
 
 class MeetingSummary(Base):
