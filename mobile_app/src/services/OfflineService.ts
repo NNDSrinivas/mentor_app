@@ -683,8 +683,8 @@ export class OfflineService {
   }
 
   private async decompressData(compressedData: string): Promise<string> {
-    // TODO: Implement actual decompression when real compression is added
-    // For the current whitespace compression, no decompression is needed
+    // TODO: Implement actual decompression (e.g., using pako) if/when real compression is enabled in compressData.
+    // For the current whitespace compression, no decompression is needed.
     try {
       // The current compression only removes whitespace, so data is still valid JSON/text
       // No decompression needed - return as-is
