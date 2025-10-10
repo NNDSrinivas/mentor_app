@@ -378,30 +378,38 @@ const DashboardScreen: React.FC = () => {
           <Title style={styles.sectionTitle}>Today's Overview</Title>
           <View style={styles.metricsGrid}>
             <MetricCard
-              title="Meetings"
-              value={data.metrics.todaysMeetings}
-              icon="calendar"
-              color="#ff6b6b"
+              metric={{
+                title: "Meetings",
+                value: data.metrics.todaysMeetings,
+                icon: "calendar",
+                color: "#ff6b6b"
+              }}
               onPress={() => handleQuickAction('start_meeting')}
             />
             <MetricCard
-              title="Active Tasks"
-              value={data.metrics.activeTasks}
-              icon="checkbox-marked-circle"
-              color="#4ecdc4"
+              metric={{
+                title: "Active Tasks",
+                value: data.metrics.activeTasks,
+                icon: "checkbox-marked-circle",
+                color: "#4ecdc4"
+              }}
               onPress={() => handleQuickAction('create_task')}
             />
             <MetricCard
-              title="Code Reviews"
-              value={data.metrics.codeReviews}
-              icon="code-braces"
-              color="#45b7d1"
+              metric={{
+                title: "Code Reviews",
+                value: data.metrics.codeReviews,
+                icon: "code-braces",
+                color: "#45b7d1"
+              }}
             />
             <MetricCard
-              title="AI Insights"
-              value={data.metrics.aiInsights}
-              icon="brain"
-              color="#96ceb4"
+              metric={{
+                title: "AI Insights",
+                value: data.metrics.aiInsights,
+                icon: "brain",
+                color: "#96ceb4"
+              }}
               onPress={() => handleQuickAction('ai_assist')}
             />
           </View>
