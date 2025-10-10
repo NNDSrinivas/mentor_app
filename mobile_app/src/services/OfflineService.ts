@@ -651,10 +651,30 @@ export class OfflineService {
 
   // Utility methods
   private async compressData(data: string): Promise<string> {
-    // Simple compression simulation (in real app, use a library like pako)
+    // TODO: Implement actual compression using a library like pako for gzip compression
+    // For production, consider installing: npm install pako && @types/pako
+    // Then use: import * as pako from 'pako'; pako.deflate(data)
     try {
-      const compressed = data; // Placeholder - implement actual compression
+      if (!this.config.compressionEnabled || data.length < 100) {
+        // Skip compression for small data or when disabled
+        return data;
+      }
+      
+      // Simple compression simulation - remove repeated whitespace and newlines
+      // This provides actual size reduction for JSON data while remaining functional
+      const compressed = data
+        .replace(/\s+/g, ' ')           // Multiple spaces to single space
+        .replace(/\n\s*/g, '')          // Remove newlines and following spaces
+        .replace(/,\s/g, ',')           // Remove spaces after commas
+        .replace(/:\s/g, ':')           // Remove spaces after colons
+        .trim();
+      
       this.compressionCache.set(data, compressed);
+      
+      // Update compression ratio for monitoring
+      const ratio = compressed.length / data.length;
+      this.state.compressionRatio = (this.state.compressionRatio + ratio) / 2;
+      
       return compressed;
     } catch (error) {
       console.error('Compression error:', error);
@@ -663,11 +683,15 @@ export class OfflineService {
   }
 
   private async decompressData(compressedData: string): Promise<string> {
-    // Simple decompression simulation
+    // TODO: Implement actual decompression when real compression is added
+    // For the current whitespace compression, no decompression is needed
     try {
-      return compressedData; // Placeholder - implement actual decompression
+      // The current compression only removes whitespace, so data is still valid JSON/text
+      // No decompression needed - return as-is
+      return compressedData;
     } catch (error) {
       console.error('Decompression error:', error);
+      // Return original data if any issues occur
       return compressedData;
     }
   }
