@@ -2,6 +2,7 @@
 Production Backend for AI Mentor - Q&A and Resume Service
 Port 8084 - Main service for browser extension and IDE plugins
 """
+# Standard library imports
 import os
 import sys
 import sqlite3
@@ -11,6 +12,8 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta
 from functools import wraps
+
+# Third-party imports
 try:
     from flask import Flask, request, jsonify, g
     from flask_cors import CORS

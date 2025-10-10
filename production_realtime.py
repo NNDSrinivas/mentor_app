@@ -3,6 +3,7 @@ Production Real-time Session Service for AI Mentor
 Handles live interview sessions, caption processing, and real-time AI responses
 Port 8080 - Complements the Q&A service on port 8084
 """
+# Standard library imports
 import os
 import sqlite3
 import json
@@ -14,6 +15,8 @@ import queue
 from datetime import datetime
 from functools import wraps
 from typing import Dict, List, Optional
+
+# Third-party imports
 try:
     from flask import Flask, request, jsonify, g, Response
     from flask_cors import CORS
