@@ -5,7 +5,6 @@ Port 8084 - Main service for browser extension and IDE plugins
 import os
 import sys
 import sqlite3
-import json
 import jwt
 import hashlib
 import uuid
@@ -37,6 +36,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
                     self.completions = _Completions()
 
             self.chat = _Chat()
+
 try:
     import requests
 except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
@@ -55,13 +55,12 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
 
 try:
     from backend.calendar_integration import CalendarIntegration
-except Exception as exc:  # pragma: no cover - optional integration
+except (ImportError, ModuleNotFoundError):  # pragma: no cover - optional integration
     CalendarIntegration = None  # type: ignore[assignment]
 
 # Import AI assistant functionality
 try:
     from app.ai_assistant import AIAssistant
-    from app.config import Config
     AI_ASSISTANT_AVAILABLE = True
 except ImportError as e:
     print(f"AI Assistant not available: {e}")
