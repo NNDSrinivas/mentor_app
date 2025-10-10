@@ -40,12 +40,12 @@ def chunk_source(
         end = min(start + chunk_size, total_lines)
         snippet_lines = lines[start:end]
         if snippet_lines:
+            joined_text = "\n".join(snippet_lines)
             chunk = CodeChunk(
                 path=path,
                 start_line=start + 1,
                 end_line=end,
-                text="\n".join(snippet_lines).strip()
-                or "\n".join(snippet_lines),
+                text=joined_text.strip() or joined_text,
             )
             chunks.append(chunk)
         if end == total_lines:

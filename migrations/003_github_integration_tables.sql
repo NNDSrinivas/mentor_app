@@ -2,14 +2,14 @@
 
 CREATE TABLE IF NOT EXISTS gh_connection (
     id TEXT PRIMARY KEY,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     installation_id TEXT,
     account_login TEXT,
     account_id TEXT,
     encrypted_access_token TEXT,
     encrypted_refresh_token TEXT,
-    token_expires_at TIMESTAMP,
+    token_expires_at TIMESTAMPTZ,
     scopes TEXT,
     mock INTEGER DEFAULT 0
 );
@@ -23,11 +23,11 @@ CREATE TABLE IF NOT EXISTS gh_repo (
     private INTEGER DEFAULT 0,
     url TEXT,
     head_sha TEXT,
-    last_index_at TIMESTAMP,
-    languages TEXT,
-    top_paths TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_index_at TIMESTAMPTZ,
+    languages JSONB,
+    top_paths JSONB,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_gh_repo_connection ON gh_repo(connection_id);
@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS gh_file (
     end_line INTEGER NOT NULL,
     snippet TEXT NOT NULL,
     embedding_id TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_gh_file_repo ON gh_file(repo_id);
@@ -55,12 +55,12 @@ CREATE TABLE IF NOT EXISTS gh_issue_pr (
     type TEXT NOT NULL,
     title TEXT NOT NULL,
     state TEXT,
-    updated_at TIMESTAMP,
+    updated_at TIMESTAMPTZ,
     url TEXT,
     snippet TEXT,
     embedding_id TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    ingested_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(repo_id, number, type)
 );
 

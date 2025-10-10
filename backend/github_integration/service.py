@@ -13,11 +13,16 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.db import session_scope
 from backend.db.models import GHConnection, GHFile, GHIssuePR, GHRepo
 from backend.github_integration.chunking import chunk_source, iter_language_from_path
 from backend.security.crypto import TokenEncryptor
+
+
+MAX_FILE_SIZE_BYTES = 256 * 1024
+MAX_SNIPPET_LENGTH = 600
 
 
 def _now() -> datetime:
@@ -348,7 +353,13 @@ class GitHubIntegrationService:
             repo_info = self._prepare_repo(repo_full_name)
             self._ingest_repo(index_id, repo_info)
             self._update_job(index_id, state="completed", progress=1.0, finished_at=_now())
-        except Exception as exc:  # pragma: no cover - defensive
+        except (
+            FileNotFoundError,
+            ValueError,
+            RuntimeError,
+            OSError,
+            SQLAlchemyError,
+        ) as exc:  # pragma: no cover - defensive
             self._update_job(
                 index_id,
                 state="failed",
@@ -381,7 +392,7 @@ class GitHubIntegrationService:
         file_rows: List[Dict[str, object]] = []
         for idx, file_path in enumerate(files, start=1):
             data = file_path.read_bytes()
-            if len(data) > 256 * 1024:
+            if len(data) > MAX_FILE_SIZE_BYTES:
                 self._update_progress(index_id, idx, total)
                 continue
             if b"\0" in data:
@@ -434,7 +445,7 @@ class GitHubIntegrationService:
                     state=payload.get("state"),
                     updated_at=_parse_datetime(payload.get("updated_at")),
                     url=payload.get("url"),
-                    snippet=payload.get("body", "")[:600],
+                    snippet=payload.get("body", "")[:MAX_SNIPPET_LENGTH],
                 )
                 session.add(issue)
 
