@@ -137,17 +137,24 @@ class AdvancedAIAssistant {
         }
     }
 
+    static isHostOrSubdomain(host, domain) {
+        return host === domain || host.endsWith('.' + domain);
+    }
+
     detectPlatform() {
         const hostname = window.location.hostname;
         const pathname = window.location.pathname;
         
-        if (hostname.includes('meet.google.com')) return 'google-meet';
-        if (hostname.includes('zoom.us')) return 'zoom';
-        if (hostname.includes('teams.microsoft.com')) return 'teams';
-        if (hostname.includes('atlassian.net') || hostname.includes('jira')) return 'jira';
-        if (hostname.includes('github.com')) return 'github';
-        if (hostname.includes('linear.app')) return 'linear';
-        if (hostname.includes('slack.com')) return 'slack';
+        if (AdvancedAIAssistant.isHostOrSubdomain(hostname, 'meet.google.com')) return 'google-meet';
+        if (AdvancedAIAssistant.isHostOrSubdomain(hostname, 'zoom.us')) return 'zoom';
+        if (AdvancedAIAssistant.isHostOrSubdomain(hostname, 'teams.microsoft.com')) return 'teams';
+        if (
+            AdvancedAIAssistant.isHostOrSubdomain(hostname, 'atlassian.net') ||
+            hostname.includes('jira') // Can't fix generically; optionally could improve.
+        ) return 'jira';
+        if (AdvancedAIAssistant.isHostOrSubdomain(hostname, 'github.com')) return 'github';
+        if (AdvancedAIAssistant.isHostOrSubdomain(hostname, 'linear.app')) return 'linear';
+        if (AdvancedAIAssistant.isHostOrSubdomain(hostname, 'slack.com')) return 'slack';
         
         return 'generic';
     }
