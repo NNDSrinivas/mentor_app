@@ -88,8 +88,6 @@ def iter_language_from_path(path: str) -> Iterable[str]:
         yield "C"
     elif lower.endswith(".scala"):
         yield "Scala"
-    elif lower.endswith(".rs"):
-        yield "Rust"
     elif lower.endswith(".md"):
         yield "Markdown"
     elif lower.endswith(".json"):
