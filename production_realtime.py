@@ -11,7 +11,7 @@ import uuid
 import time
 import threading
 import queue
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
 from typing import Dict, List, Optional
 try:
@@ -71,7 +71,7 @@ except ImportError:  # pragma: no cover - optional integration for tests
 
 # Import knowledge base functionality
 try:
-    from app.knowledge_base import KnowledgeBase, query_knowledge_base
+    from app.knowledge_base import KnowledgeBase
     KNOWLEDGE_BASE_AVAILABLE = True
 except ImportError as e:
     print(f"Knowledge base not available: {e}")
@@ -111,7 +111,7 @@ if ENABLE_SPEAKER_DIARIZATION:
     try:
         from backend.diarization_service import DiarizationService
         diarization_service = DiarizationService()
-    except Exception as e:  # pragma: no cover - service optional
+    except (ImportError, ModuleNotFoundError) as e:  # pragma: no cover - service optional
         print(f"⚠️ Diarization service not available: {e}")
 
 memory_service = None
@@ -119,7 +119,7 @@ if ENABLE_MEMORY_SERVICE:
     try:
         from backend.memory_service import MemoryService
         memory_service = MemoryService()
-    except Exception as e:  # pragma: no cover - service optional
+    except (ImportError, ModuleNotFoundError) as e:  # pragma: no cover - service optional
         print(f"⚠️ Memory service not available: {e}")
 
 # Session storage for real-time events
@@ -1303,7 +1303,7 @@ def get_conversation_memory(session_id):
             if row['metadata']:
                 try:
                     metadata = json.loads(row['metadata'])
-                except:
+                except (json.JSONDecodeError, ValueError):
                     metadata = {}
             
             memory_items.append({
@@ -1438,7 +1438,7 @@ def add_knowledge_document():
             'added_by_user': g.current_user.get('user_id'),
             'added_via': 'api',
             'type': data.get('type', 'manual'),
-            'title': data.get('title', f'Document added via API'),
+            'title': data.get('title', 'Document added via API'),
             'source': 'user_upload'
         })
         
