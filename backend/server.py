@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from typing import Set
 from backend.integrations.github_manager import GitHubManager
+from backend.github_integration.service import github_integration_service
 from backend.meeting_events import MeetingEventRouter
 from backend.memory_service import MemoryService
 from backend.recording_service import RecordingService
@@ -91,6 +92,90 @@ def get_transcript(meeting_id: str):
             except Exception:
                 continue
     return jsonify(entries)
+
+
+# --- GitHub Integration (read-only) ----------------------------------
+
+
+@app.route('/api/integrations/github/oauth/start', methods=['POST'])
+def github_oauth_start():
+    """Kick off the OAuth flow and return the authorization URL."""
+
+    payload = github_integration_service.start_oauth()
+    return jsonify(payload)
+
+
+@app.route('/api/integrations/github/oauth/callback', methods=['GET'])
+def github_oauth_callback():
+    code = request.args.get('code')
+    if not code:
+        return jsonify({'error': 'missing code parameter'}), 400
+    payload = github_integration_service.complete_oauth(code)
+    return jsonify(payload)
+
+
+@app.route('/api/integrations/github/status', methods=['GET'])
+def github_integration_status():
+    payload = github_integration_service.status()
+    return jsonify(payload)
+
+
+@app.route('/api/github/repos', methods=['GET'])
+def github_list_repos():
+    payload = github_integration_service.list_repos()
+    return jsonify({'repos': payload})
+
+
+@app.route('/api/github/index', methods=['POST'])
+def github_request_index():
+    data = request.get_json(silent=True) or {}
+    repo_full_name = data.get('repo_full_name')
+    if not repo_full_name:
+        return jsonify({'error': 'repo_full_name is required'}), 400
+    branch = data.get('branch')
+    mode = data.get('mode', 'api')
+    payload = github_integration_service.request_index(repo_full_name, branch=branch, mode=mode)
+    return jsonify(payload), 202
+
+
+@app.route('/api/github/index/<index_id>/status', methods=['GET'])
+def github_index_status(index_id: str):
+    payload = github_integration_service.index_status(index_id)
+    return jsonify(payload)
+
+
+@app.route('/api/github/search/code', methods=['GET'])
+def github_search_code():
+    query = request.args.get('q', '')
+    repo = request.args.get('repo')
+    path = request.args.get('path')
+    try:
+        top_k = int(request.args.get('top_k', '10'))
+    except ValueError:
+        top_k = 10
+    results = github_integration_service.search_code(query, repo=repo, path=path, top_k=top_k)
+    return jsonify({'results': results})
+
+
+@app.route('/api/github/search/issues', methods=['GET'])
+def github_search_issues():
+    query = request.args.get('q', '')
+    repo = request.args.get('repo')
+    updated_since = request.args.get('updated_since')
+    try:
+        top_k = int(request.args.get('top_k', '10'))
+    except ValueError:
+        top_k = 10
+    results = github_integration_service.search_issues(
+        query, repo=repo, updated_since=updated_since, top_k=top_k
+    )
+    return jsonify({'results': results})
+
+
+@app.route('/api/github/repos/<path:repo>/context', methods=['GET'])
+def github_repo_context(repo: str):
+    payload = github_integration_service.repo_context(repo)
+    return jsonify(payload)
 
 
 @app.route('/api/meeting-events', methods=['POST'])
