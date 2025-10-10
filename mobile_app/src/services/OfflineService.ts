@@ -651,10 +651,10 @@ export class OfflineService {
 
   // Utility methods
   private async compressData(data: string): Promise<string> {
-    // CURRENT: Functional whitespace compression for JSON data reduction
-    // FUTURE: Consider upgrading to gzip compression using pako library
-    // Installation: npm install pako @types/pako
-    // Usage: import * as pako from 'pako'; return pako.deflate(data, { to: 'string' })
+    // Simple whitespace removal for basic JSON/text data size reduction.
+    // This does not perform true compression, only removes redundant spaces and newlines.
+    // If advanced compression is needed, consider integrating a library such as pako in the future.
+    // (Current implementation does NOT use gzip or any binary compression.)
     try {
       if (!this.config.compressionEnabled || data.length < 100) {
         // Skip compression for small data or when disabled
