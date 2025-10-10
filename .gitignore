@@ -90,6 +90,7 @@ demo_*.py
 setup_*.sh
 data/*.db
 !tests/test_meeting_intelligence.py
+!tests/test_github_integration.py
 
 # Internal documentation
 INTERNAL_README.md

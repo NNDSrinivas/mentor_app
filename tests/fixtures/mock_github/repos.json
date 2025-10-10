@@ -1,0 +1,9 @@
+[
+  {
+    "name": "demo-repo",
+    "full_name": "octo-org/demo-repo",
+    "default_branch": "main",
+    "private": false,
+    "html_url": "https://github.com/octo-org/demo-repo"
+  }
+]

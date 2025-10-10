@@ -1,0 +1,20 @@
+[
+  {
+    "number": 42,
+    "type": "issue",
+    "title": "Improve Fibonacci performance",
+    "state": "open",
+    "updated_at": "2024-05-01T12:00:00Z",
+    "url": "https://github.com/octo-org/demo-repo/issues/42",
+    "body": "The fibonacci helper should memoize intermediate results to avoid redundant calculations when depth is large."
+  },
+  {
+    "number": 17,
+    "type": "pull_request",
+    "title": "Add CLI interface",
+    "state": "closed",
+    "updated_at": "2024-04-15T09:30:00Z",
+    "url": "https://github.com/octo-org/demo-repo/pull/17",
+    "body": "Implements a Typer-based CLI for invoking the summary builder."
+  }
+]
