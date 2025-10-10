@@ -23,6 +23,13 @@ from backend.security.crypto import TokenEncryptor
 
 MAX_FILE_SIZE_BYTES = 256 * 1024
 MAX_SNIPPET_LENGTH = 600
+EXPECTED_INDEX_ERRORS = (
+    FileNotFoundError,
+    ValueError,
+    RuntimeError,
+    OSError,
+    SQLAlchemyError,
+)
 
 
 def _now() -> datetime:
@@ -353,19 +360,16 @@ class GitHubIntegrationService:
             repo_info = self._prepare_repo(repo_full_name)
             self._ingest_repo(index_id, repo_info)
             self._update_job(index_id, state="completed", progress=1.0, finished_at=_now())
-        except (
-            FileNotFoundError,
-            ValueError,
-            RuntimeError,
-            OSError,
-            SQLAlchemyError,
-        ) as exc:  # pragma: no cover - defensive
+        except Exception as exc:  # pragma: no cover - defensive
+            error_message = f"{exc.__class__.__name__}: {exc}"
             self._update_job(
                 index_id,
                 state="failed",
                 finished_at=_now(),
-                errors=[str(exc)],
+                errors=[error_message],
             )
+            if not isinstance(exc, EXPECTED_INDEX_ERRORS):
+                raise
 
     def _prepare_repo(self, repo_full_name: str) -> Tuple[GHRepo, Path]:
         with session_scope() as session:
