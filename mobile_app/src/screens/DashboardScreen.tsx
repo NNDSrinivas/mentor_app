@@ -147,6 +147,29 @@ const DashboardScreen: React.FC = () => {
     }
   }, []);
 
+  const getStatusObject = useCallback((status: 'online' | 'offline' | 'syncing') => {
+    const baseStatus = {
+      connection: {
+        status: status === 'online' ? 'connected' as const : 
+                status === 'syncing' ? 'connecting' as const : 'disconnected' as const,
+        quality: status === 'online' ? 'excellent' as const : 
+                status === 'syncing' ? 'good' as const : 'poor' as const,
+        latency: status === 'online' ? 50 : undefined,
+        lastSync: new Date(),
+      },
+      services: {
+        ai: status === 'online' ? 'online' as const : 
+            status === 'syncing' ? 'degraded' as const : 'offline' as const,
+        sync: status === 'syncing' ? 'active' as const : 
+              status === 'online' ? 'paused' as const : 'error' as const,
+        notifications: 'enabled' as const,
+        calendar: status === 'online' ? 'connected' as const : 'disconnected' as const,
+        offline: 'ready' as const,
+      },
+    };
+    return baseStatus;
+  }, []);
+
   const loadMetrics = async () => {
     try {
       // Get today's meetings
