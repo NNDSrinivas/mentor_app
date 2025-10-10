@@ -9,14 +9,10 @@ import { combineReducers } from '@reduxjs/toolkit';
 
 // Reducers
 import appReducer from './slices/appSlice';
-import dashboardReducer from './slices/dashboardSlice';
+import { dashboardSlice, codeSlice, analyticsSlice, aiSlice, syncSlice } from './slices';
 import tasksReducer from './slices/tasksSlice';
 import meetingsReducer from './slices/meetingsSlice';
-import codeReducer from './slices/codeSlice';
-import analyticsReducer from './slices/analyticsSlice';
 import settingsReducer from './slices/settingsSlice';
-import aiReducer from './slices/aiSlice';
-import syncReducer from './slices/syncSlice';
 
 const persistConfig = {
   key: 'root',
@@ -27,14 +23,14 @@ const persistConfig = {
 
 const rootReducer = combineReducers({
   app: appReducer,
-  dashboard: dashboardReducer,
+  dashboard: dashboardSlice.reducer,
   tasks: tasksReducer,
   meetings: meetingsReducer,
-  code: codeReducer,
-  analytics: analyticsReducer,
+  code: codeSlice.reducer,
+  analytics: analyticsSlice.reducer,
   settings: settingsReducer,
-  ai: aiReducer,
-  sync: syncReducer,
+  ai: aiSlice.reducer,
+  sync: syncSlice.reducer,
 });
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);
