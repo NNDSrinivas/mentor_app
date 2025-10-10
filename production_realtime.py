@@ -788,8 +788,8 @@ Please provide a helpful, contextual response that:
 5. Is appropriate for a {session['meeting_type']} context and {complexity} complexity level
 6. Helps the candidate succeed in their interview
 
-Keep responses under 300 words and be practical and actionable. If this question relates to \
-previous discussions or available knowledge, acknowledge that context and provide more \
+Keep responses under 300 words and be practical and actionable. If this question relates to
+previous discussions or available knowledge, acknowledge that context and provide more
 comprehensive guidance."""
 
         # Call OpenAI API
