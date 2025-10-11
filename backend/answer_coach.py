@@ -364,7 +364,7 @@ class AnswerGenerationService:
             return []
         try:
             return func(query, top_k)
-        except (ConnectionError, TimeoutError, RequestException) as exc:  # pragma: no cover - defensive log
+        except (ConnectionError, TimeoutError, RequestException) as exc:  # pragma: no cover - defensive logging
             log.warning("context retrieval failed: %s", exc)
             return []
 
