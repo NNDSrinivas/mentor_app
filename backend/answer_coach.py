@@ -38,6 +38,15 @@ except Exception:  # pragma: no cover - optional dependency
 log = logging.getLogger(__name__)
 
 
+def _use_inclusive_context_window() -> bool:
+    """Check if context window filtering should use inclusive boundary (>=) for backward compatibility.
+    
+    Returns:
+        True if CONTEXT_WINDOW_INCLUSIVE=true, False otherwise (default: strict boundary >)
+    """
+    return os.environ.get("CONTEXT_WINDOW_INCLUSIVE", "false").lower() in ("true", "1", "yes")
+
+
 CONFIDENCE_QUANTIZER = Decimal("0.0001")
 _TOKEN_REGEX = re.compile(r"[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*")
 _HAS_DIGIT_REGEX = re.compile(r"\d")
@@ -150,16 +159,27 @@ def select_context_window(
     seg_list.sort(key=lambda seg: seg.get("ts_end_ms", seg.get("ts_start_ms", 0)))
     latest = seg_list[-1].get("ts_end_ms", seg_list[-1].get("ts_start_ms", 0))
     threshold = max(0, latest - window_seconds * 1000)
-    # Use strict boundary (>) rather than inclusive (>=) for time window filtering.
+    
+    # Configurable boundary behavior for backward compatibility
+    # - CONTEXT_WINDOW_INCLUSIVE=true: Use inclusive boundary (>=) for backward compatibility
+    # - Default: Use strict boundary (>) for precise time-based filtering
     # This excludes segments ending exactly at the threshold to ensure we capture
     # only the most recent content within the specified window. While this may
     # exclude some boundary cases, it provides more predictable behavior and
     # matches the expected test outcomes for precise time-based filtering.
-    window: List[Dict[str, Any]] = [
-        seg
-        for seg in seg_list
-        if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) > threshold
-    ]
+    use_inclusive = _use_inclusive_context_window()
+    if use_inclusive:
+        window: List[Dict[str, Any]] = [
+            seg
+            for seg in seg_list
+            if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) >= threshold
+        ]
+    else:
+        window = [
+            seg
+            for seg in seg_list
+            if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) > threshold
+        ]
     return window
 
 

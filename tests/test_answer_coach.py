@@ -45,6 +45,26 @@ def test_select_context_window_filters_segments():
     assert [seg["text"] for seg in window] == ["b", "c"]
 
 
+def test_select_context_window_inclusive_boundary(monkeypatch):
+    """Test context window filtering with inclusive boundary configuration."""
+    segments = [
+        {"text": "a", "ts_start_ms": 0, "ts_end_ms": 1000},
+        {"text": "b", "ts_start_ms": 1000, "ts_end_ms": 2000},
+        {"text": "c", "ts_start_ms": 2000, "ts_end_ms": 3000},
+    ]
+    
+    # Test strict boundary (default behavior)
+    monkeypatch.setenv("CONTEXT_WINDOW_INCLUSIVE", "false")
+    window = select_context_window(segments, window_seconds=2)
+    assert [seg["text"] for seg in window] == ["b", "c"]
+    
+    # Test inclusive boundary (backward compatibility)
+    monkeypatch.setenv("CONTEXT_WINDOW_INCLUSIVE", "true")
+    window = select_context_window(segments, window_seconds=2)
+    # With inclusive boundary, segment "a" ending at exactly threshold (1000ms) should be included
+    assert [seg["text"] for seg in window] == ["a", "b", "c"]
+
+
 def test_add_transcript_segment_preserves_zero_timestamp():
     session = _session()
     session_id = uuid.uuid4()
