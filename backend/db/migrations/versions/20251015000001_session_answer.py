@@ -1,8 +1,8 @@
 """add session answer table
 
-Revision ID: 20240501000001
+Revision ID: 20251015000001
 Revises: 20240223000000
-Create Date: 2024-05-01 00:00:01.000000
+Create Date: 2025-10-15 00:00:01.000000
 """
 
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "20240501000001"
+revision = "20251015000001"
 down_revision = "20240223000000"
 branch_labels = None
 depends_on = None
