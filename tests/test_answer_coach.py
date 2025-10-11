@@ -5,6 +5,7 @@ import queue
 import uuid
 
 import pytest
+from decimal import Decimal
 
 sqlalchemy = pytest.importorskip("sqlalchemy")
 from sqlalchemy import create_engine
@@ -15,7 +16,10 @@ from backend.answer_coach import (
     AnswerJob,
     AnswerStreamBroker,
     RetrievalAdapters,
+    estimate_token_count,
     extract_noun_phrases,
+    normalize_confidence,
+    serialize_confidence,
     select_context_window,
     validate_citations,
 )
@@ -51,6 +55,23 @@ def test_extract_noun_phrases_captures_identifiers():
 def test_validate_citations_requires_entries():
     with pytest.raises(Exception):
         validate_citations("Answer", [])
+
+
+def test_confidence_helpers_round_and_bound():
+    assert normalize_confidence(1.4) == Decimal("1.0000")
+    assert normalize_confidence(-0.2) == Decimal("0.0000")
+    rounded = serialize_confidence(Decimal("0.123456"))
+    assert rounded == pytest.approx(0.1235)
+
+
+def test_estimate_token_count_falls_back(monkeypatch):
+    import backend.answer_coach as module
+
+    module._encoding_for_model.cache_clear()
+    monkeypatch.setattr(module, "tiktoken", None)
+    module._encoding_for_model.cache_clear()
+
+    assert estimate_token_count("one two three", model="irrelevant") == 3
 
 
 def _service_with_stubs(jira_payload, code_payload, issue_payload):

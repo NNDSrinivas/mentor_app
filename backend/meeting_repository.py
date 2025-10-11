@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Iterable, List, Optional
 
 from sqlalchemy import select
@@ -176,7 +177,7 @@ def record_session_answer(
     session_id: uuid.UUID,
     answer: str,
     citations: Optional[List[dict]] = None,
-    confidence: Optional[float] = None,
+    confidence: Optional[Decimal] = None,
     token_count: Optional[int] = None,
     latency_ms: Optional[int] = None,
 ) -> models.SessionAnswer:

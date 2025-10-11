@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import re
 import threading
@@ -10,6 +11,8 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from functools import lru_cache
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Protocol
 
 from sqlalchemy.orm import Session
@@ -19,7 +22,78 @@ from backend.meeting_repository import (
     record_session_answer,
 )
 
+try:  # pragma: no cover - optional dependency
+    import tiktoken  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    tiktoken = None
+
 log = logging.getLogger(__name__)
+
+
+CONFIDENCE_QUANTIZER = Decimal("0.0001")
+
+
+def normalize_confidence(value: Any) -> Decimal:
+    """Convert arbitrary confidence values into a bounded Decimal.
+
+    Values outside the range [0, 1] are clipped and rounded to four decimal
+    places to avoid precision surprises when serialising to floats.
+    """
+
+    if value is None:
+        return Decimal("0").quantize(CONFIDENCE_QUANTIZER)
+
+    if isinstance(value, Decimal):
+        candidate = value
+    else:
+        try:
+            candidate = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            return Decimal("0").quantize(CONFIDENCE_QUANTIZER)
+
+    bounded = max(Decimal("0"), min(Decimal("1"), candidate))
+    return bounded.quantize(CONFIDENCE_QUANTIZER, rounding=ROUND_HALF_UP)
+
+
+def serialize_confidence(value: Optional[Decimal]) -> float:
+    """Serialise a Decimal confidence value to a float with stable rounding."""
+
+    if value is None:
+        return 0.0
+    return float(normalize_confidence(value))
+
+
+@lru_cache(maxsize=8)
+def _encoding_for_model(model: str):  # pragma: no cover - exercised via integration
+    if tiktoken is None:
+        return None
+    try:
+        return tiktoken.encoding_for_model(model)
+    except KeyError:
+        try:
+            return tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            return None
+
+
+def estimate_token_count(text: str, *, model: str) -> int:
+    """Estimate token usage using tiktoken when available.
+
+    Falls back to a whitespace heuristic when token encoders are not installed,
+    which keeps metrics available without blocking deployments.
+    """
+
+    if not text:
+        return 0
+
+    encoding = _encoding_for_model(model)
+    if encoding is not None:
+        try:
+            return len(encoding.encode(text))
+        except Exception:  # pragma: no cover - defensive
+            log.debug("tiktoken encoding failed; falling back to heuristic")
+
+    return len(re.findall(r"\S+", text))
 
 
 class CitationValidationError(ValueError):
@@ -217,6 +291,7 @@ class AnswerGenerationService:
         self._llm_client = llm_client
         self._stream = stream_broker
         self._segment_cache = segment_cache or SegmentCache()
+        self._model_name = os.getenv("OPENAI_API_MODEL", "gpt-4o-mini")
 
     # --- helpers -----------------------------------------------------
     def _load_segments(
@@ -331,7 +406,7 @@ class AnswerGenerationService:
         try:
             llm_output = self._call_llm(prompt)
             citations = validate_citations(llm_output.get("answer", ""), llm_output.get("citations", []))
-            confidence = float(llm_output.get("confidence", 0.0))
+            confidence = normalize_confidence(llm_output.get("confidence", 0.0))
             answer_text = llm_output.get("answer", "").strip()
         except Exception as exc:
             log.warning("LLM output invalid, falling back: %s", exc)
@@ -342,11 +417,11 @@ class AnswerGenerationService:
                     "note": "context loading",
                 }
             ]
-            confidence = 0.1
+            confidence = normalize_confidence(Decimal("0.1"))
             answer_text = "I'm still loading the latest context. I'll provide details shortly."
 
         latency_ms = int((time.perf_counter() - enqueued_at) * 1000)
-        token_count = len(answer_text.split())
+        token_count = estimate_token_count(answer_text, model=self._model_name)
 
         record = record_session_answer(
             session,
@@ -364,7 +439,7 @@ class AnswerGenerationService:
             "session_id": str(session_id),
             "answer": answer_text,
             "citations": citations,
-            "confidence": confidence,
+            "confidence": serialize_confidence(confidence),
             "token_count": token_count,
             "latency_ms": latency_ms,
             "created_at": record.created_at.isoformat() if record.created_at else datetime.utcnow().isoformat(),
@@ -477,7 +552,10 @@ __all__ = [
     "AnswerGenerationService",
     "AnswerStreamBroker",
     "CitationValidationError",
+    "estimate_token_count",
     "extract_noun_phrases",
+    "normalize_confidence",
+    "serialize_confidence",
     "select_context_window",
     "validate_citations",
 ]

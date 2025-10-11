@@ -25,6 +25,7 @@ from backend.answer_coach import (
     AnswerJobQueue,
     AnswerStreamBroker,
     RetrievalAdapters,
+    serialize_confidence,
 )
 from backend.meeting_pipeline import ActionItemDocument, enqueue_meeting_processing
 from backend.meeting_repository import (
@@ -125,13 +126,26 @@ def _api_base() -> Optional[str]:
     return base
 
 
+def _get_api_timeout() -> float:
+    """Read the shared timeout for internal API calls."""
+
+    try:
+        return float(os.getenv("INTERNAL_API_TIMEOUT_SECONDS", "10"))
+    except Exception:
+        return 10.0
+
+
 def _default_search(path: str, query: str, top_k: int) -> List[Dict[str, Any]]:
     base = _api_base()
     if not base or top_k <= 0:
         return []
     url = f"{base}{path}"
     try:
-        response = requests.get(url, params={"q": query, "top_k": top_k}, timeout=2)
+        response = requests.get(
+            url,
+            params={"q": query, "top_k": top_k},
+            timeout=_get_api_timeout(),
+        )
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:  # pragma: no cover - network errors not asserted in tests
@@ -396,7 +410,7 @@ def list_session_answers_endpoint(
             id=record.id,
             answer=record.answer,
             citations=record.citations or [],
-            confidence=float(record.confidence) if record.confidence is not None else 0.0,
+            confidence=serialize_confidence(record.confidence),
             token_count=record.token_count or 0,
             latency_ms=record.latency_ms or 0,
             created_at=record.created_at or datetime.utcnow(),
