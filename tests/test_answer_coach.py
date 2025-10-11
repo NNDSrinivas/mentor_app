@@ -179,3 +179,29 @@ def test_integration_generates_answer_with_code_citation():
     event = listener.get(timeout=0.1)
     assert event["event"] == "answer"
     broker.unregister(session_id, listener)
+
+
+def test_generate_direct_answer_streams_and_persists():
+    session = _session()
+    session_id = uuid.uuid4()
+    _prepare_meeting(session, session_id, "What is the status of PROJ-15?")
+
+    jira_payload = [{"key": "PROJ-15", "url": "https://jira.local/browse/PROJ-15", "title": "Fix login"}]
+    service, broker = _service_with_stubs(jira_payload, [], [])
+    listener = broker.register(session_id)
+
+    result = service.generate_direct_answer(
+        session,
+        session_id=session_id,
+        latest_text="Any update on PROJ-15?",
+    )
+
+    assert "PROJ-15" in result["answer"]
+    event = listener.get(timeout=0.1)
+    assert event["event"] == "answer"
+    assert event["data"]["id"] == result["id"]
+    broker.unregister(session_id, listener)
+
+    stored = session.get(models.SessionAnswer, uuid.UUID(result["id"]))
+    assert stored is not None
+    assert stored.answer == result["answer"]
