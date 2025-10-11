@@ -153,7 +153,7 @@ def select_context_window(
     window: List[Dict[str, Any]] = [
         seg
         for seg in seg_list
-        if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) >= threshold
+        if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) > threshold
     ]
     return window
 
@@ -549,7 +549,8 @@ class AnswerJobQueue:
             session = self._session_factory()
             try:
                 service.process_job(session, job)
-            except (CitationValidationError, TimeoutError, ConnectionError, RequestException) as exc:  # pragma: no cover - defensive logging
+            except (CitationValidationError, TimeoutError, ConnectionError, RequestException) as exc:
+                # pragma: no cover - defensive logging
                 log.warning("recoverable error while processing answer job: %s", exc, exc_info=True)
                 session.rollback()
             except Exception:
