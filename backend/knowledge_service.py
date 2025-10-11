@@ -166,7 +166,7 @@ def _default_search(path: str, query: str, top_k: int) -> List[Dict[str, Any]]:
         )
         response.raise_for_status()
         payload = response.json()
-    except (requests.RequestException, json.JSONDecodeError) as exc:  # pragma: no cover - network errors not asserted in tests
+    except (requests.RequestException, json.JSONDecodeError) as exc:  # pragma: no cover - network errors not tested in tests
         log.warning("context lookup failed for path %s: %s", path, exc)
         return []
 
