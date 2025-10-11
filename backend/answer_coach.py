@@ -150,9 +150,11 @@ def select_context_window(
     seg_list.sort(key=lambda seg: seg.get("ts_end_ms", seg.get("ts_start_ms", 0)))
     latest = seg_list[-1].get("ts_end_ms", seg_list[-1].get("ts_start_ms", 0))
     threshold = max(0, latest - window_seconds * 1000)
-    # Include segments ending after threshold (>) to capture recent context.
-    # Excludes segments ending exactly at threshold to avoid boundary ambiguity
-    # and focus on the most recent content within the specified time window.
+    # Use strict boundary (>) rather than inclusive (>=) for time window filtering.
+    # This excludes segments ending exactly at the threshold to ensure we capture
+    # only the most recent content within the specified window. While this may
+    # exclude some boundary cases, it provides more predictable behavior and
+    # matches the expected test outcomes for precise time-based filtering.
     window: List[Dict[str, Any]] = [
         seg
         for seg in seg_list
@@ -559,7 +561,8 @@ class AnswerJobQueue:
             except Exception:
                 session.rollback()
                 log.exception("unexpected error processing answer job")
-                # Using bare 'raise' to preserve the original traceback context
+                # Re-raise unexpected errors after logging and cleanup to propagate them
+                # to higher-level error handlers while preserving the original traceback
                 raise
             finally:
                 session.close()
