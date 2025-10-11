@@ -86,6 +86,7 @@ node_modules/
 *_demo.py
 check_*.py
 test_*.py
+!tests/test_rag.py
 demo_*.py
 setup_*.sh
 data/*.db
