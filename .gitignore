@@ -74,6 +74,9 @@ data/user_*.json
 # Environment variables
 .env
 
+# SQLite session storage
+meeting_sessions.db
+
 # Node modules (for browser extension development)
 node_modules/
 
