@@ -5,12 +5,28 @@ Provides speaker identification, context extraction, and real-time assistance
 
 import json
 import logging
-from typing import Dict, List, Optional, Any
+import os
+import sqlite3
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
+
+from app import screen_record
 from app.config import Config
+from backend.diarization_service import DiarizationService
 
 logger = logging.getLogger(__name__)
+try:
+    from app.summarization import SummarizationService
+except Exception as e:  # pragma: no cover - optional dependency
+    SummarizationService = None  # type: ignore[assignment]
+    logger.warning(f"Summarization service unavailable: {e}")
+
+try:
+    from backend.memory_service import MemoryService
+except Exception as e:  # pragma: no cover - optional dependency
+    MemoryService = None  # type: ignore[assignment]
+    logger.warning(f"Memory service unavailable: {e}")
 
 @dataclass
 class Speaker:
@@ -45,6 +61,18 @@ class MeetingIntelligence:
     def __init__(self):
         self.active_meetings: Dict[str, MeetingContext] = {}
         self.speaker_patterns: Dict[str, Dict] = {}
+        # DiarizationService knows how to map speaker labels to team members
+        self.diarization = DiarizationService()
+        try:
+            self.summarizer = SummarizationService() if SummarizationService else None
+        except Exception as e:  # pragma: no cover - optional dependency
+            logger.warning(f"Failed to initialize summarization service: {e}")
+            self.summarizer = None
+        try:
+            self.memory = MemoryService() if MemoryService else None
+        except Exception as e:  # pragma: no cover - optional dependency
+            logger.warning(f"Failed to initialize memory service: {e}")
+            self.memory = None
         
     def start_meeting(self, meeting_id: str, participants: List[str] = None) -> MeetingContext:
         """Initialize a new meeting session with intelligence tracking"""
@@ -61,8 +89,17 @@ class MeetingIntelligence:
         """Process meeting caption with intelligence extraction"""
         if meeting_id not in self.active_meetings:
             self.start_meeting(meeting_id)
-            
+
         context = self.active_meetings[meeting_id]
+
+        # Map diarized speaker labels to known team members for friendly output
+        if speaker_id:
+            resolved = self.diarization.resolve_speaker(speaker_id)
+            if resolved:
+                speaker_id = resolved
+                # Ensure participant list includes this speaker
+                if not any(p.speaker_id == speaker_id for p in context.participants):
+                    context.participants.append(Speaker(speaker_id=speaker_id, name=speaker_id))
         
         # Detect meeting type from content
         meeting_type = self._detect_meeting_type(text, context)
@@ -292,14 +329,77 @@ class MeetingIntelligence:
             return "medium"
         else:
             return "low"
+
+    def _compose_meeting_text(self, context: MeetingContext) -> str:
+        parts = [f"Meeting type: {context.meeting_type}"]
+        if context.participants:
+            parts.append("Participants: " + ", ".join(p.speaker_id for p in context.participants))
+        if context.agenda_items:
+            parts.append("Agenda Items:\n" + "\n".join(context.agenda_items))
+        if context.action_items:
+            parts.append("Action Items:\n" + "\n".join(context.action_items))
+        if context.decisions:
+            parts.append("Decisions:\n" + "\n".join(context.decisions))
+        return "\n".join(parts)
     
     def get_meeting_summary(self, meeting_id: str) -> Dict[str, Any]:
-        """Generate comprehensive meeting summary"""
+        """Generate comprehensive meeting summary.
+
+        Recording path lookup priority:
+        1. Sessions table in the real-time database.
+        2. ``screen_record.get_recording_path`` JSON metadata fallback.
+        """
         if meeting_id not in self.active_meetings:
             return {"error": "Meeting not found"}
-        
+
         context = self.active_meetings[meeting_id]
-        
+
+        # Resolve recording path with DB-first priority
+        recording_path: Optional[str] = None
+        try:
+            db_path = os.getenv("REALTIME_DATABASE_PATH", "production_realtime.db")
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT recording_path FROM sessions WHERE id = ?", (meeting_id,)
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    recording_path = row[0]
+        except Exception as e:  # pragma: no cover - best effort
+            logger.debug(f"Recording path lookup in DB failed: {e}")
+
+        if not recording_path:
+            try:
+                recording_path = screen_record.get_recording_path(meeting_id)
+            except Exception as e:  # pragma: no cover - optional dependency
+                logger.debug(f"Recording path JSON lookup failed: {e}")
+                recording_path = None
+
+        if self.summarizer:
+            meeting_text = self._compose_meeting_text(context)
+            try:
+                summary_text = self.summarizer.generate_summary(meeting_text, summary_type="meeting")
+            except Exception as e:
+                logger.warning(f"Summarization failed: {e}")
+                summary_text = self._generate_ai_summary(context)
+        else:
+            summary_text = self._generate_ai_summary(context)
+
+        if context.action_items:
+            summary_text += "\n\nAction Items:\n" + "\n".join(context.action_items)
+        if context.decisions:
+            summary_text += "\n\nDecisions:\n" + "\n".join(context.decisions)
+
+        if self.memory:
+            try:
+                self.memory.add_meeting_entry(
+                    meeting_id,
+                    summary_text,
+                    {"action_items": context.action_items, "decisions": context.decisions},
+                )
+            except Exception as e:
+                logger.warning(f"Failed to store meeting summary: {e}")
+
         return {
             "meeting_id": meeting_id,
             "meeting_type": context.meeting_type,
@@ -308,8 +408,13 @@ class MeetingIntelligence:
             "decisions": context.decisions,
             "agenda_items": context.agenda_items,
             "duration": "unknown",  # Would calculate from start/end times
-            "key_topics": list(set([topic for patterns in self.speaker_patterns.values() for topic in patterns["topics"]])),
-            "summary": self._generate_ai_summary(context)
+            "key_topics": list(
+                set(
+                    [topic for patterns in self.speaker_patterns.values() for topic in patterns["topics"]]
+                )
+            ),
+            "summary": summary_text,
+            "recording_path": recording_path,
         }
     
     def _generate_ai_summary(self, context: MeetingContext) -> str:

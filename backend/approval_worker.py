@@ -1,15 +1,16 @@
 # backend/approval_worker.py
 import time, threading, logging, os, subprocess, tempfile
-from typing import Dict, Any, Optional, List, Set
+from typing import Dict, Any, List, Set
 
 log = logging.getLogger(__name__)
 
 # Import managers to avoid circular imports
 def get_managers():
     from backend.integrations.github_manager import GitHubManager
-    from backend.integrations.jira_manager import JiraManager
+    from integrations.jira_client import JiraClient
     from backend.approvals import approvals
-    return GitHubManager(dry_run=True), JiraManager(dry_run=True), approvals
+    dry_run = os.getenv("APP_ENV", "").lower() != "prod"
+    return GitHubManager(dry_run=dry_run), JiraClient(dry_run=dry_run), approvals
 
 # Initialize managers (dry_run=True by default for safety)
 github, jira, approvals = get_managers()
@@ -36,14 +37,14 @@ def extract_comment_threads(comments: List[Dict[str, Any]]) -> Dict[int, List[Di
 
 
 def apply_patch_to_repo(patch_content: str, commit_message: str) -> bool:
-    """Apply a unified diff patch to the local repository and commit"""
+    """Apply a patch, commit, and force-push to the repository."""
     try:
         with tempfile.NamedTemporaryFile("w", suffix=".patch", delete=False) as f:
             f.write(patch_content)
             patch_file = f.name
         subprocess.run(["git", "apply", patch_file], check=True)
         subprocess.run(["git", "commit", "-am", commit_message], check=True)
-        subprocess.run(["git", "push"], check=True)
+        subprocess.run(["git", "push", "--force-with-lease"], check=True)
         return True
     except Exception as e:
         log.error(f"Failed to apply patch: {e}")
@@ -68,11 +69,41 @@ def notify_comment_summary(handled: List[int], pending: List[int]) -> None:
         log.debug(f"Notification failed: {e}")
 
 
+def handle_comment_action(owner: str, repo: str, pr_number: int, comment: Dict[str, Any]) -> bool:
+    """Generate and apply a patch for a single review comment."""
+    try:
+        from backend.codegen import generate_patch
+    except Exception as e:
+        log.debug(f"Missing codegen: {e}")
+        return False
+
+    comment_id = comment.get("id")
+    if comment_id is None or comment_id in processed_review_comments:
+        return False
+
+    body = comment.get("body", "")
+    if not is_actionable_comment(body) or github.dry_run:
+        return False
+
+    patch = generate_patch(comment)
+    if not patch:
+        return False
+
+    if apply_patch_to_repo(patch, f"Apply review comment {comment_id}"):
+        processed_review_comments.add(comment_id)
+        try:
+            github.comment_pr(owner=owner, repo=repo, pr_number=pr_number,
+                              body=f"Automated fix applied for comment {comment_id}.")
+        except Exception as ge:
+            log.debug(f"Failed to comment on PR: {ge}")
+        return True
+    return False
+
+
 def poll_review_comments(owner: str, repo: str, pr_number: int) -> None:
     """Fetch review comments from GitHub and apply actionable patches"""
     try:
         from app.integrations.github_client import GitHubClient
-        from backend.codegen import generate_patch
     except Exception as e:
         log.error(f"Missing dependencies for review polling: {e}")
         return
@@ -95,25 +126,8 @@ def poll_review_comments(owner: str, repo: str, pr_number: int) -> None:
     for thread_id, thread_comments in threads.items():
         root_comment = thread_comments[0]
         comment_id = root_comment.get("id")
-        if comment_id in processed_review_comments:
-            continue
-
-        body = root_comment.get("body", "")
-        if is_actionable_comment(body):
-            patch = generate_patch(root_comment)
-            if patch and not github.dry_run:
-                if apply_patch_to_repo(patch, f"Apply review comment {comment_id}"):
-                    processed_review_comments.add(comment_id)
-                    handled.append(comment_id)
-                    try:
-                        github.comment_pr(owner=owner, repo=repo, pr_number=pr_number,
-                                          body=f"Automated fix applied for comment {comment_id}.")
-                    except Exception as ge:
-                        log.debug(f"Failed to comment on PR: {ge}")
-                else:
-                    pending.append(comment_id)
-            else:
-                pending.append(comment_id)
+        if handle_comment_action(owner, repo, pr_number, root_comment):
+            handled.append(comment_id)
         else:
             pending.append(comment_id)
 

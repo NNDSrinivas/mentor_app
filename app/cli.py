@@ -6,11 +6,13 @@ features like recording, transcription, summarization, and knowledge base operat
 import argparse
 import sys
 import os
+import time
 from typing import Optional
 
 from .config import Config
 from . import capture, transcription, summarization, screen_record, knowledge_base
 from backend.integrations.jira_manager import JiraManager
+from .integrations.jira_client import JiraClient
 
 
 def _confirm(prompt: str, auto_confirm: bool) -> bool:
@@ -232,6 +234,26 @@ def cmd_jira_transition(args) -> None:
         print(f"❌ Failed to transition issue: {e}")
 
 
+def cmd_jira_poll(args) -> None:
+    """Poll JIRA for assigned issues and update memory."""
+    client = JiraClient()
+
+    def _callback(data):
+        issues = data.get('issues', [])
+        print(f"Synced {len(issues)} issues for {args.assignee}")
+
+    try:
+        client.start_polling_assigned(args.assignee, args.interval, _callback)
+        print(
+            f"Polling JIRA every {args.interval}s for {args.assignee}. Press Ctrl+C to stop."
+        )
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        client.stop_polling()
+        print("Stopped JIRA polling")
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create command-line argument parser."""
     parser = argparse.ArgumentParser(
@@ -334,6 +356,13 @@ Examples:
         help='Bypass confirmation prompt and run non-interactively',
     )
 
+    # JIRA poll command
+    jira_poll = subparsers.add_parser(
+        'jira-poll', help='Poll JIRA for assigned issues and update memory'
+    )
+    jira_poll.add_argument('assignee', help='JIRA assignee username or email')
+    jira_poll.add_argument('--interval', type=int, default=300, help='Polling interval in seconds')
+
     return parser
 
 
@@ -347,7 +376,7 @@ def main() -> None:
         return
     
     # Commands that don't require API key
-    local_commands = {'screenshot', 'kb-stats', 'jira-comment', 'jira-transition'}
+    local_commands = {'screenshot', 'kb-stats', 'jira-comment', 'jira-transition', 'jira-poll'}
     
     # Validate environment
     try:
@@ -373,6 +402,7 @@ def main() -> None:
         'answer': cmd_answer,
         'jira-comment': cmd_jira_comment,
         'jira-transition': cmd_jira_transition,
+        'jira-poll': cmd_jira_poll,
     }
     
     handler = command_handlers.get(args.command)

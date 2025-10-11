@@ -2,8 +2,13 @@
 
 import os
 import json
-import chromadb
-from chromadb.config import Settings
+import sqlite3
+try:
+    import chromadb
+    from chromadb.config import Settings
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    chromadb = None  # type: ignore[assignment]
+    Settings = None  # type: ignore[assignment]
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import logging
@@ -18,24 +23,40 @@ class MemoryService:
 
     def __init__(self):
         persist_dir = os.getenv("MEMORY_DB_PATH", "./memory_db")
-        try:
-            self.client = chromadb.Client(
-                Settings(persist_directory=persist_dir)
-            )
-            # Create collections for different contexts
-            self.meeting_collection = self.client.get_or_create_collection("meetings")
-            self.task_collection = self.client.get_or_create_collection("tasks")
-            self.code_collection = self.client.get_or_create_collection("code")
-            log.info("ChromaDB collections initialized successfully")
-        except Exception as e:
-            log.warning(f"ChromaDB not available, falling back to simple storage: {e}")
+        self.client = None
+
+        if chromadb is not None and Settings is not None:
+            try:
+                self.client = chromadb.Client(
+                    Settings(persist_directory=persist_dir)
+                )
+                # Create collections for different contexts
+                self.meeting_collection = self.client.get_or_create_collection("meetings")
+                self.task_collection = self.client.get_or_create_collection("tasks")
+                self.code_collection = self.client.get_or_create_collection("code")
+                log.info("ChromaDB collections initialized successfully")
+            except Exception as e:
+                log.warning(f"ChromaDB not available, falling back to simple storage: {e}")
+                self.client = None
+
+        if self.client is None:
             # Fallback to the original SQLite-based system
-            import sqlite3
-            import json
+            if chromadb is None:
+                log.warning("ChromaDB module not installed, using SQLite fallback")
             self.db_path = os.getenv("MENTOR_DB_PATH", "mentor_memory.db")
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self._init_fallback_db()
-            self.client = None
+            self.meeting_collection = None
+            self.task_collection = None
+            self.code_collection = None
+        else:
+            self.db_path = None
+            self.conn = None
+
+        # Documentation database for summaries and tasks
+        self.doc_db_path = os.getenv("DOCUMENTATION_DB_PATH", "data/documentation.db")
+        self.doc_conn = sqlite3.connect(self.doc_db_path, check_same_thread=False)
+        self._init_documentation_db()
 
     def _init_fallback_db(self):
         cursor = self.conn.cursor()
@@ -49,7 +70,81 @@ class MemoryService:
         """)
         self.conn.commit()
 
-    def add_meeting_entry(self, meeting_id: str, text: str, metadata: Optional[Dict] = None):
+    def _init_documentation_db(self):
+        """Initialize tables for summaries and tasks in documentation DB."""
+        cursor = self.doc_conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                meeting_id TEXT,
+                summary TEXT,
+                metadata TEXT,
+                created_at TEXT,
+                indexed BOOLEAN DEFAULT 0
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT,
+                description TEXT,
+                metadata TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        self.doc_conn.commit()
+
+    # Transcript snippets -------------------------------------------------
+    def upsert_transcript_snippet(
+        self,
+        session_id: str,
+        snippet: Dict[str, Any],
+        jsonl_path: str = "data/transcripts/snippets.jsonl",
+    ) -> str:
+        """Store a transcript snippet and upsert it into memory.
+
+        The snippet dictionary should contain at least a ``text`` field. An
+        ``id`` is generated if missing. Snippets are appended to a JSONL file
+        and upserted into the meeting memory collection.
+        """
+        os.makedirs(os.path.dirname(jsonl_path), exist_ok=True)
+        snippet_id = snippet.get("id") or f"{session_id}_{datetime.now().isoformat()}"
+        snippet["id"] = snippet_id
+
+        text = snippet.get("text", "")
+        metadata = {k: v for k, v in snippet.items() if k not in {"id", "text"}}
+
+        if self.client:
+            self.meeting_collection.upsert(
+                documents=[text],
+                metadatas=[metadata],
+                ids=[snippet_id],
+            )
+        else:
+            self.store_event("transcript_snippet", {"session_id": session_id, "text": text, **metadata})
+
+        with open(jsonl_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(snippet) + "\n")
+
+        return snippet_id
+
+    def upsert_transcript_snippets(
+        self,
+        session_id: str,
+        snippets: List[Dict[str, Any]],
+        jsonl_path: str = "data/transcripts/snippets.jsonl",
+    ) -> List[str]:
+        """Upsert multiple transcript snippets."""
+        ids = []
+        for snippet in snippets:
+            ids.append(self.upsert_transcript_snippet(session_id, snippet, jsonl_path))
+        return ids
+
+    def add_meeting_entry(self, meeting_id: str, text: str, metadata: Optional[Dict] = None, persist: bool = True):
         """Add a meeting entry to memory"""
         if self.client:
             doc_id = f"meeting_{meeting_id}_{datetime.now().isoformat()}"
@@ -66,6 +161,10 @@ class MemoryService:
                 **(metadata or {})
             })
 
+        # Persist meeting summaries to documentation DB
+        if persist:
+            self._save_summary(meeting_id, text, metadata)
+
     def search_meeting_context(self, query: str, n_results: int = 3):
         """Search for relevant meeting context"""
         if self.client:
@@ -73,6 +172,23 @@ class MemoryService:
         else:
             # Fallback search
             return {"documents": [self.search_memory(category="meeting", query=query, limit=n_results)]}
+
+    def get_meeting_notes(self, meeting_id: str) -> List[Dict[str, Any]]:
+        """Retrieve stored meeting summaries for a specific meeting."""
+        cursor = self.doc_conn.cursor()
+        cursor.execute(
+            "SELECT summary, metadata, created_at FROM summaries WHERE meeting_id = ? ORDER BY created_at DESC",
+            (meeting_id,),
+        )
+        rows = cursor.fetchall()
+        notes = []
+        for summary, metadata, created_at in rows:
+            try:
+                meta = json.loads(metadata) if metadata else {}
+            except Exception:
+                meta = {}
+            notes.append({"summary": summary, "metadata": meta, "created_at": created_at})
+        return notes
 
     def add_task(self, task_id: str, description: str, metadata: Optional[Dict] = None):
         """Add a task to memory"""
@@ -89,6 +205,9 @@ class MemoryService:
                 "description": description,
                 **(metadata or {})
             })
+
+        # Persist task metadata to documentation DB
+        self._save_task_metadata(task_id, description, metadata)
 
     def search_tasks(self, query: str, n_results: int = 3):
         """Search for relevant tasks"""
@@ -153,6 +272,33 @@ class MemoryService:
             rows = cursor.fetchall()
             return [{"category": r[0], "timestamp": r[1], "data": json.loads(r[2])} for r in rows]
         return []
+
+    # Documentation database helper methods
+    def _save_summary(self, meeting_id: str, summary: str, metadata: Optional[Dict] = None):
+        cursor = self.doc_conn.cursor()
+        cursor.execute(
+            "INSERT INTO summaries (meeting_id, summary, metadata, created_at) VALUES (?, ?, ?, ?)",
+            (
+                meeting_id,
+                summary,
+                json.dumps(metadata or {}),
+                datetime.now().isoformat(),
+            ),
+        )
+        self.doc_conn.commit()
+
+    def _save_task_metadata(self, task_id: str, description: str, metadata: Optional[Dict] = None):
+        cursor = self.doc_conn.cursor()
+        cursor.execute(
+            "INSERT INTO tasks (task_id, description, metadata, created_at) VALUES (?, ?, ?, ?)",
+            (
+                task_id,
+                description,
+                json.dumps(metadata or {}),
+                datetime.now().isoformat(),
+            ),
+        )
+        self.doc_conn.commit()
 
 
 if __name__ == "__main__":

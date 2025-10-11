@@ -1,152 +1,88 @@
-# AI Mentor – Interview Assistant (Practical Guide)
-
-This repo implements an AI interview assistant you can run locally across three surfaces: a Flask Q&A API, a realtime session service for meetings, and optional clients (Chrome overlay, mobile app, IDE plugins).
-
-The README has been aligned with the actual code so you can run it end-to-end today.
-
-## Architecture at a glance
-
-- Q&A + Resume API (port 8084): `simple_web.py`
-    - POST /api/ask → generates an answer using `app/ai_assistant.py`
-    - POST/GET /api/resume → store/read resume text in memory
-    - GET /api/health → service health
-- Realtime sessions API (port 8080): `web_interface.py`
-    - POST /api/sessions → create a session
-    - GET /api/sessions/{id}/answers → recent answers for polling clients
-    - GET /api/sessions/{id}/stream → Server-Sent Events (SSE) for realtime
-    - POST /api/sessions/{id}/captions → push caption chunks with speaker hints
-    - DELETE /api/sessions/{id} → end a session
-    - POST /api/meeting-events → legacy meeting event ingestion
-- Clients
-    - Chrome extension in `browser_extension/` (calls 8084 for /api/ask and /api/resume, 8080 for meeting events)
-    - Mobile client in `mobile/` (Expo/React Native)
-    - VS Code extension in `vscode_extension/` (calls 8084 /api/ask)
-
-Note: Some previously advertised utilities (e.g., universal IDE bridge, check_status.py) are not present. Follow the Quick Start below.
-
-## Quick Start
-
-1) Python environment
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.template .env
-# Edit .env and set OPENAI_API_KEY
-```
-
-2) Start services in two terminals
-
-```bash
-# Terminal A – Q&A service (port 8084)
-python simple_web.py
-
-# Terminal B – Realtime sessions (port 8080)
-python web_interface.py
-```
-
-3) Test APIs
-
-```bash
-# Health
-curl -s http://localhost:8084/api/health
-curl -s http://localhost:8080/api/health
-
-# Ask a question (Q&A service)
-curl -s -X POST http://localhost:8084/api/ask \
-    -H 'Content-Type: application/json' \
-    -d '{"question":"Describe CAP theorem","interview_mode":true}'
-
-# Realtime session flow
-SID=$(curl -s -X POST http://localhost:8080/api/sessions -H 'Content-Type: application/json' -d '{"user_level":"IC6","user_name":"local","meeting_type":"technical_interview"}' | jq -r .session_id)
-curl -s -X POST http://localhost:8080/api/sessions/$SID/captions -H 'Content-Type: application/json' -d '{"text":"Can you explain how you would design a URL shortener?","speaker":"interviewer"}'
-curl -s http://localhost:8080/api/sessions/$SID/answers
-```
-
-## Mobile app (Expo)
-
-- Location: `mobile/`
-- Dependencies listed in `mobile/package.json` (Expo 49, React Native 0.72). Install with npm/yarn in that folder.
-- Start with the Expo CLI, then set the Server URL field in the app to your machine IP with port 8080, e.g. `http://192.168.1.100:8080`.
-- The mobile app:
-    - POSTs /api/sessions to create a session
-    - Polls GET /api/sessions/{id}/answers every 3s
-    - Lets you view and copy answers
-
-Tip: On the same network, push captions using the realtime API (or via the Chrome extension) so answers appear on mobile.
-
-## Browser extension
-
-1) Open Chrome → chrome://extensions → Enable Developer mode → Load unpacked → select `browser_extension/`.
-2) The overlay calls `http://localhost:8084/api/ask` and `http://localhost:8084/api/resume` and sends meeting events to `http://localhost:8080/api/meeting-events`.
-3) Grant microphone/screen permissions as prompted.
-
-## Configuration
-
-Edit `.env` (copied from `.env.template`):
-
-- OPENAI_API_KEY (required for ai responses)
-- Optional tuning in `app/config.py` (overlay, knowledge base, privacy flags). Missing advanced backends are handled gracefully.
-
-## API summary
-
-- 8084 (simple_web):
-    - POST /api/ask { question, interview_mode? }
-    - POST /api/resume { resume_text }
-    - GET /api/resume
-    - GET /api/health
-- 8080 (web_interface):
-    - POST /api/sessions { user_level, meeting_type, user_name }
-    - GET /api/sessions/{id}/answers
-    - GET /api/sessions/{id}/stream (SSE)
-    - POST /api/sessions/{id}/captions { text, speaker?, timestamp? }
-    - DELETE /api/sessions/{id}
-    - POST /api/meeting-events { action, data }
-
-## Notes
-
-- Knowledge base persists to `data/chroma_db/`. Don’t commit that directory.
-- Resume storage is in-memory; re-upload after restarting the Q&A service.
-- Advanced features under `backend/` are imported defensively and the app runs without them.
-- `start_mentor_app.py` can start the Q&A service, but it references a bridge file not present. Prefer running the two services directly as shown above.
-
-## Contributing
-
-PRs welcome. Keep endpoints backward compatible or update this README alongside any changes. Please avoid introducing heavy dependencies in the browser extension to keep the overlay lightweight.
-
-
-## Removed / Not Implemented (Accuracy Statement)
-
-Sections covering advanced diarization metrics, automated task extraction, Jira/calendar sync, build/deployment intelligence, automated PR management, smart documentation sync, enterprise security/compliance, performance SLAs, monetization strategy, and multi‑platform desktop features have been removed because the current codebase does not implement them. Some stub Python files exist under `backend/` but are not wired into running services.
-
-If you implement a feature, reintroduce documentation with concrete details: endpoints, file paths, run commands.
-
-## License
-
-MIT (add a LICENSE file if not present).
+# 🧠 AI Mentor App  
+> *The Autonomous Engineering Intelligence Platform*
 
 ---
 
-This README now reflects only implemented functionality to reduce ambiguity.
+## 🚀 Overview  
 
-## Build & Run (scripts)
+AI Mentor App is an **autonomous AI engineering assistant** that listens to meetings, understands JIRA tickets, reviews and writes code, and collaborates with teams in real time.  
+It behaves like a full-time digital coworker — remembering every decision, task, and context so engineers can focus on innovation.
 
-If you prefer a one-command setup, use the helper scripts:
+---
+
+## 💡 Key Capabilities  
+
+- 🗓 **Meeting Intelligence** – Captures discussions → action items automatically  
+- 📋 **JIRA & GitHub Sync** – Understands open tasks and pull requests  
+- 💻 **Autonomous Coding** – Plans → writes → tests → commits under supervision  
+- 🧠 **Persistent Memory** – Retains full project context via integrated *Memory Cloud*  
+- 🗣 **Live Participation** – Answers or summarizes in meetings using current state  
+- 🔒 **Enterprise Security** – Local-first processing + Okta/SSO ready  
+
+---
+
+## 🏗 Architecture at a Glance  
+
+
+
+Frontend Clients → [Chrome Extension | VS Code Plugin | Mobile App]
+│
+▼
++-----------------------------+
+| AI Mentor Core |
+|-----------------------------|
+| Q&A API (8084) | Realtime API (8080) |
++-----------------------------+
+| LLM + Planning Engine |
+| (GPT-4o / Claude / Llama) |
++-----------------------------+
+| Memory Graph + Chroma DB |
++-----------------------------+
+
+
+---
+
+## ⚙️ Quick Start  
 
 ```bash
-chmod +x start_services.sh stop_services.sh
-./start_services.sh
+git clone https://github.com/NNDSrinivas/mentor_app.git
+cd mentor_app
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.template .env    # add your OPENAI_API_KEY
 ```
 
-This will create a virtualenv (if missing), install dependencies, and start both services:
-- Q&A service on http://localhost:8084
-- Realtime service on http://localhost:8080
 
-Stop the services when done:
+Run services
 
-```bash
-./stop_services.sh
+```
+python production_backend.py      # 8084
+python production_realtime.py     # 8080
 ```
 
-Mock mode: If `OPENAI_API_KEY` isn’t set, the backend starts in a safe mock mode that returns placeholder answers (see `app/ai_assistant.py` and `simple_web.py` fallback). This lets you verify end-to-end flows without external credentials.
+
+Check
+
+```
+curl http://localhost:8084/api/health
+curl http://localhost:8080/api/health
+```
+
+🧭 Roadmap Highlights
+PhaseFocusETA
+✅ MVPRealtime & Q&A APIs runningQ1 2025
+🧩 Phase 2JIRA / GitHub IntegrationsQ2 2025
+🧠 Phase 3Autonomous Code ExecutionQ3 2025
+🏢 Phase 4Enterprise Security + SSOQ4 2025
+🌐 Phase 5Global Platform API2026
+👤 Founder
+
+Naga Durga Srinivas Nidamanuri
+📧 srinivasn7779@gmail.com
+ | LinkedIn:https://www.linkedin.com/in/nnd-srinivas/
+ | GitHub:https://github.com/NNDSrinivas
+
+⚠️ Notice
+
+This repository represents pre-release proprietary technology currently under patent consideration.
+All rights reserved © 2025 Naga Durga Srinivas Nidamanuri.

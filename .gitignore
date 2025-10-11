@@ -25,12 +25,22 @@ MANIFEST
 
 # Virtual environments
 .env
+.env.enc
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Maven/Java
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
 
 # IDE
 .vscode/
@@ -78,3 +88,10 @@ check_*.py
 test_*.py
 demo_*.py
 setup_*.sh
+data/*.db
+!tests/test_meeting_intelligence.py
+!tests/test_github_integration.py
+!tests/test_answer_coach.py
+
+# Internal documentation
+INTERNAL_README.md

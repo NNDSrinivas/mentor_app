@@ -11,7 +11,8 @@
     currentAnswer: '',
     scrollIndex: 0,
     stealth: false,   // when true -> do not render overlay text in-page (route to mobile)
-    readingMode: true // auto-scroll when we detect user's speech matches answer
+    readingMode: true, // auto-scroll when we detect user's speech matches answer
+    opacity: 0.95
   };
 
   // --- UI
@@ -23,7 +24,7 @@
     el.style.cssText = [
       'position:fixed','top:10px','right:10px','width:520px','max-height:80vh',
       'overflow:auto','z-index:2147483647','background:rgba(0,0,0,0.96)','color:#0f0',
-      'font:12px/1.5 monospace','border:1px solid #0f0','border-radius:12px','padding:10px','opacity:0.95'
+      'font:12px/1.5 monospace','border:1px solid #0f0','border-radius:12px','padding:10px',`opacity:${state.opacity}`
     ].join(';');
     const head = document.createElement('div');
     head.style.cssText = 'display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px';
@@ -31,6 +32,7 @@
       <b>AI Mentor</b>
       <span id="aim-stealth" style="cursor:pointer;border:1px solid #0f0;border-radius:8px;padding:2px 6px;">Stealth: Off</span>
       <span id="aim-reading" style="cursor:pointer;border:1px solid #0f0;border-radius:8px;padding:2px 6px;">AutoScroll: On</span>
+      <input id="aim-opacity" type="range" min="20" max="100" value="${state.opacity*100}" style="width:80px" />
     `;
     const out = document.createElement('div');
     out.id = 'aim-answers';
@@ -47,6 +49,10 @@
     head.querySelector('#aim-reading').onclick = () => {
       state.readingMode = !state.readingMode;
       head.querySelector('#aim-reading').textContent = `AutoScroll: ${state.readingMode ? 'On':'Off'}`;
+    };
+    head.querySelector('#aim-opacity').oninput = (e) => {
+      state.opacity = e.target.value / 100;
+      el.style.opacity = state.opacity;
     };
     return el;
   }
@@ -154,5 +160,11 @@
   ensureOverlay();
   startReadBackAlignment();
   monitorScreenShare();
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'o') {
+      const ov = ensureOverlay();
+      ov.style.display = ov.style.display === 'none' ? 'block' : 'none';
+    }
+  });
   console.log('AIM overlay v7 ready');
 })();

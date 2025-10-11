@@ -3,15 +3,27 @@
 This creates a private UI overlay that appears only on the user's screen,
 similar to how Zoom meeting controls are visible only to the host.
 Other meeting participants cannot see these AI interactions.
+
+The overlay attempts to detect active screen sharing sessions using
+platform-specific hooks.  When sharing is detected the window is marked so
+that it does not appear in the shared feed (when supported).  On platforms
+without such APIs the overlay falls back to standard behavior, which may
+include moving the window off screen or console output to avoid leaking
+content.
 """
 import asyncio
 import json
 import os
+import platform
+import subprocess
 import threading
 import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 import logging
+
+import psutil
+import ctypes
 
 # Try to import tkinter, fall back to file-based system if not available
 try:
@@ -39,6 +51,9 @@ class PrivateOverlay:
         self.current_content = ""
         self.auto_hide_timer = None
         self.fallback_mode = not TKINTER_AVAILABLE
+        self.opacity = Config.OVERLAY_OPACITY
+        self.opacity_scale = None
+        self._was_screen_sharing = False
         
     def initialize(self):
         """Initialize the overlay system."""
@@ -47,6 +62,7 @@ class PrivateOverlay:
                 # Create root window (hidden)
                 self.root = tk.Tk()
                 self.root.withdraw()  # Hide the main window
+                self._bind_hotkeys()
                 
                 # Start the overlay monitoring thread
                 self.monitor_thread = threading.Thread(target=self._monitor_overlays, daemon=True)
@@ -63,7 +79,107 @@ class PrivateOverlay:
         except Exception as e:
             logger.error(f"Failed to initialize overlay system: {e}")
             self.fallback_mode = True
-    
+
+    def _bind_hotkeys(self):
+        """Bind global hotkeys for overlay controls."""
+        if not TKINTER_AVAILABLE or self.fallback_mode or not self.root:
+            return
+        try:
+            self.root.bind_all('<Control-Shift-o>', self.toggle_visibility)
+            self.root.bind_all('<Control-Shift-Up>', lambda _e: self.adjust_opacity(0.1))
+            self.root.bind_all('<Control-Shift-Down>', lambda _e: self.adjust_opacity(-0.1))
+        except Exception as e:
+            logger.error(f"Failed to bind hotkeys: {e}")
+
+    # ------------------------------------------------------------------
+    # Screen sharing detection
+    # ------------------------------------------------------------------
+    def _is_screen_sharing_active(self) -> bool:
+        """Return True if an active screen sharing session is detected.
+
+        Uses lightweight heuristics and OS specific hooks.  If detection
+        fails or is unsupported, False is returned so that normal overlay
+        behaviour continues.
+        """
+        try:
+            system = platform.system().lower()
+            if system == "darwin":
+                return self._check_macos_sharing()
+            if system == "windows":
+                return self._check_windows_sharing()
+            if system == "linux":
+                return self._check_linux_sharing()
+        except Exception as e:
+            logger.debug(f"Screen sharing check failed: {e}")
+        return False
+
+    def _check_macos_sharing(self) -> bool:
+        """Detect screen sharing on macOS via AppleScript hooks."""
+        try:
+            script = (
+                'tell application "System Events" to return (exists '
+                '(menu bar item "Stop Share" of menu 1 of menu bar item '
+                '"Meeting" of menu bar 1 of process "zoom.us"))'
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script], capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                return result.stdout.strip().lower() == "true"
+        except Exception:
+            pass
+        return False
+
+    def _check_windows_sharing(self) -> bool:
+        """Detect screen sharing on Windows by inspecting running processes."""
+        try:
+            for proc in psutil.process_iter(["name", "cmdline"]):
+                name = (proc.info.get("name") or "").lower()
+                cmd = " ".join(proc.info.get("cmdline") or []).lower()
+                if "zoom" in name and "sharing" in cmd:
+                    return True
+                if "teams" in name and ("sharing" in cmd or "--share" in cmd):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _check_linux_sharing(self) -> bool:
+        """Detect screen sharing on Linux using process heuristics."""
+        try:
+            for proc in psutil.process_iter(["name", "cmdline"]):
+                name = (proc.info.get("name") or "").lower()
+                cmd = " ".join(proc.info.get("cmdline") or []).lower()
+                if ("zoom" in name or "teams" in name) and (
+                    "--share" in cmd or "sharing" in cmd
+                ):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _apply_screen_share_exclusion(self):
+        """Ensure overlay is not captured when screen sharing is active."""
+        if not self.overlay_window:
+            return
+
+        system = platform.system().lower()
+        try:
+            if system == "windows":
+                hwnd = self.overlay_window.winfo_id()
+                success = ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x11)
+                if not success:
+                    logger.warning("Failed to set window display affinity")
+            elif system == "darwin":
+                self.overlay_window.attributes('-transparent', True)
+            else:
+                # Move the window off screen as a fallback to avoid capture
+                width = self.overlay_window.winfo_screenwidth()
+                height = self.overlay_window.winfo_screenheight()
+                self.overlay_window.geometry(f"+{width}+{height}")
+        except Exception as e:
+            logger.debug(f"Failed to apply screen share exclusion: {e}")
+
     def show_ai_response(self, content: str, response_type: str = "response"):
         """Show AI response in private overlay."""
         try:
@@ -74,7 +190,7 @@ class PrivateOverlay:
                 self._update_content(content, response_type)
                 self._position_window()
                 self._show_window()
-                self._set_auto_hide_timer(15)  # Auto-hide after 15 seconds
+                self._set_auto_hide_timer(Config.OVERLAY_AUTO_HIDE_SECONDS)
             
             logger.info(f"Showing AI {response_type}: {content[:50]}...")
             
@@ -120,7 +236,7 @@ class PrivateOverlay:
         # Window configuration
         self.overlay_window.overrideredirect(True)  # Remove window decorations
         self.overlay_window.attributes('-topmost', True)  # Always on top
-        self.overlay_window.attributes('-alpha', 0.9)  # Slightly transparent
+        self.overlay_window.attributes('-alpha', self.opacity)  # Configurable transparency
 
         # Make window stay on top even during screen sharing
         try:
@@ -148,6 +264,18 @@ class PrivateOverlay:
             relief='flat', width=2, height=1
         )
         self.close_button.pack(side=tk.RIGHT, anchor=tk.NE)
+
+        # Opacity slider
+        self.opacity_scale = tk.Scale(
+            self.main_frame, from_=20, to=100, orient=tk.HORIZONTAL,
+            command=self._on_opacity_change, bg='#2b2b2b', fg='#00ff88',
+            highlightthickness=0, length=100
+        )
+        self.opacity_scale.set(int(self.opacity * 100))
+        self.opacity_scale.pack(anchor=tk.E, pady=(5, 0))
+
+        # Apply screen share exclusion in case sharing is already active
+        self._apply_screen_share_exclusion()
     
     def _update_content(self, content: str, content_type: str):
         """Update overlay content."""
@@ -220,8 +348,37 @@ class PrivateOverlay:
     def _show_window(self):
         """Show the overlay window."""
         if self.overlay_window:
+            if self._is_screen_sharing_active():
+                self._apply_screen_share_exclusion()
             self.overlay_window.deiconify()
             self.is_visible = True
+
+    def toggle_visibility(self, _event=None):
+        """Toggle overlay visibility via hotkey."""
+        if self.is_visible:
+            self.hide_overlay()
+        else:
+            if self.overlay_window:
+                self._show_window()
+            elif self.current_content:
+                self.show_ai_response(self.current_content)
+
+    def adjust_opacity(self, delta: float):
+        """Incrementally adjust window opacity."""
+        self.opacity = max(0.2, min(1.0, self.opacity + delta))
+        if self.overlay_window:
+            self.overlay_window.attributes('-alpha', self.opacity)
+        if self.opacity_scale:
+            self.opacity_scale.set(int(self.opacity * 100))
+
+    def _on_opacity_change(self, value):
+        """Callback for opacity slider changes."""
+        try:
+            self.opacity = max(0.2, min(1.0, float(value) / 100))
+            if self.overlay_window:
+                self.overlay_window.attributes('-alpha', self.opacity)
+        except Exception as e:
+            logger.error(f"Opacity change error: {e}")
     
     def hide_overlay(self):
         """Hide the overlay window."""
@@ -244,9 +401,14 @@ class PrivateOverlay:
     def _monitor_overlays_fallback(self):
         """Monitor for overlay files using fallback system."""
         overlay_dir = f"{Config.TEMP_DIR}"
-        
+
         while True:
             try:
+                is_sharing = self._is_screen_sharing_active()
+                if is_sharing and not self._was_screen_sharing:
+                    self._apply_screen_share_exclusion()
+                self._was_screen_sharing = is_sharing
+
                 if not os.path.exists(overlay_dir):
                     time.sleep(1)
                     continue
@@ -285,9 +447,14 @@ class PrivateOverlay:
     def _monitor_overlays(self):
         """Monitor for overlay files and display them."""
         overlay_dir = f"{Config.TEMP_DIR}"
-        
+
         while True:
             try:
+                is_sharing = self._is_screen_sharing_active()
+                if is_sharing and not self._was_screen_sharing:
+                    self._apply_screen_share_exclusion()
+                self._was_screen_sharing = is_sharing
+
                 if not os.path.exists(overlay_dir):
                     time.sleep(1)
                     continue

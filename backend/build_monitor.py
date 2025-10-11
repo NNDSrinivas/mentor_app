@@ -13,6 +13,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import json
 import re
+import smtplib
+from email.mime.text import MIMEText
 
 log = logging.getLogger(__name__)
 
@@ -141,7 +143,37 @@ class BuildMonitor:
         
         # Generate intelligent suggestions
         analysis["suggestions"] = self._generate_intelligent_suggestions(analysis["failures"], build_info)
-        
+
+        # Notify interested parties if we detected failures
+        if analysis["failures"]:
+            self._send_notification(analysis)
+
+        return analysis
+
+    def process_build_log(self, build_log: str, build_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze a build log and attempt fixes using codegen"""
+        analysis = self.analyze_build_failure(build_log, build_info)
+
+        patches: List[str] = []
+        try:
+            from backend import codegen
+            for failure in analysis.get("failures", []):
+                context_text = "\n".join(failure.get("line_context", []))
+                patch = codegen.generate_patch({"body": context_text})
+                if patch:
+                    patches.append(patch)
+        except Exception as e:
+            log.error(f"Code generation failed: {e}")
+
+        if patches:
+            combined = "\n".join(patches)
+            analysis["proposed_patch"] = combined
+            try:
+                from backend.patch_apply import apply_patch
+                analysis["patch_application"] = apply_patch(combined)
+            except Exception as e:
+                analysis["patch_application"] = {"success": False, "error": str(e)}
+
         return analysis
     
     def _extract_context(self, log: str, match_pos: int, context_lines: int = 3) -> List[str]:
@@ -211,8 +243,45 @@ class BuildMonitor:
         
         if any("docker" in f["type"] for f in failures):
             suggestions.append("🐳 Test Docker builds locally: docker build -t test-image .")
-        
+
         return suggestions
+
+    def _send_notification(self, analysis: Dict[str, Any]) -> None:
+        """Send notification about build failures via Slack or email."""
+        # Compose message
+        lines = [
+            f"🚨 Build failure detected in {analysis.get('repository')} (ID: {analysis.get('build_id')})",
+            f"Severity: {analysis.get('severity')}",
+            "Issues:" ,
+        ]
+        for f in analysis.get("failures", []):
+            lines.append(f"- {f.get('type')}: {f.get('matched_text')}")
+        message = "\n".join(lines)
+
+        # Slack notification
+        slack_url = os.getenv("SLACK_WEBHOOK_URL")
+        if slack_url:
+            try:
+                requests.post(slack_url, json={"text": message})
+            except requests.RequestException as e:
+                log.error(f"Slack notification failed: {e}")
+
+        # Email notification
+        email_to = os.getenv("NOTIFY_EMAIL")
+        smtp_server = os.getenv("SMTP_SERVER")
+        if email_to and smtp_server:
+            try:
+                msg = MIMEText(message)
+                msg["Subject"] = "Build Failure Detected"
+                msg["From"] = os.getenv("SMTP_FROM", "build-monitor@example.com")
+                msg["To"] = email_to
+                with smtplib.SMTP(smtp_server) as s:
+                    s.send_message(msg)
+            except Exception as e:
+                log.error(f"Email notification failed: {e}")
+
+        if not slack_url and not (email_to and smtp_server):
+            log.warning("No notification channels configured. Message: %s", message)
     
     def generate_auto_fix_pr(self, analysis: Dict[str, Any], repository: str) -> Optional[str]:
         """Generate automated fix PR for common issues"""
@@ -414,7 +483,7 @@ addopts = -v --tb=short
                     "repository": repository
                 }
                 
-                return self.analyze_build_failure(log_content, build_info)
+                return self.process_build_log(log_content, build_info)
             else:
                 return {"error": f"Could not fetch logs for run {run_id}"}
                 
@@ -428,8 +497,11 @@ def submit_build_failure_for_review(analysis: Dict[str, Any], repository: str):
         from backend.approvals import approvals
     except ImportError:
         log.warning("Approvals module not available, skipping approval workflow")
-        return
-    
+        return None
+
+    auto_commit = os.getenv("AUTO_APPROVE_FIXES", "").lower() in {"1", "true", "yes"}
+    approval_item = None
+
     if analysis["severity"] == "high":
         # High severity failures need immediate attention
         approval_item = approvals.submit("ci.fix_suggestions", {
@@ -438,17 +510,48 @@ def submit_build_failure_for_review(analysis: Dict[str, Any], repository: str):
             "priority": "high",
             "auto_fix_available": len(analysis["auto_fixes"]) > 0
         })
-        
-        return approval_item
-    
-    return None
+
+    # If auto approval is enabled, push commit using GitHubManager
+    if auto_commit and analysis.get("proposed_patch"):
+        try:
+            from backend.integrations.github_manager import GitHubManager
+            owner, repo = repository.split("/", 1)
+            branch = f"build-fix-{analysis.get('build_id')}"
+            base_branch = analysis.get("branch", "main")
+            gm = GitHubManager(dry_run=os.getenv("GITHUB_DRY_RUN", "1") != "0")
+            gm.create_branch(owner, repo, base_branch, branch)
+            gm.commit_file(owner, repo, branch, "auto_fix.patch", analysis["proposed_patch"].encode(), "Automated build fix")
+            gm.create_pr(owner, repo, branch, base_branch, f"Automated fix for build {analysis.get('build_id')}")
+            if approval_item:
+                approvals.resolve(approval_item.id, "approve", {"branch": branch})
+        except Exception as e:
+            log.error(f"Failed to push auto-fix: {e}")
+
+    return approval_item
+
+def main():
+    """CLI entry point for continuous build monitoring"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Monitor CI builds for a repository")
+    parser.add_argument("repository", help="GitHub repository in 'owner/repo' format")
+    parser.add_argument("--branch", default="main", help="Branch to monitor")
+    parser.add_argument("--interval", type=int, default=300, help="Polling interval in seconds")
+    args = parser.parse_args()
+
+    monitor = BuildMonitor()
+    try:
+        while True:
+            result = monitor.monitor_repository(args.repository, args.branch)
+            for failure in result.get("recent_failures", []):
+                submit_build_failure_for_review(failure["analysis"], args.repository)
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        log.info("Stopping build monitor")
+
 
 if __name__ == "__main__":
-    monitor = BuildMonitor()
-    
-    # Example usage
-    result = monitor.monitor_repository("NNDSrinivas/mentor_app")
-    print(json.dumps(result, indent=2))
+    main()
 
 # Provide no-op processors to satisfy attribute references used in webhook_processors
 def _ensure_private_methods_exist():

@@ -428,55 +428,54 @@ class DocumentationManager:
     def _init_database(self):
         """Initialize documentation tracking database"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Documentation sections table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS doc_sections (
-                    section_id TEXT PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    content TEXT,
-                    file_path TEXT,
-                    line_start INTEGER,
-                    line_end INTEGER,
-                    last_updated TEXT,
-                    auto_generated BOOLEAN,
-                    dependencies TEXT,
-                    tags TEXT
-                )
-            ''')
-            
-            # Code changes table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS code_changes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    file_path TEXT,
-                    change_type TEXT,
-                    function_name TEXT,
-                    class_name TEXT,
-                    description TEXT,
-                    timestamp TEXT,
-                    processed BOOLEAN DEFAULT FALSE
-                )
-            ''')
-            
-            # Meeting insights table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS meeting_insights (
-                    insight_id TEXT PRIMARY KEY,
-                    content TEXT,
-                    related_files TEXT,
-                    related_functions TEXT,
-                    action_type TEXT,
-                    priority INTEGER,
-                    timestamp TEXT,
-                    processed BOOLEAN DEFAULT FALSE
-                )
-            ''')
-            
-            conn.commit()
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                # Documentation sections table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS doc_sections (
+                        section_id TEXT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        content TEXT,
+                        file_path TEXT,
+                        line_start INTEGER,
+                        line_end INTEGER,
+                        last_updated TEXT,
+                        auto_generated BOOLEAN,
+                        dependencies TEXT,
+                        tags TEXT
+                    )
+                ''')
+
+                # Code changes table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS code_changes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        file_path TEXT,
+                        change_type TEXT,
+                        function_name TEXT,
+                        class_name TEXT,
+                        description TEXT,
+                        timestamp TEXT,
+                        processed BOOLEAN DEFAULT FALSE
+                    )
+                ''')
+
+                # Meeting insights table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS meeting_insights (
+                        insight_id TEXT PRIMARY KEY,
+                        content TEXT,
+                        related_files TEXT,
+                        related_functions TEXT,
+                        action_type TEXT,
+                        priority INTEGER,
+                        timestamp TEXT,
+                        processed BOOLEAN DEFAULT FALSE
+                    )
+                ''')
+
+                conn.commit()
             
         except Exception as e:
             logger.error(f"Error initializing documentation database: {e}")
@@ -646,25 +645,24 @@ class DocumentationManager:
     def _store_code_changes(self, changes: List[CodeChange]):
         """Store code changes in database"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            for change in changes:
-                cursor.execute('''
-                    INSERT INTO code_changes 
-                    (file_path, change_type, function_name, class_name, description, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (
-                    change.file_path,
-                    change.change_type,
-                    change.function_name,
-                    change.class_name,
-                    change.description,
-                    change.timestamp.isoformat()
-                ))
-            
-            conn.commit()
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                for change in changes:
+                    cursor.execute('''
+                        INSERT INTO code_changes
+                        (file_path, change_type, function_name, class_name, description, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (
+                        change.file_path,
+                        change.change_type,
+                        change.function_name,
+                        change.class_name,
+                        change.description,
+                        change.timestamp.isoformat()
+                    ))
+
+                conn.commit()
             
         except Exception as e:
             logger.error(f"Error storing code changes: {e}")
@@ -672,26 +670,25 @@ class DocumentationManager:
     def _store_meeting_insights(self, insights: List[MeetingInsight]):
         """Store meeting insights in database"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            for insight in insights:
-                cursor.execute('''
-                    INSERT OR REPLACE INTO meeting_insights 
-                    (insight_id, content, related_files, related_functions, action_type, priority, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    insight.insight_id,
-                    insight.content,
-                    json.dumps(insight.related_files),
-                    json.dumps(insight.related_functions),
-                    insight.action_type,
-                    insight.priority,
-                    insight.timestamp.isoformat()
-                ))
-            
-            conn.commit()
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                for insight in insights:
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO meeting_insights
+                        (insight_id, content, related_files, related_functions, action_type, priority, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        insight.insight_id,
+                        insight.content,
+                        json.dumps(insight.related_files),
+                        json.dumps(insight.related_functions),
+                        insight.action_type,
+                        insight.priority,
+                        insight.timestamp.isoformat()
+                    ))
+
+                conn.commit()
             
         except Exception as e:
             logger.error(f"Error storing meeting insights: {e}")
@@ -699,29 +696,28 @@ class DocumentationManager:
     def _save_documentation_section(self, section: DocumentationSection):
         """Save documentation section to database"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT OR REPLACE INTO doc_sections 
-                (section_id, title, content, file_path, line_start, line_end, 
-                 last_updated, auto_generated, dependencies, tags)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                section.section_id,
-                section.title,
-                section.content,
-                section.file_path,
-                section.line_start,
-                section.line_end,
-                section.last_updated.isoformat(),
-                section.auto_generated,
-                json.dumps(section.dependencies),
-                json.dumps(section.tags)
-            ))
-            
-            conn.commit()
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    INSERT OR REPLACE INTO doc_sections
+                    (section_id, title, content, file_path, line_start, line_end,
+                     last_updated, auto_generated, dependencies, tags)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    section.section_id,
+                    section.title,
+                    section.content,
+                    section.file_path,
+                    section.line_start,
+                    section.line_end,
+                    section.last_updated.isoformat(),
+                    section.auto_generated,
+                    json.dumps(section.dependencies),
+                    json.dumps(section.tags)
+                ))
+
+                conn.commit()
             
         except Exception as e:
             logger.error(f"Error saving documentation section: {e}")
@@ -729,33 +725,32 @@ class DocumentationManager:
     def _get_documentation_sections_for_file(self, file_path: str) -> List[DocumentationSection]:
         """Get all documentation sections for a file"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                SELECT * FROM doc_sections WHERE file_path = ?
-            ''', (file_path,))
-            
-            rows = cursor.fetchall()
-            sections = []
-            
-            for row in rows:
-                section = DocumentationSection(
-                    section_id=row[0],
-                    title=row[1],
-                    content=row[2],
-                    file_path=row[3],
-                    line_start=row[4],
-                    line_end=row[5],
-                    last_updated=datetime.fromisoformat(row[6]),
-                    auto_generated=bool(row[7]),
-                    dependencies=json.loads(row[8]) if row[8] else [],
-                    tags=json.loads(row[9]) if row[9] else []
-                )
-                sections.append(section)
-            
-            conn.close()
-            return sections
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    SELECT * FROM doc_sections WHERE file_path = ?
+                ''', (file_path,))
+
+                rows = cursor.fetchall()
+                sections = []
+
+                for row in rows:
+                    section = DocumentationSection(
+                        section_id=row[0],
+                        title=row[1],
+                        content=row[2],
+                        file_path=row[3],
+                        line_start=row[4],
+                        line_end=row[5],
+                        last_updated=datetime.fromisoformat(row[6]),
+                        auto_generated=bool(row[7]),
+                        dependencies=json.loads(row[8]) if row[8] else [],
+                        tags=json.loads(row[9]) if row[9] else []
+                    )
+                    sections.append(section)
+
+                return sections
             
         except Exception as e:
             logger.error(f"Error getting documentation sections for {file_path}: {e}")
@@ -765,11 +760,10 @@ class DocumentationManager:
         """Generate comprehensive project documentation overview"""
         try:
             # Get all documentation sections
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM doc_sections')
-            all_sections = cursor.fetchall()
-            conn.close()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT * FROM doc_sections')
+                all_sections = cursor.fetchall()
             
             # Generate overview
             overview = "# Project Documentation Overview\n\n"

@@ -267,6 +267,18 @@ You'll know it's working when:
 
 ## 🚀 **Advanced Usage**
 
+### **Context Window Configuration:**
+Control how the AI assistant filters meeting segments for context:
+```bash
+# Default: Use strict boundary (>) for precise time-based filtering
+CONTEXT_WINDOW_INCLUSIVE=false
+
+# Backward compatibility: Use inclusive boundary (>=) 
+CONTEXT_WINDOW_INCLUSIVE=true
+```
+- `false` (default): Excludes segments ending exactly at the time threshold
+- `true`: Includes segments ending exactly at the time threshold (legacy behavior)
+
 ### **Custom Company Patterns:**
 ```python
 # Add custom interview patterns via API

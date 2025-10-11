@@ -4,7 +4,12 @@ import websockets
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from typing import Set
+from types import SimpleNamespace
 from backend.integrations.github_manager import GitHubManager
+from backend.github_integration.service import github_integration_service
+from backend.meeting_events import MeetingEventRouter
+from backend.memory_service import MemoryService
+from backend.recording_service import RecordingService
 from app.task_manager import Task, TaskManager
 
 # Setup logging
@@ -16,17 +21,57 @@ CORS(app)
 
 # Ship-It PR: Add healthz blueprint
 from backend.healthz import bp as healthz_bp
+from backend.webhooks_jira import bp as jira_bp
 app.register_blueprint(healthz_bp)
+app.register_blueprint(jira_bp)
 
 # Ship-It PR: Add middleware for rate limiting and cost tracking
 from backend.middleware import rate_limit, record_cost
 from backend.webhook_signatures import verify_github, verify_jira
+from backend.payments import subscription_required, handle_webhook as handle_stripe_webhook
 
 # Import functions to avoid circular imports
 def get_backend_components():
-    from backend.approvals import approvals
-    from backend.approval_worker import on_approval_resolved, start_worker_thread, set_dry_run_mode, get_integration_status
-    from backend.watchers.ci_watcher import handle_github_webhook
+    try:
+        from backend.approvals import approvals  # type: ignore[no-redef]
+    except ImportError:  # pragma: no cover - optional approvals module
+        approvals = SimpleNamespace(  # type: ignore[assignment]
+            submit=lambda *a, **k: {},
+            list=lambda *a, **k: [],
+            get=lambda *a, **k: None,
+            resolve=lambda *a, **k: {},
+        )
+    else:
+        if not hasattr(approvals, "submit"):
+            approvals.submit = lambda *a, **k: {}  # type: ignore[attr-defined]
+        if not hasattr(approvals, "list"):
+            approvals.list = lambda *a, **k: []  # type: ignore[attr-defined]
+        if not hasattr(approvals, "get"):
+            approvals.get = lambda *a, **k: None  # type: ignore[attr-defined]
+        if not hasattr(approvals, "resolve"):
+            approvals.resolve = lambda *a, **k: {}  # type: ignore[attr-defined]
+
+    try:
+        from backend.approval_worker import (
+            on_approval_resolved,
+            start_worker_thread,
+            set_dry_run_mode,
+            get_integration_status,
+        )
+    except ImportError:  # pragma: no cover - fallback when worker unavailable
+        def _noop(*args, **kwargs):
+            return {}
+
+        on_approval_resolved = _noop
+        start_worker_thread = lambda: None  # type: ignore[assignment]
+        set_dry_run_mode = lambda *a, **k: None  # type: ignore[assignment]
+        get_integration_status = lambda: {}  # type: ignore[assignment]
+
+    try:
+        from backend.watchers.ci_watcher import handle_github_webhook
+    except ImportError:  # pragma: no cover - fallback when watcher unavailable
+        handle_github_webhook = lambda *a, **k: None  # type: ignore[assignment]
+
     return approvals, on_approval_resolved, start_worker_thread, set_dry_run_mode, get_integration_status, handle_github_webhook
 
 approvals, on_approval_resolved, start_worker_thread, set_dry_run_mode, get_integration_status, handle_github_webhook = get_backend_components()
@@ -40,6 +85,9 @@ connected_clients: Set[_Any] = set()
 
 # Task manager instance for task operations
 task_manager = TaskManager()
+memory_service = MemoryService()
+recording_service = RecordingService()
+meeting_event_router = MeetingEventRouter()
 
 # GitHub webhook secret for verification
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
@@ -55,8 +103,143 @@ def health():
         'integrations': status
     })
 
+# --- Recordings & Transcripts -----------------------------------------
+@app.route('/api/recordings/<meeting_id>', methods=['GET'])
+def list_recordings(meeting_id: str):
+    """List encrypted recording chunks for a meeting."""
+    dir_path = os.path.join('data', 'recordings')
+    files = []
+    if os.path.isdir(dir_path):
+        files = [f for f in os.listdir(dir_path) if f.startswith(meeting_id)]
+    return jsonify({'chunks': files})
+
+@app.route('/api/transcripts/<meeting_id>', methods=['GET'])
+def get_transcript(meeting_id: str):
+    """Return transcript JSONL entries for a meeting."""
+    path = os.path.join('data', 'transcripts', f'{meeting_id}.jsonl')
+    if not os.path.exists(path):
+        return jsonify([])
+    entries = []
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except Exception:
+                continue
+    return jsonify(entries)
+
+
+# --- GitHub Integration (read-only) ----------------------------------
+
+
+@app.route('/api/integrations/github/oauth/start', methods=['POST'])
+def github_oauth_start():
+    """Kick off the OAuth flow and return the authorization URL."""
+
+    payload = github_integration_service.start_oauth()
+    return jsonify(payload)
+
+
+@app.route('/api/integrations/github/oauth/callback', methods=['GET'])
+def github_oauth_callback():
+    code = request.args.get('code')
+    if not code:
+        return jsonify({'error': 'missing code parameter'}), 400
+    payload = github_integration_service.complete_oauth(code)
+    return jsonify(payload)
+
+
+@app.route('/api/integrations/github/status', methods=['GET'])
+def github_integration_status():
+    payload = github_integration_service.status()
+    return jsonify(payload)
+
+
+@app.route('/api/github/repos', methods=['GET'])
+def github_list_repos():
+    payload = github_integration_service.list_repos()
+    return jsonify({'repos': payload})
+
+
+@app.route('/api/github/index', methods=['POST'])
+def github_request_index():
+    data = request.get_json(silent=True) or {}
+    repo_full_name = data.get('repo_full_name')
+    if not repo_full_name:
+        return jsonify({'error': 'repo_full_name is required'}), 400
+    branch = data.get('branch')
+    mode = data.get('mode', 'api')
+    payload = github_integration_service.request_index(repo_full_name, branch=branch, mode=mode)
+    return jsonify(payload), 202
+
+
+@app.route('/api/github/index/<index_id>/status', methods=['GET'])
+def github_index_status(index_id: str):
+    payload = github_integration_service.index_status(index_id)
+    return jsonify(payload)
+
+
+@app.route('/api/github/search/code', methods=['GET'])
+def github_search_code():
+    query = request.args.get('q', '')
+    repo = request.args.get('repo')
+    path = request.args.get('path')
+    try:
+        top_k = int(request.args.get('top_k', '10'))
+    except ValueError:
+        top_k = 10
+    results = github_integration_service.search_code(query, repo=repo, path=path, top_k=top_k)
+    return jsonify({'results': results})
+
+
+@app.route('/api/github/search/issues', methods=['GET'])
+def github_search_issues():
+    query = request.args.get('q', '')
+    repo = request.args.get('repo')
+    updated_since = request.args.get('updated_since')
+    try:
+        top_k = int(request.args.get('top_k', '10'))
+    except ValueError:
+        top_k = 10
+    results = github_integration_service.search_issues(
+        query, repo=repo, updated_since=updated_since, top_k=top_k
+    )
+    return jsonify({'results': results})
+
+
+@app.route('/api/github/repos/<path:repo>/context', methods=['GET'])
+def github_repo_context(repo: str):
+    payload = github_integration_service.repo_context(repo)
+    return jsonify(payload)
+
+
+@app.route('/api/meeting-events', methods=['POST'])
+@rate_limit('meeting')
+def post_meeting_event():
+    """Ingest structured meeting events from capture clients."""
+
+    payload = request.get_json(silent=True) or {}
+
+    tokens_raw = payload.get('tokens', 0)
+    try:
+        tokens = int(tokens_raw)
+    except (TypeError, ValueError):
+        tokens = 0
+    record_cost(tokens=tokens)
+
+    try:
+        result = meeting_event_router.handle_event(payload)
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+
+    return jsonify({'ok': True, 'result': result})
+
 # --- Approvals REST API ---
 @app.route("/api/approvals", methods=['GET'])
+@subscription_required
 def list_approvals():
     """List all pending approvals"""
     try:
@@ -67,6 +250,7 @@ def list_approvals():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/approvals/<approval_id>", methods=['GET'])
+@subscription_required
 def get_approval(approval_id: str):
     """Get specific approval details"""
     try:
@@ -79,6 +263,7 @@ def get_approval(approval_id: str):
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/approvals/resolve", methods=['POST'])
+@subscription_required
 def resolve_approval():
     """Resolve (approve/reject) an approval request"""
     try:
@@ -113,6 +298,7 @@ def resolve_approval():
 
 # --- GitHub Integration Endpoints ---
 @app.route("/api/github/pr", methods=['POST'])
+@subscription_required
 def github_pr():
     """Submit GitHub PR creation for approval"""
     try:
@@ -136,6 +322,7 @@ def github_pr():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/github/comment", methods=['POST'])
+@subscription_required
 def github_comment():
     """Submit GitHub comment for approval"""
     try:
@@ -152,6 +339,7 @@ def github_comment():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/github/issue", methods=['POST'])
+@subscription_required
 def github_issue():
     """Submit GitHub issue creation for approval"""
     try:
@@ -169,6 +357,7 @@ def github_issue():
 
 # --- Jira Integration Endpoints ---
 @app.route("/api/jira/create", methods=['POST'])
+@subscription_required
 def jira_create():
     """Submit Jira issue creation for approval"""
     try:
@@ -190,6 +379,7 @@ def jira_create():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/jira/update", methods=['POST'])
+@subscription_required
 def jira_update():
     """Submit Jira issue update for approval"""
     try:
@@ -206,6 +396,7 @@ def jira_update():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/jira/comment", methods=['POST'])
+@subscription_required
 def jira_comment():
     """Submit Jira comment for approval"""
     try:
@@ -223,6 +414,7 @@ def jira_comment():
 
 # --- Code Generation Endpoint ---
 @app.route("/api/codegen", methods=["POST"])
+@subscription_required
 def codegen():
     """Generate code for a task and open a PR"""
     try:
@@ -283,6 +475,21 @@ def codegen():
         log.error(f"Error generating code: {e}")
         return jsonify({"error": str(e)}), 500
 
+# --- Recording Upload Endpoint ---
+@app.route("/api/recording/upload", methods=["POST"])
+@subscription_required
+def recording_upload():
+    """Upload encrypted recording chunks with resume support."""
+    session_id = request.form.get("session_id")
+    chunk_index = request.form.get("chunk_index", type=int)
+    uploaded = request.files.get("chunk")
+    if not session_id or chunk_index is None or uploaded is None:
+        return jsonify({"error": "Missing parameters"}), 400
+
+    data = uploaded.read()
+    path, stored = recording_service.save_chunk(session_id, data, chunk_index)
+    return jsonify({"stored": stored, "next": chunk_index + 1, "path": path})
+
 # --- GitHub Webhook for CI/status events ---
 @app.route("/webhook/github", methods=['POST'])
 def gh_webhook():
@@ -315,19 +522,18 @@ def gh_webhook():
         log.error(f"Error handling GitHub webhook: {e}")
         return "Internal error", 500
 
-def verify_github_signature(payload_body: bytes, signature_header: str) -> bool:
-    """Verify GitHub webhook signature"""
-    if not signature_header.startswith("sha256="):
-        return False
-    
-    expected_signature = hmac.new(
-        GITHUB_WEBHOOK_SECRET.encode(),
-        payload_body,
-        hashlib.sha256
-    ).hexdigest()
-    
-    provided_signature = signature_header[7:]  # Remove 'sha256=' prefix
-    return hmac.compare_digest(expected_signature, provided_signature)
+# --- Stripe Webhook ---
+@app.route("/webhook/stripe", methods=['POST'])
+def stripe_webhook():
+    """Handle Stripe subscription and invoice webhooks"""
+    payload = request.get_data()
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        handle_stripe_webhook(payload, sig)
+    except Exception as e:
+        log.error(f"Error handling Stripe webhook: {e}")
+        return "", 400
+    return "", 204
 
 # --- Wave 6 PR Auto-Reply Webhook ---
 @app.route("/webhook/github/pr", methods=['POST'])
@@ -338,6 +544,7 @@ def gh_pr_webhook():
         signature = request.headers.get("X-Hub-Signature-256", "")
         body = request.get_data()
         if not verify_github(signature, body):
+            log.warning("Invalid GitHub webhook signature")
             return "", 401
             
         # Import Wave 6 components
@@ -361,7 +568,15 @@ def gh_pr_webhook():
         files = get_pr_files(owner, repo, pr_number)
         comments = get_pr_comments(owner, repo, pr_number)
 
-        suggestions = suggest_replies_and_patch(pr.get("title",""), pr.get("body","") or "", files, comments)
+        suggestions = suggest_replies_and_patch(
+            pr.get("title", ""),
+            pr.get("body", "") or "",
+            files,
+            comments,
+            owner,
+            repo,
+            pr_number,
+        )
         
         # Gate via approvals before posting anything
         item = approvals.submit("github.pr_auto_reply", {
@@ -384,11 +599,16 @@ def gh_pr_webhook():
 
 # --- Wave 6 Documentation API ---
 @app.route("/api/docs/adr", methods=['POST'])
+@subscription_required
 def api_draft_adr():
     """Generate ADR (Architecture Decision Record)"""
     try:
         # Use explicit package path for editor/type checker compatibility
         from backend.doc_agent import draft_adr
+    except RuntimeError as e:
+        log.error(f"Doc agent initialization error: {e}")
+        return jsonify({"error": str(e)}), 500
+    try:
         d = request.get_json(force=True)
         md = draft_adr(d["title"], d.get("context",""), d.get("options",[]), d.get("decision",""), d.get("consequences",[]))
         return jsonify({"markdown": md})
@@ -397,10 +617,15 @@ def api_draft_adr():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/docs/runbook", methods=['POST'])
+@subscription_required
 def api_draft_runbook():
     """Generate operational runbook"""
     try:
         from backend.doc_agent import draft_runbook
+    except RuntimeError as e:
+        log.error(f"Doc agent initialization error: {e}")
+        return jsonify({"error": str(e)}), 500
+    try:
         d = request.get_json(force=True)
         md = draft_runbook(d["service"], d.get("incidents",[]), d.get("commands",[]), d.get("dashboards",[]))
         return jsonify({"markdown": md})
@@ -409,10 +634,15 @@ def api_draft_runbook():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/docs/changelog", methods=['POST'])
+@subscription_required
 def api_draft_changelog():
     """Generate changelog from merged PRs"""
     try:
         from backend.doc_agent import draft_changelog
+    except RuntimeError as e:
+        log.error(f"Doc agent initialization error: {e}")
+        return jsonify({"error": str(e)}), 500
+    try:
         d = request.get_json(force=True)
         md = draft_changelog(d["repo"], d.get("merged_prs",[]))
         return jsonify({"markdown": md})
@@ -422,6 +652,7 @@ def api_draft_changelog():
 
 # --- Wave 7 Mobile Relay Endpoint ---
 @app.route("/api/relay/mobile", methods=['POST'])
+@subscription_required
 @rate_limit('meeting')
 def relay_mobile():
     """Relay messages to mobile WebSocket clients during stealth mode"""
@@ -433,13 +664,31 @@ def relay_mobile():
         # broadcast to mobile WS clients
         notify_all({
             "channel": "mobile",
-            "type": payload.get("type", "answer"), 
+            "type": payload.get("type", "answer"),
             "text": payload.get("text", ""),
             "meetingId": payload.get("meetingId", "")
         })
         return jsonify({"ok": True})
     except Exception as e:
         log.error(f"Error relaying to mobile: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# --- Wave 7 Electron Overlay Relay ---
+@app.route("/api/relay/electron", methods=['POST'])
+@subscription_required
+@rate_limit('meeting')
+def relay_electron():
+    """Relay answers to local Electron overlay."""
+    try:
+        payload = request.get_json(force=True) or {}
+        record_cost(tokens=50)
+
+        from app.private_overlay import show_ai_response
+        show_ai_response(payload.get("text", ""), payload.get("type", "answer"))
+        return jsonify({"ok": True})
+    except Exception as e:
+        log.error(f"Error relaying to electron overlay: {e}")
         return jsonify({"error": str(e)}), 500
 
 # --- Configuration Endpoints ---
@@ -464,6 +713,17 @@ def config_status():
     try:
         return jsonify(get_integration_status())
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --- Meeting Notes ---
+@app.route("/api/meetings/<meeting_id>/notes", methods=['GET'])
+def get_meeting_notes(meeting_id: str):
+    """Retrieve stored notes for a meeting."""
+    try:
+        notes = memory_service.get_meeting_notes(meeting_id)
+        return jsonify({"meeting_id": meeting_id, "notes": notes})
+    except Exception as e:
+        log.error(f"Error retrieving notes for meeting {meeting_id}: {e}")
         return jsonify({"error": str(e)}), 500
 
 # --- WebSocket Support ---

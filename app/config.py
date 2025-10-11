@@ -3,7 +3,12 @@
 This module handles environment variables and application settings.
 """
 import os
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in tests
+    def load_dotenv(*_args, **_kwargs):
+        return False
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,6 +30,20 @@ class Config:
     AI_INTERACTION_MODE = os.getenv("AI_INTERACTION_MODE", "private")  # private, public, silent
     AI_RESPONSE_DELAY = int(os.getenv("AI_RESPONSE_DELAY", "3"))  # seconds before responding
     CONVERSATION_MEMORY_DAYS = int(os.getenv("CONVERSATION_MEMORY_DAYS", "30"))  # days to keep conversations
+
+    # Session mode determines default behaviors
+    SESSION_MODE = os.getenv("SESSION_MODE", "general")  # general, interview
+    PRIVATE_OVERLAY_MODE = os.getenv("PRIVATE_OVERLAY_MODE", "auto")  # on, off, auto
+
+    @classmethod
+    def use_private_overlay(cls) -> bool:
+        """Return True if the private overlay should be active."""
+        mode = cls.PRIVATE_OVERLAY_MODE.lower()
+        if mode == "on":
+            return True
+        if mode == "off":
+            return False
+        return cls.SESSION_MODE == "interview"
     
     # Private overlay settings
     OVERLAY_AUTO_HIDE_SECONDS = int(os.getenv("OVERLAY_AUTO_HIDE_SECONDS", "15"))
@@ -35,15 +54,22 @@ class Config:
     AUDIO_CHUNK_DURATION = int(os.getenv("AUDIO_CHUNK_DURATION", "5"))  # seconds per chunk
     SCREEN_ANALYSIS_INTERVAL = int(os.getenv("SCREEN_ANALYSIS_INTERVAL", "30"))  # seconds
     AI_ASSISTANCE_THRESHOLD = float(os.getenv("AI_ASSISTANCE_THRESHOLD", "0.7"))  # confidence threshold
+
+    # Question boundary detector settings
+    QUESTION_SILENCE_MS_MIN = int(os.getenv("QUESTION_SILENCE_MS_MIN", "700"))
+    QUESTION_SILENCE_MS_MAX = int(os.getenv("QUESTION_SILENCE_MS_MAX", "900"))
+    QUESTION_MAX_LEN_CHARS = int(os.getenv("QUESTION_MAX_LEN_CHARS", "2000"))
     
     # Audio recording settings
     SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "44100"))
     CHANNELS = int(os.getenv("CHANNELS", "1"))
     CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1024"))
-    
+
     # Screen recording settings
     SCREEN_FPS = int(os.getenv("SCREEN_FPS", "10"))
     SCREEN_QUALITY = int(os.getenv("SCREEN_QUALITY", "80"))
+    SCREEN_RECORDING_ENABLED = os.getenv("SCREEN_RECORDING_ENABLED", "false").lower() == "true"
+    SCREEN_RECORDING_DURATION = int(os.getenv("SCREEN_RECORDING_DURATION", "10"))  # seconds
     
     # Knowledge base settings
     CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma_db")

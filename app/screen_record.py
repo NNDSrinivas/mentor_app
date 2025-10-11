@@ -6,12 +6,13 @@ sessions, and analyze the recorded content.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
 import threading
 from datetime import datetime
-from typing import List, Any, Dict, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 # Optional computer vision imports
 try:
@@ -338,6 +339,24 @@ class ScreenAnalyzer:
         return elements
 
 
+def get_recording_path(session_id: str) -> Optional[str]:
+    """Retrieve a recording path for a session.
+
+    Looks for ``session_recordings.json`` in ``Config.RECORDINGS_DIR`` and
+    returns the path for the provided ``session_id`` if present.
+    """
+    try:
+        metadata_path = os.path.join(Config.RECORDINGS_DIR, "session_recordings.json")
+        if not os.path.exists(metadata_path):
+            return None
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get(session_id)
+    except Exception as e:  # pragma: no cover - best effort
+        logger.debug(f"Recording path lookup failed: {e}")
+        return None
+
+
 def record_screen(session_id: str, duration: Optional[int] = None) -> str:
     """Record the screen during a session.
 
@@ -352,10 +371,11 @@ def record_screen(session_id: str, duration: Optional[int] = None) -> str:
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     video_path = os.path.join(Config.RECORDINGS_DIR, f"{session_id}_{timestamp}_screen.mp4")
-    
+
     recorder = ScreenRecorder()
-    
+
     try:
+        os.makedirs(Config.RECORDINGS_DIR, exist_ok=True)
         recorder.start_recording(video_path)
         
         if duration:
