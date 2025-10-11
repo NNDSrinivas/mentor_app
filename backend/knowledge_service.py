@@ -42,6 +42,24 @@ log = logging.getLogger(__name__)
 app = FastAPI(title="Mentor Knowledge Service", version="1.0")
 
 
+def _get_env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _get_env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+LLM_MAX_TOKENS = _get_env_int("OPENAI_MAX_TOKENS", 600)
+STREAM_PING_SECONDS = _get_env_float("SESSION_STREAM_PING_SECONDS", 15.0)
+
+
 class SummaryResponse(BaseModel):
     bullets: List[str]
     decisions: List[str]
@@ -195,7 +213,7 @@ def _llm_client(*, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
-        "max_tokens": 600,
+        "max_tokens": LLM_MAX_TOKENS,
         "response_format": {
             "type": "json_schema",
             "json_schema": {
@@ -425,12 +443,13 @@ def list_session_answers_endpoint(
 @app.get("/api/sessions/{session_id}/stream")
 def stream_session_events(session_id: uuid.UUID):
     client_queue: "queue.Queue[Dict[str, Any]]" = _stream_broker.register(session_id)
+    ping_interval = max(0.1, STREAM_PING_SECONDS)
 
     def event_stream() -> Any:
         try:
             while True:
                 try:
-                    message = client_queue.get(timeout=15)
+                    message = client_queue.get(timeout=ping_interval)
                 except queue.Empty:
                     yield "event: ping\ndata: {}\n\n"
                     continue

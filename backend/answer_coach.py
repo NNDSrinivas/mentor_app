@@ -39,6 +39,8 @@ log = logging.getLogger(__name__)
 
 
 CONFIDENCE_QUANTIZER = Decimal("0.0001")
+_TOKEN_REGEX = re.compile(r"[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*")
+_HAS_DIGIT_REGEX = re.compile(r"\d")
 
 
 def normalize_confidence(value: Any) -> Decimal:
@@ -169,11 +171,11 @@ def extract_noun_phrases(text: str) -> List[str]:
     if not text:
         return []
 
-    tokens = re.findall(r"[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*", text)
+    tokens = _TOKEN_REGEX.findall(text)
     keywords: List[str] = []
     buffer: List[str] = []
     for token in tokens:
-        if token.isupper() or re.search(r"\d", token):
+        if token.isupper() or _HAS_DIGIT_REGEX.search(token):
             keywords.append(token)
             buffer = []
             continue
@@ -362,7 +364,7 @@ class AnswerGenerationService:
             return []
         try:
             return func(query, top_k)
-        except (ConnectionError, TimeoutError, RequestException) as exc:  # pragma: no cover - defensive log
+        except (ConnectionError, TimeoutError, RequestException) as exc:  # pragma: no cover - defensive logging
             log.warning("context retrieval failed: %s", exc)
             return []
 
@@ -547,7 +549,7 @@ class AnswerJobQueue:
             session = self._session_factory()
             try:
                 service.process_job(session, job)
-            except (CitationValidationError, TimeoutError, RequestException) as exc:  # pragma: no cover - defensive logging
+            except (CitationValidationError, TimeoutError, ConnectionError, RequestException) as exc:  # pragma: no cover - defensive logging
                 log.warning("recoverable error while processing answer job: %s", exc, exc_info=True)
                 session.rollback()
             except Exception:

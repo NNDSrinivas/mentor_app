@@ -70,7 +70,7 @@ def add_transcript_segment(
         text=text,
         speaker=speaker,
         ts_start_ms=ts_start_ms,
-        ts_end_ms=ts_end_ms or ts_start_ms,
+        ts_end_ms=ts_end_ms if ts_end_ms is not None else ts_start_ms,
     )
     session.add(segment)
     log.debug("Stored transcript segment %s for meeting %s", segment.id, meeting.id)
