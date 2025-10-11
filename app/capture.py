@@ -9,9 +9,8 @@ from __future__ import annotations
 import logging
 import os
 import time
-import threading
 from datetime import datetime
-from typing import Any, Tuple, Optional
+from typing import Any, Dict, Tuple, Optional
 
 # Optional audio processing imports
 try:
@@ -115,42 +114,54 @@ class AudioRecorder:
         return output_path
 
 
-def capture_meeting(meeting_id: str) -> Tuple[str, str]:
+def capture_meeting(meeting_details: Dict[str, Any]) -> Tuple[str, str]:
     """Capture audio and video from a meeting.
 
     Args:
-        meeting_id: Identifier for the meeting (could be a Zoom meeting ID,
-            a calendar event ID or a link).
+        meeting_details: Dictionary containing meeting information. Must
+            include ``platform`` (zoom, teams, google_meet) and an ``id``.
 
     Returns:
-        A tuple `(audio_path, video_path)` pointing to recorded files.
+        A tuple ``(audio_path, video_path)`` pointing to recorded files.
     """
-    logger.info("Capturing meeting %s", meeting_id)
-    
-    # Create timestamped filenames
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    audio_path = os.path.join(Config.RECORDINGS_DIR, f"{meeting_id}_{timestamp}_audio.wav")
-    video_path = os.path.join(Config.RECORDINGS_DIR, f"{meeting_id}_{timestamp}_video.mp4")
-    
-    # For now, we'll just record audio
-    recorder = AudioRecorder()
-    
+    from .meeting_connectors import (
+        ZoomConnector,
+        TeamsConnector,
+        GoogleMeetConnector,
+    )
+
+    platform = meeting_details.get("platform", "").lower()
+    meeting_id = meeting_details.get("id") or meeting_details.get("meeting_id")
+    if not meeting_id:
+        raise ValueError("meeting_details must include an 'id'")
+
+    connectors = {
+        "zoom": ZoomConnector,
+        "teams": TeamsConnector,
+        "google_meet": GoogleMeetConnector,
+        "google-meet": GoogleMeetConnector,
+        "googlemeet": GoogleMeetConnector,
+        "meet": GoogleMeetConnector,
+    }
+
+    connector_cls = connectors.get(platform)
+    if connector_cls is None:
+        raise ValueError(f"Unsupported meeting platform: {platform}")
+
+    connector = connector_cls(meeting_id)
+
+    logger.info("Capturing meeting %s on %s", meeting_id, platform)
+
     try:
-        recorder.start_recording()
+        connector.start()
         logger.info("Recording in progress. Press Ctrl+C to stop...")
-        
-        # In a real implementation, this would be controlled by meeting events
-        # For demo purposes, record for 10 seconds
-        time.sleep(10)
-        
+        while True:
+            time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Recording interrupted by user")
     finally:
-        recorder.stop_recording(audio_path)
-    
-    # Video recording placeholder - would need platform-specific implementation
-    logger.debug("Video recording placeholder - would implement platform-specific capture")
-    
+        audio_path, video_path = connector.stop()
+
     return audio_path, video_path
 
 
