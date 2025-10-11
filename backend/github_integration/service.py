@@ -19,6 +19,12 @@ from backend.db.models import GHConnection, GHFile, GHIssuePR, GHRepo
 from backend.github_integration.chunking import chunk_source, iter_language_from_path
 from backend.security.crypto import TokenEncryptor
 
+EXPECTED_INDEX_ERRORS: Tuple[type[Exception], ...] = (
+    FileNotFoundError,
+    ValueError,
+    RuntimeError,
+)
+
 
 def _now() -> datetime:
     return datetime.utcnow()
@@ -348,6 +354,13 @@ class GitHubIntegrationService:
             repo_info = self._prepare_repo(repo_full_name)
             self._ingest_repo(index_id, repo_info)
             self._update_job(index_id, state="completed", progress=1.0, finished_at=_now())
+        except EXPECTED_INDEX_ERRORS as exc:  # pragma: no cover - defensive
+            self._update_job(
+                index_id,
+                state="failed",
+                finished_at=_now(),
+                errors=[str(exc)],
+            )
         except Exception as exc:  # pragma: no cover - defensive
             self._update_job(
                 index_id,
@@ -355,6 +368,7 @@ class GitHubIntegrationService:
                 finished_at=_now(),
                 errors=[str(exc)],
             )
+            raise
 
     def _prepare_repo(self, repo_full_name: str) -> Tuple[GHRepo, Path]:
         with session_scope() as session:
@@ -468,4 +482,3 @@ class GitHubIntegrationService:
 github_integration_service = GitHubIntegrationService()
 
 __all__ = ["GitHubIntegrationService", "github_integration_service"]
-

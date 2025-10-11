@@ -3,8 +3,12 @@
 import os
 import json
 import sqlite3
-import chromadb
-from chromadb.config import Settings
+try:
+    import chromadb
+    from chromadb.config import Settings
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    chromadb = None  # type: ignore[assignment]
+    Settings = None  # type: ignore[assignment]
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import logging
@@ -19,22 +23,35 @@ class MemoryService:
 
     def __init__(self):
         persist_dir = os.getenv("MEMORY_DB_PATH", "./memory_db")
-        try:
-            self.client = chromadb.Client(
-                Settings(persist_directory=persist_dir)
-            )
-            # Create collections for different contexts
-            self.meeting_collection = self.client.get_or_create_collection("meetings")
-            self.task_collection = self.client.get_or_create_collection("tasks")
-            self.code_collection = self.client.get_or_create_collection("code")
-            log.info("ChromaDB collections initialized successfully")
-        except Exception as e:
-            log.warning(f"ChromaDB not available, falling back to simple storage: {e}")
+        self.client = None
+
+        if chromadb is not None and Settings is not None:
+            try:
+                self.client = chromadb.Client(
+                    Settings(persist_directory=persist_dir)
+                )
+                # Create collections for different contexts
+                self.meeting_collection = self.client.get_or_create_collection("meetings")
+                self.task_collection = self.client.get_or_create_collection("tasks")
+                self.code_collection = self.client.get_or_create_collection("code")
+                log.info("ChromaDB collections initialized successfully")
+            except Exception as e:
+                log.warning(f"ChromaDB not available, falling back to simple storage: {e}")
+                self.client = None
+
+        if self.client is None:
             # Fallback to the original SQLite-based system
+            if chromadb is None:
+                log.warning("ChromaDB module not installed, using SQLite fallback")
             self.db_path = os.getenv("MENTOR_DB_PATH", "mentor_memory.db")
             self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self._init_fallback_db()
-            self.client = None
+            self.meeting_collection = None
+            self.task_collection = None
+            self.code_collection = None
+        else:
+            self.db_path = None
+            self.conn = None
 
         # Documentation database for summaries and tasks
         self.doc_db_path = os.getenv("DOCUMENTATION_DB_PATH", "data/documentation.db")

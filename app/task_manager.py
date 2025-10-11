@@ -13,7 +13,15 @@ from dataclasses import dataclass, asdict
 
 from backend.integrations.jira_manager import JiraManager
 from backend.integrations.github_manager import GitHubManager
-from backend.approvals import request_pr_auto_reply, sync_jira_pr_status
+try:  # pragma: no cover - optional approvals wiring
+    from backend.approvals import request_pr_auto_reply, sync_jira_pr_status
+except ImportError:  # pragma: no cover - fallback for tests without approvals module
+    def request_pr_auto_reply(*args, **kwargs):
+        return {}
+
+
+    def sync_jira_pr_status(*args, **kwargs):
+        return {}
 from .meeting_intelligence import meeting_intelligence
 
 # Config with graceful fallbacks
