@@ -98,6 +98,7 @@ def _install_stub_dependencies() -> None:
             InvalidTokenError=_StubInvalidTokenError,
         ),
     )
+
 def test_backend_register_login_and_resume_flow(tmp_path, monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "test-secret")
     backend_db = tmp_path / "backend.db"
