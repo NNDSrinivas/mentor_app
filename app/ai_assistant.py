@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 import time
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, cast
 from dataclasses import dataclass, asdict
@@ -79,6 +80,66 @@ class MeetingSession:
     screen_sharing: bool
     topics_discussed: List[str]
 
+    def to_dict(self) -> Dict[str, Any]:
+        data = asdict(self)
+        data["conversations"] = [asdict(c) for c in self.conversations]
+        return data
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "MeetingSession":
+        data["conversations"] = [ConversationEntry(**c) for c in data.get("conversations", [])]
+        return cls(**data)
+
+    @classmethod
+    def from_json(cls, data: str) -> "MeetingSession":
+        return cls.from_dict(json.loads(data))
+
+    def save(self, store: "SessionStore") -> None:
+        store.save(self)
+
+    @classmethod
+    def load(cls, session_id: str, store: "SessionStore") -> Optional["MeetingSession"]:
+        return store.load(session_id)
+
+
+class SessionStore:
+    """Simple SQLite store for meeting sessions."""
+
+    def __init__(self, db_path: str = "meeting_sessions.db") -> None:
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._init_db()
+
+    def _init_db(self) -> None:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id TEXT PRIMARY KEY,
+                data TEXT NOT NULL
+            )
+            """
+        )
+        self.conn.commit()
+
+    def save(self, session: MeetingSession) -> None:
+        cur = self.conn.cursor()
+        cur.execute(
+            "REPLACE INTO sessions (session_id, data) VALUES (?, ?)",
+            (session.session_id, session.to_json()),
+        )
+        self.conn.commit()
+
+    def load(self, session_id: str) -> Optional[MeetingSession]:
+        cur = self.conn.cursor()
+        cur.execute("SELECT data FROM sessions WHERE session_id = ?", (session_id,))
+        row = cur.fetchone()
+        if row:
+            return MeetingSession.from_json(row[0])
+        return None
+
 
 class ConversationMemory:
     """Persistent conversation memory system."""
@@ -93,6 +154,7 @@ class ConversationMemory:
             # continue without it so the assistant can still operate.
             logger.warning(f"Knowledge base disabled: {e}")
             self.kb = None
+        self.store = SessionStore()
         
     def start_session(self, session_id: str, context: Dict[str, Any]) -> str:
         """Start a new conversation session."""
@@ -109,9 +171,10 @@ class ConversationMemory:
             screen_sharing=context.get('screen_sharing', False),
             topics_discussed=[]
         )
-        
+
         self.sessions[session_id] = session
         self.active_session = session_id
+        session.save(self.store)
         
         logger.info(f"Started conversation session: {session_id}")
         return session_id
@@ -134,13 +197,32 @@ class ConversationMemory:
                     self.kb.add_document(entry.content, metadata)
                 except Exception as e:
                     logger.warning(f"Failed to store conversation in KB: {e}")
+            self.sessions[session_id].save(self.store)
+
+    def add_action_item(self, session_id: str, item: str) -> None:
+        if session_id in self.sessions:
+            self.sessions[session_id].action_items.append(item)
+            self.sessions[session_id].save(self.store)
+
+    def add_decision(self, session_id: str, decision: str) -> None:
+        if session_id in self.sessions:
+            self.sessions[session_id].decisions.append(decision)
+            self.sessions[session_id].save(self.store)
+
+    def load_session(self, session_id: str) -> Optional[MeetingSession]:
+        session = MeetingSession.load(session_id, self.store)
+        if session:
+            self.sessions[session_id] = session
+        return session
             
     def get_session_context(self, session_id: str) -> Dict[str, Any]:
         """Get full context for a session."""
         if session_id not in self.sessions:
-            return {}
-            
-        session = self.sessions[session_id]
+            session = self.load_session(session_id)
+            if not session:
+                return {}
+        else:
+            session = self.sessions[session_id]
         return {
             "current_session": asdict(session),
             "recent_conversations": [asdict(c) for c in session.conversations[-10:]],
