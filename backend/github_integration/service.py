@@ -20,9 +20,9 @@ from backend.github_integration.chunking import chunk_source, iter_language_from
 from backend.security.crypto import TokenEncryptor
 
 EXPECTED_INDEX_ERRORS: Tuple[type[Exception], ...] = (
-    FileNotFoundError,
-    ValueError,
-    RuntimeError,
+    FileNotFoundError,  # Missing mock fixture files
+    ValueError,  # Invalid repository configuration
+    RuntimeError,  # Non-mock indexing not implemented
 )
 
 

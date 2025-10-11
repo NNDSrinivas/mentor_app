@@ -150,14 +150,13 @@ def select_context_window(
     seg_list.sort(key=lambda seg: seg.get("ts_end_ms", seg.get("ts_start_ms", 0)))
     latest = seg_list[-1].get("ts_end_ms", seg_list[-1].get("ts_start_ms", 0))
     threshold = max(0, latest - window_seconds * 1000)
-    # Include segments ending at or after threshold (>=) to capture all relevant context.
-    # Previously used strict cutoff (>) which could exclude segments ending exactly at
-    # the threshold, potentially missing important context when segment boundaries
-    # align with the time window boundary.
+    # Include segments ending after threshold (>) to capture recent context.
+    # Excludes segments ending exactly at threshold to avoid boundary ambiguity
+    # and focus on the most recent content within the specified time window.
     window: List[Dict[str, Any]] = [
         seg
         for seg in seg_list
-        if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) >= threshold
+        if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) > threshold
     ]
     return window
 
