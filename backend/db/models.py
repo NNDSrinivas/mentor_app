@@ -20,7 +20,7 @@ from sqlalchemy.types import CHAR, JSON, TypeDecorator
 from .base import Base
 
 
-def _utc_now():
+def _get_get_utc_now():
     """Get current UTC time for SQLAlchemy column defaults."""
     return datetime.now(UTC)
 
@@ -46,14 +46,20 @@ class GUID(TypeDecorator):
             return value
         if isinstance(value, uuid.UUID):
             return str(value) if dialect.name == "sqlite" else value
-        return str(uuid.UUID(str(value)))
+        try:
+            return str(uuid.UUID(str(value)))
+        except (ValueError, TypeError):
+            return None
 
     def process_result_value(self, value, dialect):
         if value is None:
             return value
         if isinstance(value, uuid.UUID):
             return value
-        return uuid.UUID(str(value))
+        try:
+            return uuid.UUID(str(value))
+        except (ValueError, TypeError):
+            return None
 
 
 class Meeting(Base):
@@ -88,7 +94,7 @@ class SessionAnswer(Base):
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     session_id = Column(GUID(), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=_utc_now, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_get_utc_now, nullable=False)
     answer = Column(Text, nullable=False)
     citations = _jsonb_column("citations")
     confidence = Column(Numeric)
@@ -103,7 +109,7 @@ class MeetingSummary(Base):
     bullets = _jsonb_column("bullets")
     decisions = _jsonb_column("decisions")
     risks = _jsonb_column("risks")
-    created_at = Column(DateTime(timezone=True), default=_utc_now)
+    created_at = Column(DateTime(timezone=True), default=_get_utc_now)
 
 
 class ActionItem(Base):
@@ -122,9 +128,9 @@ class GHConnection(Base):
     __tablename__ = "gh_connection"
 
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
-    created_at = Column(DateTime(timezone=True), default=_utc_now)
+    created_at = Column(DateTime(timezone=True), default=_get_utc_now)
     updated_at = Column(
-        DateTime(timezone=True), default=_utc_now, onupdate=_utc_now
+        DateTime(timezone=True), default=_get_utc_now, onupdate=_get_utc_now
     )
     installation_id = Column(String(255))
     account_login = Column(String(255))
@@ -152,9 +158,9 @@ class GHRepo(Base):
     last_index_at = Column(DateTime(timezone=True), nullable=True)
     languages = _jsonb_column("languages")
     top_paths = _jsonb_column("top_paths")
-    created_at = Column(DateTime(timezone=True), default=_utc_now)
+    created_at = Column(DateTime(timezone=True), default=_get_utc_now)
     updated_at = Column(
-        DateTime(timezone=True), default=_utc_now, onupdate=_utc_now
+        DateTime(timezone=True), default=_get_utc_now, onupdate=_get_utc_now
     )
 
 
@@ -169,9 +175,9 @@ class GHFile(Base):
     end_line = Column(Integer, nullable=False)
     snippet = Column(Text, nullable=False)
     embedding_id = Column(String(255))
-    created_at = Column(DateTime(timezone=True), default=_utc_now)
+    created_at = Column(DateTime(timezone=True), default=_get_utc_now)
     updated_at = Column(
-        DateTime(timezone=True), default=_utc_now, onupdate=_utc_now
+        DateTime(timezone=True), default=_get_utc_now, onupdate=_get_utc_now
     )
 
 
@@ -188,6 +194,6 @@ class GHIssuePR(Base):
     url = Column(Text)
     snippet = Column(Text)
     embedding_id = Column(String(255))
-    created_at = Column(DateTime(timezone=True), default=_utc_now)
-    ingested_at = Column(DateTime(timezone=True), default=_utc_now)
+    created_at = Column(DateTime(timezone=True), default=_get_utc_now)
+    ingested_at = Column(DateTime(timezone=True), default=_get_utc_now)
 

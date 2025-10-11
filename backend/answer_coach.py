@@ -150,6 +150,7 @@ def select_context_window(
     seg_list.sort(key=lambda seg: seg.get("ts_end_ms", seg.get("ts_start_ms", 0)))
     latest = seg_list[-1].get("ts_end_ms", seg_list[-1].get("ts_start_ms", 0))
     threshold = max(0, latest - window_seconds * 1000)
+    # Use > (not >=) to exclude segments ending exactly at threshold
     window: List[Dict[str, Any]] = [
         seg
         for seg in seg_list
