@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Iterable, List, Optional
 
@@ -45,7 +45,7 @@ def ensure_meeting(
         session_id=session_id,
         title=title,
         provider=provider,
-        started_at=started_at or datetime.now(UTC),
+        started_at=started_at or datetime.now(timezone.utc),
         participants=list(participants or []),
         org_id=org_id,
     )
@@ -99,14 +99,14 @@ def upsert_summary(
             bullets=bullets,
             decisions=decisions,
             risks=risks,
-            created_at=datetime.now(UTC),
+            created_at=datetime.now(timezone.utc),
         )
         session.add(summary)
     else:
         summary.bullets = bullets
         summary.decisions = decisions
         summary.risks = risks
-        summary.created_at = datetime.now(UTC)
+        summary.created_at = datetime.now(timezone.utc)
     return summary
 
 
@@ -189,7 +189,7 @@ def record_session_answer(
         confidence=confidence,
         token_count=token_count,
         latency_ms=latency_ms,
-        created_at=datetime.now(UTC),
+        created_at=datetime.now(timezone.utc),
     )
     session.add(record)
     return record
@@ -212,7 +212,7 @@ def list_session_answers(
 def mark_meeting_completed(session: Session, meeting_id: uuid.UUID) -> None:
     meeting = session.get(models.Meeting, meeting_id)
     if meeting:
-        meeting.ended_at = meeting.ended_at or datetime.now(UTC)
+        meeting.ended_at = meeting.ended_at or datetime.now(timezone.utc)
 
 
 def search_meetings(

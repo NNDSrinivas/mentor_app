@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -22,7 +22,7 @@ from .base import Base
 
 def _get_utc_now():
     """Get current UTC time for SQLAlchemy column defaults."""
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _jsonb_column(name: str):
