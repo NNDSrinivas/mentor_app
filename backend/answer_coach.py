@@ -150,11 +150,11 @@ def select_context_window(
     seg_list.sort(key=lambda seg: seg.get("ts_end_ms", seg.get("ts_start_ms", 0)))
     latest = seg_list[-1].get("ts_end_ms", seg_list[-1].get("ts_start_ms", 0))
     threshold = max(0, latest - window_seconds * 1000)
-    # Use > (not >=) to exclude segments ending exactly at threshold
+    # Include segments ending at or after threshold to capture all relevant context
     window: List[Dict[str, Any]] = [
         seg
         for seg in seg_list
-        if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) > threshold
+        if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) >= threshold
     ]
     return window
 
@@ -557,6 +557,7 @@ class AnswerJobQueue:
             except Exception:
                 session.rollback()
                 log.exception("unexpected error processing answer job")
+                # Using bare 'raise' to preserve the original traceback context
                 raise
             finally:
                 session.close()

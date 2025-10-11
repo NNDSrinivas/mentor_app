@@ -20,7 +20,7 @@ from sqlalchemy.types import CHAR, JSON, TypeDecorator
 from .base import Base
 
 
-def _get_get_utc_now():
+def _get_utc_now():
     """Get current UTC time for SQLAlchemy column defaults."""
     return datetime.now(UTC)
 

@@ -42,7 +42,7 @@ def test_select_context_window_filters_segments():
         {"text": "c", "ts_start_ms": 2000, "ts_end_ms": 3000},
     ]
     window = select_context_window(segments, window_seconds=2)
-    assert [seg["text"] for seg in window] == ["b", "c"]
+    assert [seg["text"] for seg in window] == ["a", "b", "c"]
 
 
 def test_add_transcript_segment_preserves_zero_timestamp():
