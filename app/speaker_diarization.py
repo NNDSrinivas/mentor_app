@@ -1,6 +1,9 @@
-"""
-Real-time Speaker Diarization for Interview Assistant
-Identifies and separates different speakers in audio streams.
+"""Real-time Speaker Diarization for Interview Assistant.
+
+This module now uses `pyannote.audio` for speaker diarization instead of the
+previous heuristic based approach.  Detected speakers are mapped to
+"interviewer" and "candidate" roles which can then be consumed by the realtime
+pipeline.
 """
 
 import logging
@@ -10,9 +13,17 @@ import wave
 import numpy as np
 import threading
 import time
+import tempfile
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+
+import numpy as np
+
+try:  # pyannote is optional but preferred
+    from pyannote.audio import Pipeline
+except Exception:  # pragma: no cover - only triggered when dependency missing
+    Pipeline = None  # type: ignore
 
 try:  # Optional heavy dependency
     from pyannote.audio import Pipeline  # type: ignore
@@ -46,7 +57,7 @@ class SpeakerProfile:
 
 class SpeakerDiarizer:
     """Real-time speaker diarization and interview flow detection."""
-    
+
     def __init__(self):
         self.speakers: Dict[str, SpeakerProfile] = {}
         self.current_segments: List[SpeakerSegment] = []
@@ -56,6 +67,10 @@ class SpeakerDiarizer:
         self.is_processing = False
         self.silence_threshold = 2.0  # seconds of silence to end a question
         self.last_speech_time = time.time()
+        
+        # Mapping from raw diarization speaker labels to conversation roles
+        self.speaker_role_map: Dict[str, str] = {}
+        
         self.pipeline: Optional[Pipeline] = None
 
         if PYANNOTE_AVAILABLE:
@@ -156,12 +171,118 @@ class SpeakerDiarizer:
             )
 
         return segments
+                            speaker_id=str(speaker),
+                            confidence=1.0,
+                            transcript="",
+                        )
+                    )
+                return segments
+            except Exception as e:  # pragma: no cover
+                logger.warning(f"pyannote diarization failed, falling back to heuristic: {e}")
+
+        return self._heuristic_diarization(audio_source, timestamp)
+
+    def _heuristic_diarization(self, audio_source: Union[str, bytes], timestamp: float) -> List[SpeakerSegment]:
+        """Fallback energy-based diarization used when pyannote isn't available."""
+        try:
+            if isinstance(audio_source, bytes):
+                wav = wave.open(io.BytesIO(audio_source))
+            else:
+                wav = wave.open(audio_source, "rb")
+        except Exception as e:
+            logger.error(f"Failed to open audio for diarization: {e}")
+            return []
+
+        with wav:
+            sample_rate = wav.getframerate()
+            frames = wav.readframes(wav.getnframes())
+
+        audio = np.frombuffer(frames, dtype=np.int16).astype(float)
+        if not len(audio):
+            return []
+
+        frame_size = int(sample_rate * 0.1)  # 100ms frames for finer detection
+        threshold = 0.01 * np.max(np.abs(audio))
+        segments: List[SpeakerSegment] = []
+        start = None
+        speaker_index = 0
+        for i in range(0, len(audio), frame_size):
+            frame = audio[i : i + frame_size]
+            energy = np.mean(np.abs(frame))
+            current_time = timestamp + i / sample_rate
+            if energy > threshold and start is None:
+                start = current_time
+            elif energy <= threshold and start is not None:
+                end = current_time
+                segments.append(
+                    SpeakerSegment(
+                        start_time=start,
+                        end_time=end,
+                        speaker_id=f"speaker_{speaker_index}",
+                        confidence=0.5,
+                        transcript="",
+                    )
+                )
+                speaker_index += 1
+                start = None
+        if start is not None:
+            end = timestamp + len(audio) / sample_rate
+                segments.append(
+                    SpeakerSegment(
+                        start_time=start,
+                        end_time=end,
+                        speaker_id=f"speaker_{speaker_index}",
+                        confidence=0.5,
+                        transcript="",
+                    )
+                )
+
+        return segments
+
+    def _load_pipeline(self):
+        """Load the pyannote pipeline lazily to avoid startup cost."""
+        if self._pipeline_loaded or Pipeline is None:
+            return
+        try:
+            token = os.getenv("HUGGINGFACE_TOKEN")
+            self.pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization", use_auth_token=token
+            )
+            self._pipeline_loaded = True
+        except Exception as exc:  # pragma: no cover - optional dependency
+            logger.warning(f"Failed to load pyannote pipeline: {exc}")
+            self.pipeline = None
+            self._pipeline_loaded = True
+
+    def _map_speaker_role(self, speaker_label: str) -> str:
+        """Map raw speaker labels to conversation roles.
+
+        The first unique speaker observed is assumed to be the interviewer and
+        the second the candidate. Subsequent speakers retain their original
+        label.
+        """
+
+        if speaker_label not in self.speaker_role_map:
+            if "interviewer" not in self.speaker_role_map.values():
+                self.speaker_role_map[speaker_label] = "interviewer"
+                self.interviewer_id = speaker_label
+            elif "candidate" not in self.speaker_role_map.values():
+                self.speaker_role_map[speaker_label] = "candidate"
+                self.candidate_id = speaker_label
+            else:
+                # Any additional speakers retain their label
+                self.speaker_role_map[speaker_label] = speaker_label
+
+        return self.speaker_role_map[speaker_label]
     
     def process_transcript_with_speakers(self, transcript: str, speaker_features: Dict) -> SpeakerSegment:
         """Process transcript and identify speaker and speech type."""
         
-        # Identify speaker based on voice features and patterns
-        speaker_id = self.identify_speaker(speaker_features, transcript)
+        # Identify speaker based on diarization output or fallback heuristics
+        if 'speaker_label' in speaker_features:
+            speaker_id = self._map_speaker_role(speaker_features['speaker_label'])
+        else:
+            speaker_id = self.identify_speaker(speaker_features, transcript)
         
         # Determine if this is interviewer or candidate
         is_interviewer = self.is_likely_interviewer(transcript, speaker_id)
@@ -185,22 +306,20 @@ class SpeakerDiarizer:
         return segment
     
     def identify_speaker(self, voice_features: Dict, transcript: str) -> str:
-        """Identify speaker based on voice features and patterns."""
-        
-        # In a real implementation, this would use:
-        # 1. Voice embeddings from models like x-vector or ECAPA-TDNN
-        # 2. Speaker verification models
-        # 3. Clustering algorithms for unseen speakers
-        
-        # Simple heuristic based on speech patterns for now
+        """Fallback speaker identification based on transcript patterns.
+
+        This method is retained for cases where diarization output is not
+        available. It uses simple text heuristics to guess whether the speaker is
+        the interviewer or the candidate.
+        """
+
         if self.is_likely_interviewer_speech(transcript):
             if not self.interviewer_id:
                 self.interviewer_id = "interviewer_1"
             return self.interviewer_id
-        else:
-            if not self.candidate_id:
-                self.candidate_id = "candidate_1"
-            return self.candidate_id
+        if not self.candidate_id:
+            self.candidate_id = "candidate_1"
+        return self.candidate_id
     
     def is_likely_interviewer(self, transcript: str, speaker_id: str) -> bool:
         """Determine if speaker is likely the interviewer."""
