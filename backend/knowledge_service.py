@@ -148,7 +148,7 @@ def _default_search(path: str, query: str, top_k: int) -> List[Dict[str, Any]]:
         )
         response.raise_for_status()
         payload = response.json()
-    except Exception as exc:  # pragma: no cover - network errors not asserted in tests
+    except (requests.RequestException, json.JSONDecodeError) as exc:  # pragma: no cover - network errors not asserted in tests
         log.warning("context lookup failed for %s: %s", url, exc)
         return []
 
@@ -205,11 +205,13 @@ def _llm_client(*, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
         },
     }
 
-    response = requests.post(url, headers=headers, json=payload, timeout=30)
     try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
-    except requests.HTTPError as exc:  # pragma: no cover - network error surface
+    except requests.HTTPError as exc:  # pragma: no cover - HTTP error surface
         raise RuntimeError(f"LLM API error: {exc}") from exc
+    except requests.RequestException as exc:  # pragma: no cover - network/HTTP error surface
+        raise RuntimeError(f"LLM API request error: {exc}") from exc
 
     data = response.json()
     choices = data.get("choices") or []

@@ -27,6 +27,14 @@ try:  # pragma: no cover - optional dependency
 except Exception:  # pragma: no cover - optional dependency
     tiktoken = None
 
+try:  # pragma: no cover - optional dependency
+    from requests import RequestException  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    class RequestException(Exception):  # type: ignore[no-redef]
+        """Fallback when ``requests`` is unavailable."""
+
+        pass
+
 log = logging.getLogger(__name__)
 
 
@@ -354,7 +362,7 @@ class AnswerGenerationService:
             return []
         try:
             return func(query, top_k)
-        except Exception as exc:  # pragma: no cover - defensive log
+        except (ConnectionError, TimeoutError, RequestException) as exc:  # pragma: no cover - defensive log
             log.warning("context retrieval failed: %s", exc)
             return []
 
@@ -539,9 +547,13 @@ class AnswerJobQueue:
             session = self._session_factory()
             try:
                 service.process_job(session, job)
-            except Exception:  # pragma: no cover - defensive logging
-                log.exception("failed to process answer job")
+            except (CitationValidationError, RuntimeError, TimeoutError, ConnectionError, RequestException) as exc:  # pragma: no cover - defensive logging
+                log.warning("recoverable error while processing answer job: %s", exc, exc_info=True)
                 session.rollback()
+            except Exception:
+                session.rollback()
+                log.exception("unexpected error processing answer job")
+                raise
             finally:
                 session.close()
 
