@@ -45,6 +45,24 @@ def test_select_context_window_filters_segments():
     assert [seg["text"] for seg in window] == ["b", "c"]
 
 
+def test_add_transcript_segment_preserves_zero_timestamp():
+    session = _session()
+    session_id = uuid.uuid4()
+    ensure_meeting(session, session_id=session_id, title="Zero")
+
+    segment = add_transcript_segment(
+        session,
+        session_id=session_id,
+        text="first",
+        speaker="agent",
+        ts_start_ms=0,
+        ts_end_ms=0,
+    )
+
+    assert segment.ts_start_ms == 0
+    assert segment.ts_end_ms == 0
+
+
 def test_extract_noun_phrases_captures_identifiers():
     text = "What's the status of PROJ-15 and OAuth token expiry?"
     phrases = extract_noun_phrases(text)
