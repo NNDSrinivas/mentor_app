@@ -81,8 +81,8 @@ class SessionAnswer(Base):
         Index("ix_session_answer_session_created", "session_id", "created_at", postgresql_using="btree"),
     )
 
-    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
-    session_id = Column(GUID(), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id = Column(UUID(as_uuid=True), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     answer = Column(Text, nullable=False)
     citations = _jsonb_column("citations")

@@ -25,7 +25,6 @@ from backend.answer_coach import (
     AnswerJobQueue,
     AnswerStreamBroker,
     RetrievalAdapters,
-    SegmentCache,
     serialize_confidence,
 )
 from backend.meeting_pipeline import ActionItemDocument, enqueue_meeting_processing
@@ -168,7 +167,7 @@ def _default_search(path: str, query: str, top_k: int) -> List[Dict[str, Any]]:
         response.raise_for_status()
         payload = response.json()
     except (requests.RequestException, json.JSONDecodeError) as exc:  # pragma: no cover - network errors not asserted in tests
-        log.warning("context lookup failed for path %s: %s", path, exc)
+        log.warning("context lookup failed for %s: %s", url, exc)
         return []
 
     results = payload.get("results") or payload.get("issues") or []
@@ -254,7 +253,6 @@ def _llm_client(*, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _stream_broker = AnswerStreamBroker()
-_segment_cache = SegmentCache.from_env()
 
 
 def _service_factory() -> AnswerGenerationService:
@@ -267,7 +265,6 @@ def _service_factory() -> AnswerGenerationService:
         adapters=adapters,
         llm_client=_llm_client,
         stream_broker=_stream_broker,
-        segment_cache=_segment_cache,
     )
 
 
@@ -309,10 +306,7 @@ def ingest_caption(
 
     now_ms = int(time.time() * 1000)
     ts_start = payload.ts_start_ms if payload.ts_start_ms is not None else now_ms
-    if payload.ts_end_ms is not None:
-        ts_end = payload.ts_end_ms
-    else:
-        ts_end = ts_start
+    ts_end = payload.ts_end_ms if payload.ts_end_ms is not None else ts_start
 
     segment = add_transcript_segment(
         db,

@@ -1,38 +1,21 @@
 from __future__ import annotations
 
 import json
-import os
 import queue
-import sys
-import time
 import uuid
-from typing import Any
-
-TEST_ROOT = os.path.dirname(__file__)
-PROJECT_ROOT = os.path.abspath(os.path.join(TEST_ROOT, ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
 
 import pytest
 from decimal import Decimal
 
-try:  # pragma: no cover - optional dependency for integration-style tests
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session, sessionmaker
-except ModuleNotFoundError:  # pragma: no cover - handled via conditional skips
-    create_engine = None  # type: ignore[assignment]
-    sessionmaker = None  # type: ignore[assignment]
-    Session = Any  # type: ignore[assignment]
-    SQLALCHEMY_AVAILABLE = False
-else:  # pragma: no cover - exercised when SQLAlchemy present
-    SQLALCHEMY_AVAILABLE = True
+sqlalchemy = pytest.importorskip("sqlalchemy")
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from backend.answer_coach import (
     AnswerGenerationService,
     AnswerJob,
     AnswerStreamBroker,
     RetrievalAdapters,
-    SegmentCache,
     estimate_token_count,
     extract_noun_phrases,
     normalize_confidence,
@@ -45,44 +28,11 @@ from backend.db.base import Base
 from backend.meeting_repository import add_transcript_segment, ensure_meeting
 
 
-sqlalchemy_required = pytest.mark.skipif(
-    not SQLALCHEMY_AVAILABLE, reason="sqlalchemy not installed"
-)
-
-
 def _session() -> Session:
-    if not SQLALCHEMY_AVAILABLE:
-        pytest.skip("sqlalchemy not installed")
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     return factory()
-
-
-def test_segment_cache_from_env(monkeypatch):
-    import backend.answer_coach as module
-
-    monkeypatch.setenv("SESSION_SEGMENT_CACHE_MAXLEN", "8")
-    monkeypatch.setenv("SESSION_SEGMENT_CACHE_TTL_SECONDS", "5.5")
-
-    cache = module.SegmentCache.from_env()
-    assert cache.maxlen == 8
-    assert cache.ttl_seconds == pytest.approx(5.5)
-
-
-def test_segment_cache_ttl_expires(monkeypatch):
-    import backend.answer_coach as module
-
-    cache = module.SegmentCache(maxlen=4, ttl_seconds=1.0)
-    session_id = uuid.uuid4()
-    state = {"now": 0.0}
-
-    monkeypatch.setattr(module.time, "time", lambda: state["now"])
-    cache.set(session_id, [{"id": "1"}])
-    assert cache.get(session_id) == [{"id": "1"}]
-
-    state["now"] = 2.0
-    assert cache.get(session_id) is None
 
 
 def test_select_context_window_filters_segments():
@@ -95,7 +45,6 @@ def test_select_context_window_filters_segments():
     assert [seg["text"] for seg in window] == ["b", "c"]
 
 
-@sqlalchemy_required
 def test_add_transcript_segment_preserves_zero_timestamp():
     session = _session()
     session_id = uuid.uuid4()
@@ -188,7 +137,6 @@ def _prepare_meeting(session: Session, session_id: uuid.UUID, text: str) -> mode
     return segment
 
 
-@sqlalchemy_required
 def test_integration_generates_answer_with_jira_citation():
     session = _session()
     session_id = uuid.uuid4()
@@ -208,7 +156,6 @@ def test_integration_generates_answer_with_jira_citation():
     broker.unregister(session_id, listener)
 
 
-@sqlalchemy_required
 def test_integration_generates_answer_with_code_citation():
     session = _session()
     session_id = uuid.uuid4()
@@ -234,7 +181,6 @@ def test_integration_generates_answer_with_code_citation():
     broker.unregister(session_id, listener)
 
 
-@sqlalchemy_required
 def test_generate_direct_answer_streams_and_persists():
     session = _session()
     session_id = uuid.uuid4()

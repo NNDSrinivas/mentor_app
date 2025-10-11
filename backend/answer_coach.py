@@ -15,10 +15,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import lru_cache
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Protocol
 
-try:  # pragma: no cover - optional dependency for type checking
-    from sqlalchemy.orm import Session
-except ModuleNotFoundError:  # pragma: no cover - fallback when SQLAlchemy absent
-    Session = Any  # type: ignore[assignment]
+from sqlalchemy.orm import Session
 
 from backend.meeting_repository import (
     list_recent_segments,
@@ -44,22 +41,6 @@ log = logging.getLogger(__name__)
 CONFIDENCE_QUANTIZER = Decimal("0.0001")
 _TOKEN_REGEX = re.compile(r"[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*")
 _HAS_DIGIT_REGEX = re.compile(r"\d")
-
-
-def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
-    try:
-        value = int(os.getenv(name, str(default)))
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, value)
-
-
-def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
-    try:
-        value = float(os.getenv(name, str(default)))
-    except (TypeError, ValueError):
-        return default
-    return value if value >= minimum else default
 
 
 def normalize_confidence(value: Any) -> Decimal:
@@ -172,7 +153,7 @@ def select_context_window(
     window: List[Dict[str, Any]] = [
         seg
         for seg in seg_list
-        if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) > threshold
+        if seg.get("ts_end_ms", seg.get("ts_start_ms", 0)) >= threshold
     ]
     return window
 
@@ -284,19 +265,18 @@ class AnswerStreamBroker:
 class SegmentCache:
     """Lightweight in-memory cache for recent segments keyed by session."""
 
-    def __init__(self, maxlen: int = 256, ttl_seconds: float = 30.0) -> None:
+    def __init__(self, maxlen: int = 256, ttl_seconds: int = 30) -> None:
         self._store: Dict[uuid.UUID, Deque[Dict[str, Any]]] = {}
         self._timestamps: Dict[uuid.UUID, float] = {}
-        self.maxlen = max(1, int(maxlen))
-        self.ttl_seconds = max(0.0, float(ttl_seconds))
+        self.maxlen = maxlen
+        self.ttl_seconds = ttl_seconds
 
     def get(self, session_id: uuid.UUID) -> Optional[List[Dict[str, Any]]]:
         cached = self._store.get(session_id)
         ts = self._timestamps.get(session_id)
         if cached is None or ts is None:
             return None
-        now = time.time()
-        if self.ttl_seconds > 0 and now - ts > self.ttl_seconds:
+        if time.time() - ts > self.ttl_seconds:
             return None
         return list(cached)
 
@@ -306,14 +286,6 @@ class SegmentCache:
             dq.append(segment)
         self._store[session_id] = dq
         self._timestamps[session_id] = time.time()
-
-    @classmethod
-    def from_env(cls) -> "SegmentCache":
-        """Create a cache using environment-provided limits."""
-
-        maxlen = _env_int("SESSION_SEGMENT_CACHE_MAXLEN", 256)
-        ttl = _env_float("SESSION_SEGMENT_CACHE_TTL_SECONDS", 30.0)
-        return cls(maxlen=maxlen, ttl_seconds=ttl)
 
 
 class AnswerGenerationService:
@@ -328,7 +300,7 @@ class AnswerGenerationService:
         self._adapters = adapters
         self._llm_client = llm_client
         self._stream = stream_broker
-        self._segment_cache = segment_cache or SegmentCache.from_env()
+        self._segment_cache = segment_cache or SegmentCache()
         self._model_name = os.getenv("OPENAI_API_MODEL", "gpt-4o-mini")
 
     # --- helpers -----------------------------------------------------
@@ -392,7 +364,7 @@ class AnswerGenerationService:
             return []
         try:
             return func(query, top_k)
-        except (ConnectionError, TimeoutError, RequestException) as exc:  # pragma: no cover - defensive log
+        except (ConnectionError, TimeoutError, RequestException) as exc:  # pragma: no cover - defensive logging
             log.warning("context retrieval failed: %s", exc)
             return []
 
@@ -594,7 +566,6 @@ __all__ = [
     "AnswerGenerationService",
     "AnswerStreamBroker",
     "CitationValidationError",
-    "SegmentCache",
     "estimate_token_count",
     "extract_noun_phrases",
     "normalize_confidence",
