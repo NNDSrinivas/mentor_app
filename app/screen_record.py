@@ -199,11 +199,53 @@ class ScreenRecorder:
 
 class ScreenAnalyzer:
     """Analyze screen recordings and screenshots."""
-    
-    def __init__(self):
-        # Configure pytesseract if needed
-        # pytesseract.pytesseract.tesseract_cmd = '/usr/local/bin/tesseract'  # Adjust path as needed
-        pass
+
+    def __init__(self, tesseract_path: Optional[str] = None) -> None:
+        """Initialize the analyzer and configure Tesseract.
+
+        Args:
+            tesseract_path: Optional path to the Tesseract binary. If provided,
+                this overrides environment and default path detection.
+        """
+
+        self.tesseract_cmd: Optional[str] = None
+
+        # 1) Explicit parameter
+        if tesseract_path:
+            if os.path.exists(tesseract_path):
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path
+                self.tesseract_cmd = tesseract_path
+            else:
+                logger.error(
+                    "Tesseract binary not found at override path: %s", tesseract_path
+                )
+        else:
+            # 2) Environment variable
+            env_path = os.environ.get("TESSERACT_CMD") or os.environ.get(
+                "TESSERACT_PATH"
+            )
+
+            # 3) Common installation paths across platforms
+            potential_paths = [p for p in [env_path] if p]
+            potential_paths.extend(
+                [
+                    "/usr/bin/tesseract",
+                    "/usr/local/bin/tesseract",
+                    "/opt/homebrew/bin/tesseract",
+                    "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
+                ]
+            )
+
+            for path in potential_paths:
+                if os.path.exists(path):
+                    pytesseract.pytesseract.tesseract_cmd = path
+                    self.tesseract_cmd = path
+                    break
+
+            if not self.tesseract_cmd:
+                logger.error(
+                    "Tesseract binary not found. Install Tesseract or set TESSERACT_CMD."
+                )
     
     def extract_text_from_image(self, image_path: str) -> str:
         """Extract text from image using OCR.
