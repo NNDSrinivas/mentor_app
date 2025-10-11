@@ -25,6 +25,7 @@ from backend.answer_coach import (
     AnswerJobQueue,
     AnswerStreamBroker,
     RetrievalAdapters,
+    SegmentCache,
     serialize_confidence,
 )
 from backend.meeting_pipeline import ActionItemDocument, enqueue_meeting_processing
@@ -253,6 +254,7 @@ def _llm_client(*, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _stream_broker = AnswerStreamBroker()
+_segment_cache = SegmentCache.from_env()
 
 
 def _service_factory() -> AnswerGenerationService:
@@ -265,6 +267,7 @@ def _service_factory() -> AnswerGenerationService:
         adapters=adapters,
         llm_client=_llm_client,
         stream_broker=_stream_broker,
+        segment_cache=_segment_cache,
     )
 
 
