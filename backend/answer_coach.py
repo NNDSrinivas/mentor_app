@@ -547,7 +547,7 @@ class AnswerJobQueue:
             session = self._session_factory()
             try:
                 service.process_job(session, job)
-            except (CitationValidationError, RuntimeError, TimeoutError, ConnectionError, RequestException) as exc:  # pragma: no cover - defensive logging
+            except (CitationValidationError, TimeoutError, RequestException) as exc:  # pragma: no cover - defensive logging
                 log.warning("recoverable error while processing answer job: %s", exc, exc_info=True)
                 session.rollback()
             except Exception:
