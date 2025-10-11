@@ -13,4 +13,8 @@ __all__ = [
     "summarization",
     "screen_record",
     "knowledge_base",
+    "meeting_platform",
+    "zoom_api",
+    "teams_api",
+    "google_meet_api",
 ]
