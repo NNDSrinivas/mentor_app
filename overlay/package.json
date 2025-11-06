@@ -8,6 +8,6 @@
     "test": "echo 'no tests'"
   },
   "devDependencies": {
-    "electron": "^25.0.0"
+    "electron": "^38.2.2"
   }
 }
