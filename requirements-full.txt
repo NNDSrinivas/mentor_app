@@ -29,7 +29,7 @@ bcrypt==4.1.2
 
 # Wave 3 dependencies
 torch>=2.6.0
-transformers==4.35.2
+transformers==4.53.0
 librosa==0.10.1
 
 # Wave 5 dependencies - Task/PR/CI-aware
